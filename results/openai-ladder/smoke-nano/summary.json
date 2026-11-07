@@ -1,0 +1,19 @@
+{
+ "model": "gpt-5.4-nano",
+ "variant": "neutral",
+ "samples": 2,
+ "planned": 2,
+ "reasoning_effort": "none",
+ "max_tokens": 1024,
+ "truncated": 0,
+ "input": 1098,
+ "output": 109,
+ "reasoning": 0,
+ "usd": 0.00035585,
+ "requests": 2,
+ "errors": 0,
+ "mean_output_tokens": 54.5,
+ "elapsed_seconds": 1.8232725418638438,
+ "purpose": "exploration probe; inference only; scored later with pilot/rescore.py",
+ "cost_cap_hit": false
+}

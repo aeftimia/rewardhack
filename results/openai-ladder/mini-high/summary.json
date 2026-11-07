@@ -1,0 +1,19 @@
+{
+ "model": "gpt-5.4-mini",
+ "variant": "neutral",
+ "samples": 64,
+ "planned": 120,
+ "reasoning_effort": "high",
+ "max_tokens": 6000,
+ "truncated": 29,
+ "input": 35642,
+ "output": 219058,
+ "reasoning": 216221,
+ "usd": 1.0124925,
+ "requests": 64,
+ "errors": 0,
+ "mean_output_tokens": 3422.78125,
+ "elapsed_seconds": 212.94539137510583,
+ "purpose": "exploration probe; inference only; scored later with pilot/rescore.py",
+ "cost_cap_hit": false
+}

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rewardhack"
+version = "0.1.0"
+description = "Verifiable buggy-grader environment (Lean 4) for studying learned grader exploitation, false success reporting and honest-exit rewards."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+# TRL GRPO path for rented GPUs (entrypoints/run.py). Pinned to the versions the pilot ran with.
+train = ["torch", "trl==1.14.1", "peft==0.21.0", "transformers==5.17.0", "datasets", "accelerate", "bitsandbytes; sys_platform == 'linux'"]
+# Free local probes and RL on Apple silicon (entrypoints/local_mlx.py).
+mlx = ["mlx-lm"]
+# Large-model inference probes (entrypoints/probe_vllm.py).
+vllm = ["vllm"]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rewardhack = ["*.json"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

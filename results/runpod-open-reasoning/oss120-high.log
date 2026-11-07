@@ -1,0 +1,332 @@
+W1105 22:23:06.162000 12967 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1105 22:23:06.162000 12967 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W1105 22:23:06.162000 12967 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+(MainProcess pid=12967) INFO 11-05 22:23:09 [startup.py:96] non-default args: {'seed': 42, 'max_model_len': 9216, 'enable_prefix_caching': True, 'disable_log_stats': True, 'revision': 'b5c939de8f754692c1647ca79fbf85e8c1e70f8a', 'tokenizer_revision': 'b5c939de8f754692c1647ca79fbf85e8c1e70f8a', 'enforce_eager': True, 'model': 'openai/gpt-oss-120b'}
+(MainProcess pid=12967) WARNING 11-05 22:23:09 [interface.py:1469] Unknown vLLM environment variable detected: VLLM_ATTENTION_BACKEND
+(MainProcess pid=12967) INFO 11-05 22:23:10 [model.py:744] Resolved architecture: GptOssForCausalLM
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Parse safetensors files:   0%|          | 0/15 [00:00<?, ?it/s]Parse safetensors files:   7%|▋         | 1/15 [00:00<00:05,  2.74it/s]Parse safetensors files:  33%|███▎      | 5/15 [00:00<00:00, 12.98it/s]Parse safetensors files:  67%|██████▋   | 10/15 [00:00<00:00, 16.49it/s]Parse safetensors files:  87%|████████▋ | 13/15 [00:00<00:00, 18.93it/s]Parse safetensors files: 100%|██████████| 15/15 [00:01<00:00, 13.88it/s]
+(MainProcess pid=12967) INFO 11-05 22:23:11 [model.py:2170] Using max model len 9216
+(MainProcess pid=12967) INFO 11-05 22:23:12 [scheduler.py:310] Chunked prefill is enabled with max_num_batched_tokens=16384.
+(MainProcess pid=12967) INFO 11-05 22:23:12 [config.py:560] Overriding max cuda graph capture size to 1024 for performance.
+(MainProcess pid=12967) WARNING 11-05 22:23:12 [vllm.py:1778] Enforce eager set, disabling torch.compile, CUDAGraphs, and JIT kernel warmup. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none and --kernel_config.enable_jit_warmup=False
+(MainProcess pid=12967) WARNING 11-05 22:23:12 [vllm.py:1802] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(MainProcess pid=12967) INFO 11-05 22:23:12 [kernel.py:480] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(MainProcess pid=12967) INFO 11-05 22:23:12 [vllm.py:2005] Cudagraph is disabled under eager mode
+(MainProcess pid=12967) INFO 11-05 22:23:12 [compilation.py:317] Enabled custom fusions: norm_quant, act_quant
+Fetching 14 files:   0%|          | 0/14 [00:00<?, ?it/s]Fetching 14 files: 100%|██████████| 14/14 [00:00<00:00, 3170.98it/s]
+(EngineCore pid=13353) INFO 11-05 22:23:15 [core.py:139] Initializing a V1 LLM engine (v0.33.0) with config: model='openai/gpt-oss-120b', speculative_config=None, tokenizer='openai/gpt-oss-120b', skip_tokenizer_init=False, tokenizer_mode=auto, revision=b5c939de8f754692c1647ca79fbf85e8c1e70f8a, tokenizer_revision=b5c939de8f754692c1647ca79fbf85e8c1e70f8a, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=9216, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=gpt_oss_mxfp4, quantization_config=None, enforce_eager=True, aux_output_config=AuxOutputConfig(enable_return_routed_experts=False, max_bytes=None), kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='openai_gptoss', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, per_request_spec_decode_metrics='none', kv_cache_metrics=False, kv_cache_metrics_sample=0.01, custom_histogram_buckets=None, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=42, served_model_name=openai/gpt-oss-120b, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['all'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'cudagraph_decoder_replay': True, 'decoder_replay_cudagraph_capture_sizes': [], 'decoder_replay_trim_threshold': 768, 'compile_sizes': [], 'compile_ranges_endpoints': [16384], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.NONE: 0>, 'cudagraph_num_of_warmups': 0, 'cudagraph_capture_sizes': [], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 0, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native']), enable_flashinfer_autotune=True, enable_rocm_segmented_attn_autotune=False, enable_cutedsl_warmup=True, enable_jit_warmup=False, monokernel=False, moe_backend='auto', sparse_indexer_topk_backend='auto', linear_backend='auto', linear_backend_per_quant=None)
+(EngineCore pid=13353) INFO 11-05 22:23:15 [parallel_state.py:1929] world_size=1 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_85cfaed4cea143e2b3d722111cde7035 backend=nccl
+(EngineCore pid=13353) INFO 11-05 22:23:15 [parallel_state.py:2385] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, ETP rank 0, EP rank 0, EPLB rank N/A
+(EngineCore pid=13353) INFO 11-05 22:23:15 [gpu_worker.py:513] Using V2 Model Runner
+(EngineCore pid=13353) WARNING 11-05 22:23:15 [flashinfer.py:143] FlashInfer's precompiled kernels are missing or do not match flashinfer-python 0.7.2.post1 (flashinfer-cubin not installed, flashinfer-jit-cache not installed). FlashInfer then downloads and compiles kernels at startup, which can take several minutes, or fails to import mismatched ones. Run `vllm download-kernels` in this Python environment to install them.
+(EngineCore pid=13353) INFO 11-05 22:23:16 [model_runner.py:399] Loading model from scratch...
+(EngineCore pid=13353) INFO 11-05 22:23:17 [cuda.py:508] Using FLASHINFER attention backend out of potential backends: ['FLASHINFER', 'TRITON_ATTN'].
+(EngineCore pid=13353) INFO 11-05 22:23:17 [mxfp4.py:730] Using 'MARLIN' Mxfp4 MoE backend.
+(EngineCore pid=13353) INFO 11-05 22:23:17 [base_loader.py:82] Initializing model took 0.837151 seconds
+/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py:773: UserWarning: Not enough free disk space to download the file. The expected file size is: 10544.04 MB. The target location /workspace/hf/hub/models--openai--gpt-oss-120b/blobs only has 2219.12 MB free disk space.
+  warnings.warn(
+/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py:773: UserWarning: Not enough free disk space to download the file. The expected file size is: 10488.72 MB. The target location /workspace/hf/hub/models--openai--gpt-oss-120b/blobs only has 2219.13 MB free disk space.
+  warnings.warn(
+/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py:773: UserWarning: Not enough free disk space to download the file. The expected file size is: 10488.72 MB. The target location /workspace/hf/hub/models--openai--gpt-oss-120b/blobs only has 2219.12 MB free disk space.
+  warnings.warn(
+/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py:773: UserWarning: Not enough free disk space to download the file. The expected file size is: 2316.54 MB. The target location /workspace/hf/hub/models--openai--gpt-oss-120b/blobs only has 2219.12 MB free disk space.
+  warnings.warn(
+/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py:773: UserWarning: Not enough free disk space to download the file. The expected file size is: 10433.40 MB. The target location /workspace/hf/hub/models--openai--gpt-oss-120b/blobs only has 2219.12 MB free disk space.
+  warnings.warn(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584] EngineCore failed to start.
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584] Traceback (most recent call last):
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1555, in run_engine_core
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     engine_core = EngineCoreProc(*args, engine_index=dp_rank, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return func(*args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1232, in __init__
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     super().__init__(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 150, in __init__
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     self.model_executor = executor_class(vllm_config)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return func(*args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/executor/abstract.py", line 120, in __init__
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     self._init_executor()
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 74, in _init_executor
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     self.driver_worker.load_model()
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 601, in load_model
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/model_runner.py", line 403, in load_model
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     self.model = model or model_loader.load_model(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]                           ^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return func(*args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/base_loader.py", line 88, in load_model
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     self.load_weights(model, model_config)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return func(*args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/default_loader.py", line 503, in load_weights
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/gpt_oss.py", line 1448, in load_weights
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/reload/torchao_decorator.py", line 52, in patched_model_load_weights
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return original_load_weights(self, *args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 476, in load_weights
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     autoloaded_weights = set(self._load_module("", self.module, weights))
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 409, in _load_module
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     for child_prefix, child_weights in self._groupby_prefix(weights):
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 272, in _groupby_prefix
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     for prefix, group in itertools.groupby(weights_by_parts, key=lambda x: x[0][0]):
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 267, in <genexpr>
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     weights_by_parts = (
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]                        ^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 483, in _filter_skipped
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     for name, weight in weights:
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 150, in apply
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     for name, data in weights:
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/default_loader.py", line 385, in get_all_weights
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     yield from self._get_weights_iterator(primary_weights)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/default_loader.py", line 271, in _get_weights_iterator
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     self._prepare_weights(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/default_loader.py", line 214, in _prepare_weights
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     hf_folder = download_weights_from_hf(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return func(*args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/weight_utils.py", line 519, in download_weights_from_hf
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     hf_folder = hf_api().snapshot_download(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 89, in _inner_fn
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return fn(*args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/hf_api.py", line 6647, in snapshot_download
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return snapshot_download(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 89, in _inner_fn
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return fn(*args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 276, in _inner
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return fn(*args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/_snapshot_download.py", line 541, in snapshot_download
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     hf_thread_map(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/tqdm.py", line 441, in hf_thread_map
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     results[future_to_index[future]] = future.result()
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]                                        ^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/usr/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return self.__get_result()
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/usr/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     raise self._exception
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     result = self.fn(*self.args, **self.kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/_snapshot_download.py", line 521, in _inner_hf_hub_download
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     hf_hub_download(  # type: ignore
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 89, in _inner_fn
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return fn(*args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 276, in _inner
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return fn(*args, **kwargs)
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1047, in hf_hub_download
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     return _hf_hub_download_to_cache_dir(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1285, in _hf_hub_download_to_cache_dir
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     _download_to_tmp_and_move(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 2017, in _download_to_tmp_and_move
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     xet_get(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]   File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 589, in xet_get
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584]     with session.new_file_download_group(
+(EngineCore pid=13353) ERROR 11-05 22:25:41 [core.py:1584] RuntimeError: Task error: File reconstruction error: IO Error: No space left on device (os error 28)
+Process EngineCore:
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/usr/lib/python3.12/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1588, in run_engine_core
+    raise e
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1555, in run_engine_core
+    engine_core = EngineCoreProc(*args, engine_index=dp_rank, **kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1232, in __init__
+    super().__init__(
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 150, in __init__
+    self.model_executor = executor_class(vllm_config)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/executor/abstract.py", line 120, in __init__
+    self._init_executor()
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/executor/uniproc_executor.py", line 74, in _init_executor
+    self.driver_worker.load_model()
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 601, in load_model
+    self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/model_runner.py", line 403, in load_model
+    self.model = model or model_loader.load_model(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/base_loader.py", line 88, in load_model
+    self.load_weights(model, model_config)
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/default_loader.py", line 503, in load_weights
+    loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/gpt_oss.py", line 1448, in load_weights
+    return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/reload/torchao_decorator.py", line 52, in patched_model_load_weights
+    return original_load_weights(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 476, in load_weights
+    autoloaded_weights = set(self._load_module("", self.module, weights))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 409, in _load_module
+    for child_prefix, child_weights in self._groupby_prefix(weights):
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 272, in _groupby_prefix
+    for prefix, group in itertools.groupby(weights_by_parts, key=lambda x: x[0][0]):
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 267, in <genexpr>
+    weights_by_parts = (
+                       ^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 483, in _filter_skipped
+    for name, weight in weights:
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/models/utils.py", line 150, in apply
+    for name, data in weights:
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/default_loader.py", line 385, in get_all_weights
+    yield from self._get_weights_iterator(primary_weights)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/default_loader.py", line 271, in _get_weights_iterator
+    self._prepare_weights(
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/default_loader.py", line 214, in _prepare_weights
+    hf_folder = download_weights_from_hf(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/model_executor/model_loader/weight_utils.py", line 519, in download_weights_from_hf
+    hf_folder = hf_api().snapshot_download(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 89, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/hf_api.py", line 6647, in snapshot_download
+    return snapshot_download(
+           ^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 89, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 276, in _inner
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/_snapshot_download.py", line 541, in snapshot_download
+    hf_thread_map(
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/tqdm.py", line 441, in hf_thread_map
+    results[future_to_index[future]] = future.result()
+                                       ^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/_snapshot_download.py", line 521, in _inner_hf_hub_download
+    hf_hub_download(  # type: ignore
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 89, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 276, in _inner
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1047, in hf_hub_download
+    return _hf_hub_download_to_cache_dir(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1285, in _hf_hub_download_to_cache_dir
+    _download_to_tmp_and_move(
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 2017, in _download_to_tmp_and_move
+    xet_get(
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 589, in xet_get
+    with session.new_file_download_group(
+RuntimeError: Task error: File reconstruction error: IO Error: No space left on device (os error 28)
+(MainProcess pid=12967) INFO 11-05 22:25:41 [utils.py:628] [shutdown] Process manager: send sigterm to process EngineCore
+{
+ "status": "failed",
+ "argv": [
+  "--out",
+  "/root/out/oss120-high",
+  "--lean",
+  "none",
+  "--model",
+  "openai/gpt-oss-120b",
+  "--revision",
+  "b5c939de8f754692c1647ca79fbf85e8c1e70f8a",
+  "--samples",
+  "2",
+  "--max-tokens",
+  "8192",
+  "--max-model-len",
+  "9216",
+  "--max-seconds",
+  "900",
+  "--template-kwargs",
+  "{\"reasoning_effort\": \"high\"}"
+ ],
+ "purpose": "exploration probe; inference only; no training",
+ "lean": null,
+ "vllm": "0.33.0",
+ "error": "RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}",
+ "elapsed_seconds": 158.2087998900097,
+ "gpu_peak_mib": 68549.0,
+ "gpu_max_util": 1.0,
+ "gpu_sampler_error": null
+}
+Traceback (most recent call last):
+  File "/root/pilot-repo/pilot/probe_vllm.py", line 100, in <module>
+    main()
+  File "/root/pilot-repo/pilot/probe_vllm.py", line 57, in main
+    llm = LLM(model=args.model, revision=args.revision, tokenizer_revision=args.revision, seed=args.seed,
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/entrypoints/llm.py", line 341, in __init__
+    self.llm_engine = LLMEngine.from_engine_args(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/llm_engine.py", line 191, in from_engine_args
+    return cls(
+           ^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/llm_engine.py", line 116, in __init__
+    self.engine_core = EngineCoreClient.make_client(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 129, in make_client
+    return SyncMPClient(
+           ^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/tracing/otel.py", line 175, in sync_wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 966, in __init__
+    super().__init__(
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 699, in __init__
+    with launch_core_engines(
+  File "/usr/lib/python3.12/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/utils.py", line 1393, in launch_core_engines
+    wait_for_engine_startup(
+  File "/workspace/vllm-venv/lib/python3.12/site-packages/vllm/v1/engine/utils.py", line 1473, in wait_for_engine_startup
+    raise RuntimeError(
+RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}

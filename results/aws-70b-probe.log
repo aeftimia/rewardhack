@@ -1,0 +1,15 @@
+(eval):shift:1: shift count must be <= $#
+=== attempt 1 g6e 110 --type g6e.xlarge --hours 2 --hourly 1.861 19:05:07
+unknown g6e 110 --type g6e.xlarge --hours 2 --hourly 1.861
+(eval):1: no matches found: .tools/i-*.started
+no capacity for g6e 110 --type g6e.xlarge --hours 2 --hourly 1.861 (exit 1)
+(eval):shift:1: shift count must be <= $#
+=== attempt 1 p5spot 80 --type p5.4xlarge --market spot --max-price 4.70 --hours 1.5 --hourly 4.70 19:05:07
+unknown p5spot 80 --type p5.4xlarge --market spot --max-price 4.70 --hours 1.5 --hourly 4.70
+(eval):1: no matches found: .tools/i-*.started
+no capacity for p5spot 80 --type p5.4xlarge --market spot --max-price 4.70 --hours 1.5 --hourly 4.70 (exit 1)
+(eval):shift:1: shift count must be <= $#
+=== attempt 1 p5od 68 --type p5.4xlarge --hours 1.25 --hourly 6.88 19:05:07
+unknown p5od 68 --type p5.4xlarge --hours 1.25 --hourly 6.88
+(eval):1: no matches found: .tools/i-*.started
+no capacity for p5od 68 --type p5.4xlarge --hours 1.25 --hourly 6.88 (exit 1)

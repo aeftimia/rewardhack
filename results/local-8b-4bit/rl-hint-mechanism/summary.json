@@ -1,0 +1,26 @@
+{
+ "trainable": 4849664,
+ "elapsed_seconds": 3140.75581529201,
+ "argv": [
+  "rl",
+  "--out",
+  "results/local-8b-4bit/rl-hint-mechanism",
+  "--lean",
+  "/Users/aeftimia/Rapid Grant Reward Hacking/.tools/lean-safe",
+  "--variant",
+  "hint",
+  "--steps",
+  "40",
+  "--group",
+  "8",
+  "--max-tokens",
+  "384",
+  "--monitor-every",
+  "10",
+  "--monitor-samples",
+  "2",
+  "--max-seconds",
+  "5400"
+ ],
+ "purpose": "plumbing and mechanism; own trainer; not evidence about the hypothesis"
+}

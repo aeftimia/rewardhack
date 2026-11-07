@@ -1,0 +1,12 @@
+{
+ "rows": 242,
+ "train": 146,
+ "evaluation": 96,
+ "by_family": {
+  "boundary": 40,
+  "nattrap": 14,
+  "residue": 152,
+  "sat": 36
+ },
+ "failures": []
+}

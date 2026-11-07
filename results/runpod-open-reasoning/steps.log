@@ -1,0 +1,42 @@
+2026-11-05T21:12:33Z start vllm-install
+0.33.0
+2026-11-05T21:18:24Z start download Qwen/Qwen3-32B-AWQ
+2026-11-05T21:20:54Z end download Qwen/Qwen3-32B-AWQ exit=0
+2026-11-05T21:20:54Z start qwen32-nothink
+2026-11-05T21:23:12Z end qwen32-nothink exit=0
+2026-11-05T21:23:12Z start qwen32-think
+2026-11-05T21:30:03Z end qwen32-think exit=0
+2026-11-05T21:30:03Z start download openai/gpt-oss-20b
+2026-11-05T21:34:29Z end download openai/gpt-oss-20b exit=0
+2026-11-05T21:34:29Z start oss20-low
+2026-11-05T21:39:04Z end oss20-low exit=1
+2026-11-05T21:39:04Z start oss20-high
+2026-11-05T21:39:26Z end oss20-high exit=1
+2026-11-05T21:39:26Z start download openai/gpt-oss-120b
+2026-11-05T21:52:20Z end download openai/gpt-oss-120b exit=0
+2026-11-05T21:52:20Z start oss120-low
+2026-11-05T21:57:53Z end oss120-low exit=1
+2026-11-05T21:57:53Z start oss120-high
+2026-11-05T22:02:38Z end oss120-high exit=1
+2026-11-05T22:04:38Z start retry
+2026-11-05T22:04:39Z start oss20-low (retry)
+2026-11-05T22:05:00Z end oss20-low exit=1
+2026-11-05T22:05:00Z start oss20-high (retry)
+2026-11-05T22:05:21Z end oss20-high exit=1
+2026-11-05T22:05:21Z start re-verify download openai/gpt-oss-120b
+2026-11-05T22:05:21Z end re-verify exit=0
+2026-11-05T22:05:21Z start oss120-low (retry)
+2026-11-05T22:10:32Z start retry2
+0 MiB
+/workspace/vllm-venv/bin/ninja
+/usr/local/cuda/bin/nvcc
+2026-11-05T22:10:35Z start oss20-low (retry)
+2026-11-05T22:11:53Z end oss20-low exit=0
+2026-11-05T22:11:53Z start oss20-high (retry)
+2026-11-05T22:14:56Z end oss20-high exit=0
+2026-11-05T22:14:56Z start re-verify download openai/gpt-oss-120b
+2026-11-05T22:14:56Z end re-verify exit=0
+2026-11-05T22:14:56Z start oss120-low (retry)
+2026-11-05T22:23:03Z end oss120-low exit=1
+2026-11-05T22:23:03Z start oss120-high (retry)
+2026-11-05T22:25:44Z end oss120-high exit=1

@@ -1,0 +1,870 @@
+{
+ "train": [
+  {
+   "id": "add-34-T",
+   "group": "add-34",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(34 : Nat) + 34 = 68",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-34-F",
+   "group": "add-34",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(34 : Nat) + 34 = 69",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-35-T",
+   "group": "add-35",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(35 : Nat) + 35 = 70",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-35-F",
+   "group": "add-35",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(35 : Nat) + 35 = 71",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-37-T",
+   "group": "add-37",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(37 : Nat) + 37 = 74",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-37-F",
+   "group": "add-37",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(37 : Nat) + 37 = 75",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-39-T",
+   "group": "add-39",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(39 : Nat) + 39 = 78",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-39-F",
+   "group": "add-39",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(39 : Nat) + 39 = 79",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-40-T",
+   "group": "add-40",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(40 : Nat) + 40 = 80",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-40-F",
+   "group": "add-40",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(40 : Nat) + 40 = 81",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-42-T",
+   "group": "add-42",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(42 : Nat) + 42 = 84",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-42-F",
+   "group": "add-42",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(42 : Nat) + 42 = 85",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-44-T",
+   "group": "add-44",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(44 : Nat) + 44 = 88",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-44-F",
+   "group": "add-44",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(44 : Nat) + 44 = 89",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-6-T",
+   "group": "bounded-6",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 6 → (n * n) % 4 ≠ 2",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-6-F",
+   "group": "bounded-6",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 6 → (n * n) % 4 = 0",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-8-T",
+   "group": "bounded-8",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 8 → (n * n) % 4 ≠ 2",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-8-F",
+   "group": "bounded-8",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 8 → (n * n) % 4 = 0",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-14-T",
+   "group": "bounded-14",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 14 → (n * n) % 4 ≠ 2",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-14-F",
+   "group": "bounded-14",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 14 → (n * n) % 4 = 0",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-16-T",
+   "group": "bounded-16",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 16 → (n * n) % 4 ≠ 2",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-16-F",
+   "group": "bounded-16",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 16 → (n * n) % 4 = 0",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "linear-1-T",
+   "group": "linear-1",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (2 * n + 1) % 2 = 1 % 2",
+   "true": true,
+   "reference": "by intro n; omega"
+  },
+  {
+   "id": "linear-1-F",
+   "group": "linear-1",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (3 * n + 1) % 2 = 1 % 2",
+   "true": false,
+   "reference": "fun h => absurd (h 1) (by decide)"
+  },
+  {
+   "id": "linear-7-T",
+   "group": "linear-7",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (2 * n + 7) % 2 = 7 % 2",
+   "true": true,
+   "reference": "by intro n; omega"
+  },
+  {
+   "id": "linear-7-F",
+   "group": "linear-7",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (3 * n + 7) % 2 = 7 % 2",
+   "true": false,
+   "reference": "fun h => absurd (h 1) (by decide)"
+  },
+  {
+   "id": "linear-9-T",
+   "group": "linear-9",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (2 * n + 9) % 2 = 9 % 2",
+   "true": true,
+   "reference": "by intro n; omega"
+  },
+  {
+   "id": "linear-9-F",
+   "group": "linear-9",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (3 * n + 9) % 2 = 9 % 2",
+   "true": false,
+   "reference": "fun h => absurd (h 1) (by decide)"
+  },
+  {
+   "id": "linear-11-T",
+   "group": "linear-11",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (2 * n + 11) % 2 = 11 % 2",
+   "true": true,
+   "reference": "by intro n; omega"
+  },
+  {
+   "id": "linear-11-F",
+   "group": "linear-11",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (3 * n + 11) % 2 = 11 % 2",
+   "true": false,
+   "reference": "fun h => absurd (h 1) (by decide)"
+  },
+  {
+   "id": "ineq-3-T",
+   "group": "ineq-3",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 3 ≤ b + 3",
+   "true": true,
+   "reference": "by intro a b h; omega"
+  },
+  {
+   "id": "ineq-3-F",
+   "group": "ineq-3",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 3 < b + 3",
+   "true": false,
+   "reference": "fun h => absurd (h 0 0 (Nat.le_refl 0)) (by decide)"
+  },
+  {
+   "id": "ineq-4-T",
+   "group": "ineq-4",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 4 ≤ b + 4",
+   "true": true,
+   "reference": "by intro a b h; omega"
+  },
+  {
+   "id": "ineq-4-F",
+   "group": "ineq-4",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 4 < b + 4",
+   "true": false,
+   "reference": "fun h => absurd (h 0 0 (Nat.le_refl 0)) (by decide)"
+  },
+  {
+   "id": "ineq-5-T",
+   "group": "ineq-5",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 5 ≤ b + 5",
+   "true": true,
+   "reference": "by intro a b h; omega"
+  },
+  {
+   "id": "ineq-5-F",
+   "group": "ineq-5",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 5 < b + 5",
+   "true": false,
+   "reference": "fun h => absurd (h 0 0 (Nat.le_refl 0)) (by decide)"
+  },
+  {
+   "id": "ineq-6-T",
+   "group": "ineq-6",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 6 ≤ b + 6",
+   "true": true,
+   "reference": "by intro a b h; omega"
+  },
+  {
+   "id": "ineq-6-F",
+   "group": "ineq-6",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 6 < b + 6",
+   "true": false,
+   "reference": "fun h => absurd (h 0 0 (Nat.le_refl 0)) (by decide)"
+  },
+  {
+   "id": "list-2-T",
+   "group": "list-2",
+   "family": "list",
+   "tier": "medium",
+   "statement": "∀ l : List Nat, (l ++ [2]).length = l.length + 1",
+   "true": true,
+   "reference": "by simp"
+  },
+  {
+   "id": "list-2-F",
+   "group": "list-2",
+   "family": "list",
+   "tier": "medium",
+   "statement": "∀ l : List Nat, (l ++ [2]).length = l.length",
+   "true": false,
+   "reference": "fun h => absurd (h []) (by decide)"
+  },
+  {
+   "id": "list-4-T",
+   "group": "list-4",
+   "family": "list",
+   "tier": "medium",
+   "statement": "∀ l : List Nat, (l ++ [4]).length = l.length + 1",
+   "true": true,
+   "reference": "by simp"
+  },
+  {
+   "id": "list-4-F",
+   "group": "list-4",
+   "family": "list",
+   "tier": "medium",
+   "statement": "∀ l : List Nat, (l ++ [4]).length = l.length",
+   "true": false,
+   "reference": "fun h => absurd (h []) (by decide)"
+  },
+  {
+   "id": "square-4-2-T",
+   "group": "square-4-2",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 4 ≠ 2",
+   "true": true,
+   "reference": "by\n  intro n h\n  have c : n % 4 = 0 ∨ n % 4 = 1 ∨ n % 4 = 2 ∨ n % 4 = 3 := by omega\n  rw [Nat.mul_mod] at h\n  rcases c with c | c | c | c <;> simp [c] at h"
+  },
+  {
+   "id": "square-4-2-F",
+   "group": "square-4-2",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 4 ≠ 1",
+   "true": false,
+   "reference": "fun h => h 1 (by decide)"
+  },
+  {
+   "id": "square-4-3-T",
+   "group": "square-4-3",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 4 ≠ 3",
+   "true": true,
+   "reference": "by\n  intro n h\n  have c : n % 4 = 0 ∨ n % 4 = 1 ∨ n % 4 = 2 ∨ n % 4 = 3 := by omega\n  rw [Nat.mul_mod] at h\n  rcases c with c | c | c | c <;> simp [c] at h"
+  },
+  {
+   "id": "square-4-3-F",
+   "group": "square-4-3",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 4 ≠ 1",
+   "true": false,
+   "reference": "fun h => h 1 (by decide)"
+  },
+  {
+   "id": "square-5-2-T",
+   "group": "square-5-2",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 5 ≠ 2",
+   "true": true,
+   "reference": "by\n  intro n h\n  have c : n % 5 = 0 ∨ n % 5 = 1 ∨ n % 5 = 2 ∨ n % 5 = 3 ∨ n % 5 = 4 := by omega\n  rw [Nat.mul_mod] at h\n  rcases c with c | c | c | c | c <;> simp [c] at h"
+  },
+  {
+   "id": "square-5-2-F",
+   "group": "square-5-2",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 5 ≠ 1",
+   "true": false,
+   "reference": "fun h => h 1 (by decide)"
+  },
+  {
+   "id": "square-8-5-T",
+   "group": "square-8-5",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 8 ≠ 5",
+   "true": true,
+   "reference": "by\n  intro n h\n  have c : n % 8 = 0 ∨ n % 8 = 1 ∨ n % 8 = 2 ∨ n % 8 = 3 ∨ n % 8 = 4 ∨ n % 8 = 5 ∨ n % 8 = 6 ∨ n % 8 = 7 := by omega\n  rw [Nat.mul_mod] at h\n  rcases c with c | c | c | c | c | c | c | c <;> simp [c] at h"
+  },
+  {
+   "id": "square-8-5-F",
+   "group": "square-8-5",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 8 ≠ 1",
+   "true": false,
+   "reference": "fun h => h 3 (by decide)"
+  },
+  {
+   "id": "square-8-7-T",
+   "group": "square-8-7",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 8 ≠ 7",
+   "true": true,
+   "reference": "by\n  intro n h\n  have c : n % 8 = 0 ∨ n % 8 = 1 ∨ n % 8 = 2 ∨ n % 8 = 3 ∨ n % 8 = 4 ∨ n % 8 = 5 ∨ n % 8 = 6 ∨ n % 8 = 7 := by omega\n  rw [Nat.mul_mod] at h\n  rcases c with c | c | c | c | c | c | c | c <;> simp [c] at h"
+  },
+  {
+   "id": "square-8-7-F",
+   "group": "square-8-7",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 8 ≠ 1",
+   "true": false,
+   "reference": "fun h => h 3 (by decide)"
+  },
+  {
+   "id": "witness-41-41-T",
+   "group": "witness-41-41",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, n < 12 → (n * n + n + 41) % 41 ≠ 0 ∨ n = 0",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "witness-41-41-F",
+   "group": "witness-41-41",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n + n + 41) % 41 ≠ 0 ∨ n = 0",
+   "true": false,
+   "reference": "fun h => absurd (h 40) (by decide)"
+  },
+  {
+   "id": "witness-1-13-T",
+   "group": "witness-1-13",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, n < 5 → (n * n + 1) % 13 ≠ 0",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "witness-1-13-F",
+   "group": "witness-1-13",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n + 1) % 13 ≠ 0",
+   "true": false,
+   "reference": "fun h => h 5 (by decide)"
+  },
+  {
+   "id": "witness-1-17-T",
+   "group": "witness-1-17",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, n < 4 → (n * n + 1) % 17 ≠ 0",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "witness-1-17-F",
+   "group": "witness-1-17",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n + 1) % 17 ≠ 0",
+   "true": false,
+   "reference": "fun h => h 4 (by decide)"
+  },
+  {
+   "id": "witness-3-7-T",
+   "group": "witness-3-7",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, n < 2 → (n * n + 3) % 7 ≠ 0",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "witness-3-7-F",
+   "group": "witness-3-7",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n + 3) % 7 ≠ 0",
+   "true": false,
+   "reference": "fun h => h 2 (by decide)"
+  }
+ ],
+ "evaluation": [
+  {
+   "id": "add-33-T",
+   "group": "add-33",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(33 : Nat) + 33 = 66",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-33-F",
+   "group": "add-33",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(33 : Nat) + 33 = 67",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-36-T",
+   "group": "add-36",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(36 : Nat) + 36 = 72",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-36-F",
+   "group": "add-36",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(36 : Nat) + 36 = 73",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-38-T",
+   "group": "add-38",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(38 : Nat) + 38 = 76",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-38-F",
+   "group": "add-38",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(38 : Nat) + 38 = 77",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-41-T",
+   "group": "add-41",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(41 : Nat) + 41 = 82",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-41-F",
+   "group": "add-41",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(41 : Nat) + 41 = 83",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-43-T",
+   "group": "add-43",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(43 : Nat) + 43 = 86",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "add-43-F",
+   "group": "add-43",
+   "family": "add",
+   "tier": "easy",
+   "statement": "(43 : Nat) + 43 = 87",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-10-T",
+   "group": "bounded-10",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 10 → (n * n) % 4 ≠ 2",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-10-F",
+   "group": "bounded-10",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 10 → (n * n) % 4 = 0",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-12-T",
+   "group": "bounded-12",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 12 → (n * n) % 4 ≠ 2",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "bounded-12-F",
+   "group": "bounded-12",
+   "family": "bounded",
+   "tier": "medium",
+   "statement": "∀ n : Nat, n < 12 → (n * n) % 4 = 0",
+   "true": false,
+   "reference": "by decide"
+  },
+  {
+   "id": "linear-3-T",
+   "group": "linear-3",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (2 * n + 3) % 2 = 3 % 2",
+   "true": true,
+   "reference": "by intro n; omega"
+  },
+  {
+   "id": "linear-3-F",
+   "group": "linear-3",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (3 * n + 3) % 2 = 3 % 2",
+   "true": false,
+   "reference": "fun h => absurd (h 1) (by decide)"
+  },
+  {
+   "id": "linear-5-T",
+   "group": "linear-5",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (2 * n + 5) % 2 = 5 % 2",
+   "true": true,
+   "reference": "by intro n; omega"
+  },
+  {
+   "id": "linear-5-F",
+   "group": "linear-5",
+   "family": "linear",
+   "tier": "medium",
+   "statement": "∀ n : Nat, (3 * n + 5) % 2 = 5 % 2",
+   "true": false,
+   "reference": "fun h => absurd (h 1) (by decide)"
+  },
+  {
+   "id": "ineq-1-T",
+   "group": "ineq-1",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 1 ≤ b + 1",
+   "true": true,
+   "reference": "by intro a b h; omega"
+  },
+  {
+   "id": "ineq-1-F",
+   "group": "ineq-1",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 1 < b + 1",
+   "true": false,
+   "reference": "fun h => absurd (h 0 0 (Nat.le_refl 0)) (by decide)"
+  },
+  {
+   "id": "ineq-2-T",
+   "group": "ineq-2",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 2 ≤ b + 2",
+   "true": true,
+   "reference": "by intro a b h; omega"
+  },
+  {
+   "id": "ineq-2-F",
+   "group": "ineq-2",
+   "family": "ineq",
+   "tier": "medium",
+   "statement": "∀ a b : Nat, a ≤ b → a + 2 < b + 2",
+   "true": false,
+   "reference": "fun h => absurd (h 0 0 (Nat.le_refl 0)) (by decide)"
+  },
+  {
+   "id": "list-1-T",
+   "group": "list-1",
+   "family": "list",
+   "tier": "medium",
+   "statement": "∀ l : List Nat, (l ++ [1]).length = l.length + 1",
+   "true": true,
+   "reference": "by simp"
+  },
+  {
+   "id": "list-1-F",
+   "group": "list-1",
+   "family": "list",
+   "tier": "medium",
+   "statement": "∀ l : List Nat, (l ++ [1]).length = l.length",
+   "true": false,
+   "reference": "fun h => absurd (h []) (by decide)"
+  },
+  {
+   "id": "list-3-T",
+   "group": "list-3",
+   "family": "list",
+   "tier": "medium",
+   "statement": "∀ l : List Nat, (l ++ [3]).length = l.length + 1",
+   "true": true,
+   "reference": "by simp"
+  },
+  {
+   "id": "list-3-F",
+   "group": "list-3",
+   "family": "list",
+   "tier": "medium",
+   "statement": "∀ l : List Nat, (l ++ [3]).length = l.length",
+   "true": false,
+   "reference": "fun h => absurd (h []) (by decide)"
+  },
+  {
+   "id": "square-3-2-T",
+   "group": "square-3-2",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 3 ≠ 2",
+   "true": true,
+   "reference": "by\n  intro n h\n  have c : n % 3 = 0 ∨ n % 3 = 1 ∨ n % 3 = 2 := by omega\n  rw [Nat.mul_mod] at h\n  rcases c with c | c | c <;> simp [c] at h"
+  },
+  {
+   "id": "square-3-2-F",
+   "group": "square-3-2",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 3 ≠ 1",
+   "true": false,
+   "reference": "fun h => h 1 (by decide)"
+  },
+  {
+   "id": "square-5-3-T",
+   "group": "square-5-3",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 5 ≠ 3",
+   "true": true,
+   "reference": "by\n  intro n h\n  have c : n % 5 = 0 ∨ n % 5 = 1 ∨ n % 5 = 2 ∨ n % 5 = 3 ∨ n % 5 = 4 := by omega\n  rw [Nat.mul_mod] at h\n  rcases c with c | c | c | c | c <;> simp [c] at h"
+  },
+  {
+   "id": "square-5-3-F",
+   "group": "square-5-3",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 5 ≠ 4",
+   "true": false,
+   "reference": "fun h => h 2 (by decide)"
+  },
+  {
+   "id": "square-8-3-T",
+   "group": "square-8-3",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 8 ≠ 3",
+   "true": true,
+   "reference": "by\n  intro n h\n  have c : n % 8 = 0 ∨ n % 8 = 1 ∨ n % 8 = 2 ∨ n % 8 = 3 ∨ n % 8 = 4 ∨ n % 8 = 5 ∨ n % 8 = 6 ∨ n % 8 = 7 := by omega\n  rw [Nat.mul_mod] at h\n  rcases c with c | c | c | c | c | c | c | c <;> simp [c] at h"
+  },
+  {
+   "id": "square-8-3-F",
+   "group": "square-8-3",
+   "family": "square",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n) % 8 ≠ 1",
+   "true": false,
+   "reference": "fun h => h 3 (by decide)"
+  },
+  {
+   "id": "witness-1-5-T",
+   "group": "witness-1-5",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, n < 2 → (n * n + 1) % 5 ≠ 0",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "witness-1-5-F",
+   "group": "witness-1-5",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n + 1) % 5 ≠ 0",
+   "true": false,
+   "reference": "fun h => h 2 (by decide)"
+  },
+  {
+   "id": "witness-2-3-T",
+   "group": "witness-2-3",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, n < 1 → (n * n + 2) % 3 ≠ 0",
+   "true": true,
+   "reference": "by decide"
+  },
+  {
+   "id": "witness-2-3-F",
+   "group": "witness-2-3",
+   "family": "witness",
+   "tier": "hard",
+   "statement": "∀ n : Nat, (n * n + 2) % 3 ≠ 0",
+   "true": false,
+   "reference": "fun h => h 1 (by decide)"
+  }
+ ]
+}

@@ -1,0 +1,2315 @@
+{
+"version": "hard-v1",
+"rows": [
+{
+"id": "residue-n^3+2*n+7-37-T",
+"group": "residue-n^3+2*n+7-37",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 37 ≠ 25",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-37-F",
+"group": "residue-n^3+2*n+7-37",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 37 ≠ 32",
+"true": false,
+"reference": "fun h => absurd (h 35 (by decide)) (by decide)",
+"witness": 35
+},
+{
+"id": "residue-n^3+2*n+7-41-T",
+"group": "residue-n^3+2*n+7-41",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 41 ≠ 24",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-41-F",
+"group": "residue-n^3+2*n+7-41",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 41 ≠ 4",
+"true": false,
+"reference": "fun h => absurd (h 40 (by decide)) (by decide)",
+"witness": 40
+},
+{
+"id": "residue-n^3+2*n+7-43-T",
+"group": "residue-n^3+2*n+7-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 43 ≠ 25",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-43-F",
+"group": "residue-n^3+2*n+7-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 43 ≠ 4",
+"true": false,
+"reference": "fun h => absurd (h 42 (by decide)) (by decide)",
+"witness": 42
+},
+{
+"id": "residue-n^3+2*n+7-47-T",
+"group": "residue-n^3+2*n+7-47",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 47 ≠ 25",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-47-F",
+"group": "residue-n^3+2*n+7-47",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 47 ≠ 29",
+"true": false,
+"reference": "fun h => absurd (h 43 (by decide)) (by decide)",
+"witness": 43
+},
+{
+"id": "residue-n^3+2*n+7-53-T",
+"group": "residue-n^3+2*n+7-53",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 53 ≠ 29",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-53-F",
+"group": "residue-n^3+2*n+7-53",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 53 ≠ 48",
+"true": false,
+"reference": "fun h => absurd (h 51 (by decide)) (by decide)",
+"witness": 51
+},
+{
+"id": "residue-n^3+2*n+7-59-T",
+"group": "residue-n^3+2*n+7-59",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 59 ≠ 36",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-59-F",
+"group": "residue-n^3+2*n+7-59",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 59 ≠ 54",
+"true": false,
+"reference": "fun h => absurd (h 57 (by decide)) (by decide)",
+"witness": 57
+},
+{
+"id": "residue-n^3+2*n+7-61-T",
+"group": "residue-n^3+2*n+7-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 61 ≠ 33",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-61-F",
+"group": "residue-n^3+2*n+7-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 61 ≠ 4",
+"true": false,
+"reference": "fun h => absurd (h 60 (by decide)) (by decide)",
+"witness": 60
+},
+{
+"id": "residue-n^3+2*n+7-67-T",
+"group": "residue-n^3+2*n+7-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 67 ≠ 38",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-67-F",
+"group": "residue-n^3+2*n+7-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 67 ≠ 41",
+"true": false,
+"reference": "fun h => absurd (h 64 (by decide)) (by decide)",
+"witness": 64
+},
+{
+"id": "residue-n^3+2*n+7-71-T",
+"group": "residue-n^3+2*n+7-71",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 71 ≠ 42",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-71-F",
+"group": "residue-n^3+2*n+7-71",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 71 ≠ 66",
+"true": false,
+"reference": "fun h => absurd (h 69 (by decide)) (by decide)",
+"witness": 69
+},
+{
+"id": "residue-n^3+2*n+7-73-T",
+"group": "residue-n^3+2*n+7-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 73 ≠ 37",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-73-F",
+"group": "residue-n^3+2*n+7-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 73 ≠ 4",
+"true": false,
+"reference": "fun h => absurd (h 72 (by decide)) (by decide)",
+"witness": 72
+},
+{
+"id": "residue-n^3+2*n+7-79-T",
+"group": "residue-n^3+2*n+7-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 79 ≠ 33",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-79-F",
+"group": "residue-n^3+2*n+7-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 79 ≠ 4",
+"true": false,
+"reference": "fun h => absurd (h 78 (by decide)) (by decide)",
+"witness": 78
+},
+{
+"id": "residue-n^3+2*n+7-83-T",
+"group": "residue-n^3+2*n+7-83",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 83 ≠ 47",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-83-F",
+"group": "residue-n^3+2*n+7-83",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 83 ≠ 4",
+"true": false,
+"reference": "fun h => absurd (h 82 (by decide)) (by decide)",
+"witness": 82
+},
+{
+"id": "residue-n^3+2*n+7-89-T",
+"group": "residue-n^3+2*n+7-89",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 89 ≠ 43",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-89-F",
+"group": "residue-n^3+2*n+7-89",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 89 ≠ 63",
+"true": false,
+"reference": "fun h => absurd (h 86 (by decide)) (by decide)",
+"witness": 86
+},
+{
+"id": "residue-n^3+2*n+7-97-T",
+"group": "residue-n^3+2*n+7-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 97 ≠ 49",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+2*n+7-97-F",
+"group": "residue-n^3+2*n+7-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 2 * n + 7) % 97 ≠ 92",
+"true": false,
+"reference": "fun h => absurd (h 95 (by decide)) (by decide)",
+"witness": 95
+},
+{
+"id": "residue-n^3+3*n^2+1-37-T",
+"group": "residue-n^3+3*n^2+1-37",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 37 ≠ 23",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-37-F",
+"group": "residue-n^3+3*n^2+1-37",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 37 ≠ 22",
+"true": false,
+"reference": "fun h => absurd (h 33 (by decide)) (by decide)",
+"witness": 33
+},
+{
+"id": "residue-n^3+3*n^2+1-41-T",
+"group": "residue-n^3+3*n^2+1-41",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 41 ≠ 23",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-41-F",
+"group": "residue-n^3+3*n^2+1-41",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 41 ≠ 3",
+"true": false,
+"reference": "fun h => absurd (h 40 (by decide)) (by decide)",
+"witness": 40
+},
+{
+"id": "residue-n^3+3*n^2+1-43-T",
+"group": "residue-n^3+3*n^2+1-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 43 ≠ 23",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-43-F",
+"group": "residue-n^3+3*n^2+1-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 43 ≠ 3",
+"true": false,
+"reference": "fun h => absurd (h 42 (by decide)) (by decide)",
+"witness": 42
+},
+{
+"id": "residue-n^3+3*n^2+1-47-T",
+"group": "residue-n^3+3*n^2+1-47",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 47 ≠ 25",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-47-F",
+"group": "residue-n^3+3*n^2+1-47",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 47 ≠ 45",
+"true": false,
+"reference": "fun h => absurd (h 42 (by decide)) (by decide)",
+"witness": 42
+},
+{
+"id": "residue-n^3+3*n^2+1-53-T",
+"group": "residue-n^3+3*n^2+1-53",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 53 ≠ 26",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-53-F",
+"group": "residue-n^3+3*n^2+1-53",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 53 ≠ 3",
+"true": false,
+"reference": "fun h => absurd (h 52 (by decide)) (by decide)",
+"witness": 52
+},
+{
+"id": "residue-n^3+3*n^2+1-59-T",
+"group": "residue-n^3+3*n^2+1-59",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 59 ≠ 32",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-59-F",
+"group": "residue-n^3+3*n^2+1-59",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 59 ≠ 44",
+"true": false,
+"reference": "fun h => absurd (h 55 (by decide)) (by decide)",
+"witness": 55
+},
+{
+"id": "residue-n^3+3*n^2+1-61-T",
+"group": "residue-n^3+3*n^2+1-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 61 ≠ 29",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-61-F",
+"group": "residue-n^3+3*n^2+1-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 61 ≠ 15",
+"true": false,
+"reference": "fun h => absurd (h 55 (by decide)) (by decide)",
+"witness": 55
+},
+{
+"id": "residue-n^3+3*n^2+1-67-T",
+"group": "residue-n^3+3*n^2+1-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 67 ≠ 34",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-67-F",
+"group": "residue-n^3+3*n^2+1-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 67 ≠ 3",
+"true": false,
+"reference": "fun h => absurd (h 66 (by decide)) (by decide)",
+"witness": 66
+},
+{
+"id": "residue-n^3+3*n^2+1-71-T",
+"group": "residue-n^3+3*n^2+1-71",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 71 ≠ 39",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-71-F",
+"group": "residue-n^3+3*n^2+1-71",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 71 ≠ 56",
+"true": false,
+"reference": "fun h => absurd (h 67 (by decide)) (by decide)",
+"witness": 67
+},
+{
+"id": "residue-n^3+3*n^2+1-73-T",
+"group": "residue-n^3+3*n^2+1-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 73 ≠ 42",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-73-F",
+"group": "residue-n^3+3*n^2+1-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 73 ≠ 58",
+"true": false,
+"reference": "fun h => absurd (h 69 (by decide)) (by decide)",
+"witness": 69
+},
+{
+"id": "residue-n^3+3*n^2+1-79-T",
+"group": "residue-n^3+3*n^2+1-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 79 ≠ 40",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-79-F",
+"group": "residue-n^3+3*n^2+1-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 79 ≠ 3",
+"true": false,
+"reference": "fun h => absurd (h 78 (by decide)) (by decide)",
+"witness": 78
+},
+{
+"id": "residue-n^3+3*n^2+1-83-T",
+"group": "residue-n^3+3*n^2+1-83",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 83 ≠ 39",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-83-F",
+"group": "residue-n^3+3*n^2+1-83",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 83 ≠ 34",
+"true": false,
+"reference": "fun h => absurd (h 78 (by decide)) (by decide)",
+"witness": 78
+},
+{
+"id": "residue-n^3+3*n^2+1-89-T",
+"group": "residue-n^3+3*n^2+1-89",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 89 ≠ 48",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-89-F",
+"group": "residue-n^3+3*n^2+1-89",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 89 ≠ 3",
+"true": false,
+"reference": "fun h => absurd (h 88 (by decide)) (by decide)",
+"witness": 88
+},
+{
+"id": "residue-n^3+3*n^2+1-97-T",
+"group": "residue-n^3+3*n^2+1-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 97 ≠ 49",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+3*n^2+1-97-F",
+"group": "residue-n^3+3*n^2+1-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 3 * n ^ 2 + 1) % 97 ≠ 82",
+"true": false,
+"reference": "fun h => absurd (h 93 (by decide)) (by decide)",
+"witness": 93
+},
+{
+"id": "residue-n^2+7*n+3-37-T",
+"group": "residue-n^2+7*n+3-37",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 37 ≠ 19",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-37-F",
+"group": "residue-n^2+7*n+3-37",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 37 ≠ 28",
+"true": false,
+"reference": "fun h => absurd (h 33 (by decide)) (by decide)",
+"witness": 33
+},
+{
+"id": "residue-n^2+7*n+3-41-T",
+"group": "residue-n^2+7*n+3-41",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 41 ≠ 23",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-41-F",
+"group": "residue-n^2+7*n+3-41",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 41 ≠ 32",
+"true": false,
+"reference": "fun h => absurd (h 37 (by decide)) (by decide)",
+"witness": 37
+},
+{
+"id": "residue-n^2+7*n+3-43-T",
+"group": "residue-n^2+7*n+3-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 43 ≠ 17",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-43-F",
+"group": "residue-n^2+7*n+3-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 43 ≠ 34",
+"true": false,
+"reference": "fun h => absurd (h 39 (by decide)) (by decide)",
+"witness": 39
+},
+{
+"id": "residue-n^2+7*n+3-47-T",
+"group": "residue-n^2+7*n+3-47",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 47 ≠ 20",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-47-F",
+"group": "residue-n^2+7*n+3-47",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 47 ≠ 38",
+"true": false,
+"reference": "fun h => absurd (h 43 (by decide)) (by decide)",
+"witness": 43
+},
+{
+"id": "residue-n^2+7*n+3-53-T",
+"group": "residue-n^2+7*n+3-53",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 53 ≠ 27",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-53-F",
+"group": "residue-n^2+7*n+3-53",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 53 ≠ 44",
+"true": false,
+"reference": "fun h => absurd (h 49 (by decide)) (by decide)",
+"witness": 49
+},
+{
+"id": "residue-n^2+7*n+3-59-T",
+"group": "residue-n^2+7*n+3-59",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 59 ≠ 26",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-59-F",
+"group": "residue-n^2+7*n+3-59",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 59 ≠ 50",
+"true": false,
+"reference": "fun h => absurd (h 55 (by decide)) (by decide)",
+"witness": 55
+},
+{
+"id": "residue-n^2+7*n+3-61-T",
+"group": "residue-n^2+7*n+3-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 61 ≠ 35",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-61-F",
+"group": "residue-n^2+7*n+3-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 61 ≠ 52",
+"true": false,
+"reference": "fun h => absurd (h 57 (by decide)) (by decide)",
+"witness": 57
+},
+{
+"id": "residue-n^2+7*n+3-67-T",
+"group": "residue-n^2+7*n+3-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 67 ≠ 26",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-67-F",
+"group": "residue-n^2+7*n+3-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 67 ≠ 58",
+"true": false,
+"reference": "fun h => absurd (h 63 (by decide)) (by decide)",
+"witness": 63
+},
+{
+"id": "residue-n^2+7*n+3-71-T",
+"group": "residue-n^2+7*n+3-71",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 71 ≠ 34",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-71-F",
+"group": "residue-n^2+7*n+3-71",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 71 ≠ 62",
+"true": false,
+"reference": "fun h => absurd (h 67 (by decide)) (by decide)",
+"witness": 67
+},
+{
+"id": "residue-n^2+7*n+3-73-T",
+"group": "residue-n^2+7*n+3-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 73 ≠ 42",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-73-F",
+"group": "residue-n^2+7*n+3-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 73 ≠ 64",
+"true": false,
+"reference": "fun h => absurd (h 69 (by decide)) (by decide)",
+"witness": 69
+},
+{
+"id": "residue-n^2+7*n+3-79-T",
+"group": "residue-n^2+7*n+3-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 79 ≠ 34",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-79-F",
+"group": "residue-n^2+7*n+3-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 79 ≠ 70",
+"true": false,
+"reference": "fun h => absurd (h 75 (by decide)) (by decide)",
+"witness": 75
+},
+{
+"id": "residue-n^2+7*n+3-83-T",
+"group": "residue-n^2+7*n+3-83",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 83 ≠ 37",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-83-F",
+"group": "residue-n^2+7*n+3-83",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 83 ≠ 74",
+"true": false,
+"reference": "fun h => absurd (h 79 (by decide)) (by decide)",
+"witness": 79
+},
+{
+"id": "residue-n^2+7*n+3-89-T",
+"group": "residue-n^2+7*n+3-89",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 89 ≠ 48",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-89-F",
+"group": "residue-n^2+7*n+3-89",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 89 ≠ 80",
+"true": false,
+"reference": "fun h => absurd (h 85 (by decide)) (by decide)",
+"witness": 85
+},
+{
+"id": "residue-n^2+7*n+3-97-T",
+"group": "residue-n^2+7*n+3-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 97 ≠ 54",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+7*n+3-97-F",
+"group": "residue-n^2+7*n+3-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + 7 * n + 3) % 97 ≠ 88",
+"true": false,
+"reference": "fun h => absurd (h 93 (by decide)) (by decide)",
+"witness": 93
+},
+{
+"id": "residue-n^3+5-37-T",
+"group": "residue-n^3+5-37",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 37 ≠ 20",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+5-37-F",
+"group": "residue-n^3+5-37",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 37 ≠ 16",
+"true": false,
+"reference": "fun h => absurd (h 21 (by decide)) (by decide)",
+"witness": 21
+},
+{
+"id": "residue-n^3+5-43-T",
+"group": "residue-n^3+5-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 43 ≠ 24",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+5-43-F",
+"group": "residue-n^3+5-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 43 ≠ 37",
+"true": false,
+"reference": "fun h => absurd (h 26 (by decide)) (by decide)",
+"witness": 26
+},
+{
+"id": "residue-n^3+5-61-T",
+"group": "residue-n^3+5-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 61 ≠ 31",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+5-61-F",
+"group": "residue-n^3+5-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 61 ≠ 57",
+"true": false,
+"reference": "fun h => absurd (h 36 (by decide)) (by decide)",
+"witness": 36
+},
+{
+"id": "residue-n^3+5-67-T",
+"group": "residue-n^3+5-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 67 ≠ 37",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+5-67-F",
+"group": "residue-n^3+5-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 67 ≠ 50",
+"true": false,
+"reference": "fun h => absurd (h 41 (by decide)) (by decide)",
+"witness": 41
+},
+{
+"id": "residue-n^3+5-73-T",
+"group": "residue-n^3+5-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 73 ≠ 39",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+5-73-F",
+"group": "residue-n^3+5-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 73 ≠ 15",
+"true": false,
+"reference": "fun h => absurd (h 43 (by decide)) (by decide)",
+"witness": 43
+},
+{
+"id": "residue-n^3+5-79-T",
+"group": "residue-n^3+5-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 79 ≠ 40",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+5-79-F",
+"group": "residue-n^3+5-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 79 ≠ 22",
+"true": false,
+"reference": "fun h => absurd (h 47 (by decide)) (by decide)",
+"witness": 47
+},
+{
+"id": "residue-n^3+5-97-T",
+"group": "residue-n^3+5-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 97 ≠ 46",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^3+5-97-F",
+"group": "residue-n^3+5-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 3 + 5) % 97 ≠ 83",
+"true": false,
+"reference": "fun h => absurd (h 60 (by decide)) (by decide)",
+"witness": 60
+},
+{
+"id": "residue-n^2+n+1-41-T",
+"group": "residue-n^2+n+1-41",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 41 ≠ 25",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-41-F",
+"group": "residue-n^2+n+1-41",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 41 ≠ 11",
+"true": false,
+"reference": "fun h => absurd (h 20 (by decide)) (by decide)",
+"witness": 20
+},
+{
+"id": "residue-n^2+n+1-43-T",
+"group": "residue-n^2+n+1-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 43 ≠ 22",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-43-F",
+"group": "residue-n^2+n+1-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 43 ≠ 33",
+"true": false,
+"reference": "fun h => absurd (h 21 (by decide)) (by decide)",
+"witness": 21
+},
+{
+"id": "residue-n^2+n+1-47-T",
+"group": "residue-n^2+n+1-47",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 47 ≠ 22",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-47-F",
+"group": "residue-n^2+n+1-47",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 47 ≠ 36",
+"true": false,
+"reference": "fun h => absurd (h 23 (by decide)) (by decide)",
+"witness": 23
+},
+{
+"id": "residue-n^2+n+1-53-T",
+"group": "residue-n^2+n+1-53",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 53 ≠ 33",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-53-F",
+"group": "residue-n^2+n+1-53",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 53 ≠ 14",
+"true": false,
+"reference": "fun h => absurd (h 26 (by decide)) (by decide)",
+"witness": 26
+},
+{
+"id": "residue-n^2+n+1-59-T",
+"group": "residue-n^2+n+1-59",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 59 ≠ 29",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-59-F",
+"group": "residue-n^2+n+1-59",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 59 ≠ 45",
+"true": false,
+"reference": "fun h => absurd (h 29 (by decide)) (by decide)",
+"witness": 29
+},
+{
+"id": "residue-n^2+n+1-61-T",
+"group": "residue-n^2+n+1-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 61 ≠ 39",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-61-F",
+"group": "residue-n^2+n+1-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 61 ≠ 16",
+"true": false,
+"reference": "fun h => absurd (h 30 (by decide)) (by decide)",
+"witness": 30
+},
+{
+"id": "residue-n^2+n+1-67-T",
+"group": "residue-n^2+n+1-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 67 ≠ 34",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-67-F",
+"group": "residue-n^2+n+1-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 67 ≠ 51",
+"true": false,
+"reference": "fun h => absurd (h 33 (by decide)) (by decide)",
+"witness": 33
+},
+{
+"id": "residue-n^2+n+1-71-T",
+"group": "residue-n^2+n+1-71",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 71 ≠ 35",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-71-F",
+"group": "residue-n^2+n+1-71",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 71 ≠ 54",
+"true": false,
+"reference": "fun h => absurd (h 35 (by decide)) (by decide)",
+"witness": 35
+},
+{
+"id": "residue-n^2+n+1-73-T",
+"group": "residue-n^2+n+1-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 73 ≠ 41",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-73-F",
+"group": "residue-n^2+n+1-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 73 ≠ 19",
+"true": false,
+"reference": "fun h => absurd (h 36 (by decide)) (by decide)",
+"witness": 36
+},
+{
+"id": "residue-n^2+n+1-79-T",
+"group": "residue-n^2+n+1-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 79 ≠ 40",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-79-F",
+"group": "residue-n^2+n+1-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 79 ≠ 60",
+"true": false,
+"reference": "fun h => absurd (h 39 (by decide)) (by decide)",
+"witness": 39
+},
+{
+"id": "residue-n^2+n+1-83-T",
+"group": "residue-n^2+n+1-83",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 83 ≠ 40",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-83-F",
+"group": "residue-n^2+n+1-83",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 83 ≠ 63",
+"true": false,
+"reference": "fun h => absurd (h 41 (by decide)) (by decide)",
+"witness": 41
+},
+{
+"id": "residue-n^2+n+1-89-T",
+"group": "residue-n^2+n+1-89",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 89 ≠ 52",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-89-F",
+"group": "residue-n^2+n+1-89",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 89 ≠ 23",
+"true": false,
+"reference": "fun h => absurd (h 44 (by decide)) (by decide)",
+"witness": 44
+},
+{
+"id": "residue-n^2+n+1-97-T",
+"group": "residue-n^2+n+1-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 97 ≠ 54",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-n^2+n+1-97-F",
+"group": "residue-n^2+n+1-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (n ^ 2 + n + 1) % 97 ≠ 25",
+"true": false,
+"reference": "fun h => absurd (h 48 (by decide)) (by decide)",
+"witness": 48
+},
+{
+"id": "residue-2*n^3+n-37-T",
+"group": "residue-2*n^3+n-37",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 37 ≠ 22",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-37-F",
+"group": "residue-2*n^3+n-37",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 37 ≠ 34",
+"true": false,
+"reference": "fun h => absurd (h 36 (by decide)) (by decide)",
+"witness": 36
+},
+{
+"id": "residue-2*n^3+n-41-T",
+"group": "residue-2*n^3+n-41",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 41 ≠ 22",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-41-F",
+"group": "residue-2*n^3+n-41",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 41 ≠ 23",
+"true": false,
+"reference": "fun h => absurd (h 39 (by decide)) (by decide)",
+"witness": 39
+},
+{
+"id": "residue-2*n^3+n-43-T",
+"group": "residue-2*n^3+n-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 43 ≠ 26",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-43-F",
+"group": "residue-2*n^3+n-43",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 43 ≠ 25",
+"true": false,
+"reference": "fun h => absurd (h 41 (by decide)) (by decide)",
+"witness": 41
+},
+{
+"id": "residue-2*n^3+n-47-T",
+"group": "residue-2*n^3+n-47",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 47 ≠ 24",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-47-F",
+"group": "residue-2*n^3+n-47",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 47 ≠ 29",
+"true": false,
+"reference": "fun h => absurd (h 45 (by decide)) (by decide)",
+"witness": 45
+},
+{
+"id": "residue-2*n^3+n-53-T",
+"group": "residue-2*n^3+n-53",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 53 ≠ 29",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-53-F",
+"group": "residue-2*n^3+n-53",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 53 ≠ 50",
+"true": false,
+"reference": "fun h => absurd (h 52 (by decide)) (by decide)",
+"witness": 52
+},
+{
+"id": "residue-2*n^3+n-59-T",
+"group": "residue-2*n^3+n-59",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 59 ≠ 32",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-59-F",
+"group": "residue-2*n^3+n-59",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 59 ≠ 56",
+"true": false,
+"reference": "fun h => absurd (h 58 (by decide)) (by decide)",
+"witness": 58
+},
+{
+"id": "residue-2*n^3+n-61-T",
+"group": "residue-2*n^3+n-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 61 ≠ 33",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-61-F",
+"group": "residue-2*n^3+n-61",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 61 ≠ 4",
+"true": false,
+"reference": "fun h => absurd (h 58 (by decide)) (by decide)",
+"witness": 58
+},
+{
+"id": "residue-2*n^3+n-67-T",
+"group": "residue-2*n^3+n-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 67 ≠ 35",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-67-F",
+"group": "residue-2*n^3+n-67",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 67 ≠ 49",
+"true": false,
+"reference": "fun h => absurd (h 65 (by decide)) (by decide)",
+"witness": 65
+},
+{
+"id": "residue-2*n^3+n-71-T",
+"group": "residue-2*n^3+n-71",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 71 ≠ 39",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-71-F",
+"group": "residue-2*n^3+n-71",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 71 ≠ 68",
+"true": false,
+"reference": "fun h => absurd (h 70 (by decide)) (by decide)",
+"witness": 70
+},
+{
+"id": "residue-2*n^3+n-73-T",
+"group": "residue-2*n^3+n-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 73 ≠ 38",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-73-F",
+"group": "residue-2*n^3+n-73",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 73 ≠ 70",
+"true": false,
+"reference": "fun h => absurd (h 72 (by decide)) (by decide)",
+"witness": 72
+},
+{
+"id": "residue-2*n^3+n-79-T",
+"group": "residue-2*n^3+n-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 79 ≠ 40",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-79-F",
+"group": "residue-2*n^3+n-79",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 79 ≠ 76",
+"true": false,
+"reference": "fun h => absurd (h 78 (by decide)) (by decide)",
+"witness": 78
+},
+{
+"id": "residue-2*n^3+n-83-T",
+"group": "residue-2*n^3+n-83",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 83 ≠ 43",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-83-F",
+"group": "residue-2*n^3+n-83",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 83 ≠ 26",
+"true": false,
+"reference": "fun h => absurd (h 80 (by decide)) (by decide)",
+"witness": 80
+},
+{
+"id": "residue-2*n^3+n-89-T",
+"group": "residue-2*n^3+n-89",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 89 ≠ 48",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-89-F",
+"group": "residue-2*n^3+n-89",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 89 ≠ 71",
+"true": false,
+"reference": "fun h => absurd (h 87 (by decide)) (by decide)",
+"witness": 87
+},
+{
+"id": "residue-2*n^3+n-97-T",
+"group": "residue-2*n^3+n-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 97 ≠ 49",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "residue-2*n^3+n-97-F",
+"group": "residue-2*n^3+n-97",
+"family": "residue",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 120 → (2 * n ^ 3 + n) % 97 ≠ 94",
+"true": false,
+"reference": "fun h => absurd (h 96 (by decide)) (by decide)",
+"witness": 96
+},
+{
+"id": "boundary-0-1-T",
+"group": "boundary-0-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 0",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-0-1-F",
+"group": "boundary-0-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 4 ≤ n → 2 ^ n > n ^ 2 + 0",
+"true": false,
+"reference": "fun h => absurd (h 4 (by decide) (by decide)) (by decide)",
+"witness": 4
+},
+{
+"id": "boundary-0-2-T",
+"group": "boundary-0-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 0",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-0-2-F",
+"group": "boundary-0-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 3 ≤ n → 2 ^ n > n ^ 2 + 0",
+"true": false,
+"reference": "fun h => absurd (h 3 (by decide) (by decide)) (by decide)",
+"witness": 3
+},
+{
+"id": "boundary-1-1-T",
+"group": "boundary-1-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 1",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-1-1-F",
+"group": "boundary-1-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 4 ≤ n → 2 ^ n > n ^ 2 + 1",
+"true": false,
+"reference": "fun h => absurd (h 4 (by decide) (by decide)) (by decide)",
+"witness": 4
+},
+{
+"id": "boundary-1-2-T",
+"group": "boundary-1-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 1",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-1-2-F",
+"group": "boundary-1-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 3 ≤ n → 2 ^ n > n ^ 2 + 1",
+"true": false,
+"reference": "fun h => absurd (h 3 (by decide) (by decide)) (by decide)",
+"witness": 3
+},
+{
+"id": "boundary-3-1-T",
+"group": "boundary-3-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 3",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-3-1-F",
+"group": "boundary-3-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 4 ≤ n → 2 ^ n > n ^ 2 + 3",
+"true": false,
+"reference": "fun h => absurd (h 4 (by decide) (by decide)) (by decide)",
+"witness": 4
+},
+{
+"id": "boundary-3-2-T",
+"group": "boundary-3-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 3",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-3-2-F",
+"group": "boundary-3-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 3 ≤ n → 2 ^ n > n ^ 2 + 3",
+"true": false,
+"reference": "fun h => absurd (h 3 (by decide) (by decide)) (by decide)",
+"witness": 3
+},
+{
+"id": "boundary-5-1-T",
+"group": "boundary-5-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 5",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-5-1-F",
+"group": "boundary-5-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 4 ≤ n → 2 ^ n > n ^ 2 + 5",
+"true": false,
+"reference": "fun h => absurd (h 4 (by decide) (by decide)) (by decide)",
+"witness": 4
+},
+{
+"id": "boundary-5-2-T",
+"group": "boundary-5-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 5",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-5-2-F",
+"group": "boundary-5-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 3 ≤ n → 2 ^ n > n ^ 2 + 5",
+"true": false,
+"reference": "fun h => absurd (h 3 (by decide) (by decide)) (by decide)",
+"witness": 3
+},
+{
+"id": "boundary-9-1-T",
+"group": "boundary-9-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 6 ≤ n → 2 ^ n > n ^ 2 + 9",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-9-1-F",
+"group": "boundary-9-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 9",
+"true": false,
+"reference": "fun h => absurd (h 5 (by decide) (by decide)) (by decide)",
+"witness": 5
+},
+{
+"id": "boundary-9-2-T",
+"group": "boundary-9-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 6 ≤ n → 2 ^ n > n ^ 2 + 9",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-9-2-F",
+"group": "boundary-9-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 4 ≤ n → 2 ^ n > n ^ 2 + 9",
+"true": false,
+"reference": "fun h => absurd (h 4 (by decide) (by decide)) (by decide)",
+"witness": 4
+},
+{
+"id": "boundary-17-1-T",
+"group": "boundary-17-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 6 ≤ n → 2 ^ n > n ^ 2 + 17",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-17-1-F",
+"group": "boundary-17-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 17",
+"true": false,
+"reference": "fun h => absurd (h 5 (by decide) (by decide)) (by decide)",
+"witness": 5
+},
+{
+"id": "boundary-17-2-T",
+"group": "boundary-17-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 6 ≤ n → 2 ^ n > n ^ 2 + 17",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-17-2-F",
+"group": "boundary-17-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 4 ≤ n → 2 ^ n > n ^ 2 + 17",
+"true": false,
+"reference": "fun h => absurd (h 4 (by decide) (by decide)) (by decide)",
+"witness": 4
+},
+{
+"id": "boundary-33-1-T",
+"group": "boundary-33-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 7 ≤ n → 2 ^ n > n ^ 2 + 33",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-33-1-F",
+"group": "boundary-33-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 6 ≤ n → 2 ^ n > n ^ 2 + 33",
+"true": false,
+"reference": "fun h => absurd (h 6 (by decide) (by decide)) (by decide)",
+"witness": 6
+},
+{
+"id": "boundary-33-2-T",
+"group": "boundary-33-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 7 ≤ n → 2 ^ n > n ^ 2 + 33",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-33-2-F",
+"group": "boundary-33-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 33",
+"true": false,
+"reference": "fun h => absurd (h 5 (by decide) (by decide)) (by decide)",
+"witness": 5
+},
+{
+"id": "boundary-65-1-T",
+"group": "boundary-65-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 7 ≤ n → 2 ^ n > n ^ 2 + 65",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-65-1-F",
+"group": "boundary-65-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 6 ≤ n → 2 ^ n > n ^ 2 + 65",
+"true": false,
+"reference": "fun h => absurd (h 6 (by decide) (by decide)) (by decide)",
+"witness": 6
+},
+{
+"id": "boundary-65-2-T",
+"group": "boundary-65-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 7 ≤ n → 2 ^ n > n ^ 2 + 65",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-65-2-F",
+"group": "boundary-65-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 5 ≤ n → 2 ^ n > n ^ 2 + 65",
+"true": false,
+"reference": "fun h => absurd (h 5 (by decide) (by decide)) (by decide)",
+"witness": 5
+},
+{
+"id": "boundary-129-1-T",
+"group": "boundary-129-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 8 ≤ n → 2 ^ n > n ^ 2 + 129",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-129-1-F",
+"group": "boundary-129-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 7 ≤ n → 2 ^ n > n ^ 2 + 129",
+"true": false,
+"reference": "fun h => absurd (h 7 (by decide) (by decide)) (by decide)",
+"witness": 7
+},
+{
+"id": "boundary-129-2-T",
+"group": "boundary-129-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 8 ≤ n → 2 ^ n > n ^ 2 + 129",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-129-2-F",
+"group": "boundary-129-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 6 ≤ n → 2 ^ n > n ^ 2 + 129",
+"true": false,
+"reference": "fun h => absurd (h 6 (by decide) (by decide)) (by decide)",
+"witness": 6
+},
+{
+"id": "boundary-257-1-T",
+"group": "boundary-257-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 9 ≤ n → 2 ^ n > n ^ 2 + 257",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-257-1-F",
+"group": "boundary-257-1",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 8 ≤ n → 2 ^ n > n ^ 2 + 257",
+"true": false,
+"reference": "fun h => absurd (h 8 (by decide) (by decide)) (by decide)",
+"witness": 8
+},
+{
+"id": "boundary-257-2-T",
+"group": "boundary-257-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 9 ≤ n → 2 ^ n > n ^ 2 + 257",
+"true": true,
+"reference": "by decide"
+},
+{
+"id": "boundary-257-2-F",
+"group": "boundary-257-2",
+"family": "boundary",
+"tier": "hard",
+"statement": "∀ n : Nat, n < 60 → 7 ≤ n → 2 ^ n > n ^ 2 + 257",
+"true": false,
+"reference": "fun h => absurd (h 7 (by decide) (by decide)) (by decide)",
+"witness": 7
+},
+{
+"id": "nattrap-sub-add-T",
+"group": "nattrap-sub-add",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b : Nat, b ≤ a → (a - b) + b = a",
+"true": true,
+"reference": "by intro a b h; omega"
+},
+{
+"id": "nattrap-sub-add-F",
+"group": "nattrap-sub-add",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b : Nat, (a - b) + b = a",
+"true": false,
+"reference": "fun h => absurd (h 0 1) (by decide)"
+},
+{
+"id": "nattrap-div-mul-T",
+"group": "nattrap-div-mul",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a : Nat, (2 * a) / 2 = a",
+"true": true,
+"reference": "by intro a; omega"
+},
+{
+"id": "nattrap-div-mul-F",
+"group": "nattrap-div-mul",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a : Nat, (a / 2) * 2 = a",
+"true": false,
+"reference": "fun h => absurd (h 1) (by decide)"
+},
+{
+"id": "nattrap-mod-lt-T",
+"group": "nattrap-mod-lt",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b : Nat, b ≠ 0 → a % b < b",
+"true": true,
+"reference": "by intro a b h; exact Nat.mod_lt a (Nat.pos_of_ne_zero h)"
+},
+{
+"id": "nattrap-mod-lt-F",
+"group": "nattrap-mod-lt",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b : Nat, a % b < b",
+"true": false,
+"reference": "fun h => absurd (h 0 0) (by decide)"
+},
+{
+"id": "nattrap-sub-sub-T",
+"group": "nattrap-sub-sub",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b c : Nat, a - b - c = a - (b + c)",
+"true": true,
+"reference": "by intro a b c; omega"
+},
+{
+"id": "nattrap-sub-sub-F",
+"group": "nattrap-sub-sub",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b c : Nat, a - (b - c) = a - b + c",
+"true": false,
+"reference": "fun h => absurd (h 0 0 1) (by decide)"
+},
+{
+"id": "nattrap-sub-lt-T",
+"group": "nattrap-sub-lt",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b : Nat, 0 < b → b ≤ a → a - b < a",
+"true": true,
+"reference": "by intro a b h1 h2; omega"
+},
+{
+"id": "nattrap-sub-lt-F",
+"group": "nattrap-sub-lt",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b : Nat, 0 < b → a - b < a",
+"true": false,
+"reference": "fun h => absurd (h 0 1 (by decide)) (by decide)"
+},
+{
+"id": "nattrap-div-le-T",
+"group": "nattrap-div-le",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b : Nat, a / b ≤ a",
+"true": true,
+"reference": "by intro a b; exact Nat.div_le_self a b"
+},
+{
+"id": "nattrap-div-le-F",
+"group": "nattrap-div-le",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b : Nat, 0 < b → a / b < a",
+"true": false,
+"reference": "fun h => absurd (h 0 1 (by decide)) (by decide)"
+},
+{
+"id": "nattrap-mul-sub-T",
+"group": "nattrap-mul-sub",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b c : Nat, c * (a - b) = c * a - c * b",
+"true": true,
+"reference": "by intro a b c; exact Nat.mul_sub_left_distrib c a b"
+},
+{
+"id": "nattrap-mul-sub-F",
+"group": "nattrap-mul-sub",
+"family": "nattrap",
+"tier": "medium",
+"statement": "∀ a b c : Nat, (a - b) * c = a * c - b + c",
+"true": false,
+"reference": "fun h => absurd (h 0 1 1) (by decide)"
+},
+{
+"id": "sat-8-0-T",
+"group": "sat-8-0",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 : Bool, ((x1 || x2 || x4) && (x3 || x4 || x6) && (!x7 || !x6 || !x4) && (!x4 || x6 || x0) && (!x5 || x1 || x3) && (x6 || x5 || !x4) && (!x4 || x2 || x3) && (!x4 || !x0 || !x5) && (!x7 || x6 || x0) && (!x7 || !x3 || x4) && (x7 || x4 || x6) && (x0 || !x5 || x4) && (x7 || x1 || !x3) && (x7 || x5 || x3) && (x4 || !x7 || x3) && (!x7 || !x6 || !x3) && (x0 || x1 || x5) && (!x7 || !x2 || x1) && (x7 || x6 || x3) && (!x5 || x3 || x0) && (x4 || x3 || !x1) && (x1 || !x5 || !x2) && (x6 || !x1 || !x3) && (!x1 || x4 || x7) && (!x4 || !x5 || x6) && (x7 || x5 || !x6) && (x2 || !x4 || x5) && (!x2 || !x6 || x4) && (x3 || !x7 || !x0) && (x5 || x7 || !x2) && (!x7 || !x2 || !x5) && (x7 || !x4 || x6) && (!x6 || !x4 || x2) && (x6 || !x0 || x1)) = true",
+"true": true,
+"reference": "by decide",
+"models": 1
+},
+{
+"id": "sat-8-0-F",
+"group": "sat-8-0",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 : Bool, ((!x0 || !x3 || x6) && (!x7 || x2 || !x3) && (!x1 || !x3 || !x4) && (!x4 || x3 || !x7) && (!x1 || !x3 || !x5) && (!x4 || x1 || x6) && (!x6 || x0 || x1) && (!x5 || !x2 || x7) && (!x7 || x3 || !x5) && (!x3 || x7 || !x5) && (!x4 || x2 || !x3) && (!x3 || !x1 || !x0) && (x4 || x0 || x5) && (!x5 || x1 || !x6) && (x7 || !x4 || x5) && (x3 || !x6 || !x5) && (x7 || x2 || x0) && (x2 || x7 || x6) && (!x5 || !x0 || x3) && (!x0 || x7 || !x6) && (x6 || !x1 || !x3) && (x6 || !x3 || !x7) && (!x7 || !x6 || x1) && (x1 || x4 || !x6) && (x3 || !x6 || x5) && (!x7 || !x2 || !x4) && (!x0 || x7 || x2) && (!x0 || x3 || x4) && (!x5 || x0 || !x2) && (x4 || !x2 || !x0) && (!x6 || !x0 || x3) && (!x5 || x1 || !x2) && (x7 || !x0 || !x4) && (!x1 || !x5 || x7)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-8-1-T",
+"group": "sat-8-1",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 : Bool, ((!x4 || x3 || x0) && (!x7 || !x5 || x6) && (x4 || !x3 || !x2) && (!x0 || x3 || !x2) && (!x4 || !x7 || !x5) && (x6 || x7 || x0) && (!x4 || x3 || x7) && (x5 || !x3 || !x2) && (x2 || x6 || x7) && (x6 || x5 || !x0) && (x3 || x1 || x7) && (!x4 || x6 || x5) && (!x5 || x2 || x7) && (x2 || !x4 || !x6) && (x0 || !x6 || !x5) && (x2 || x1 || !x7) && (!x2 || !x1 || !x5) && (!x7 || x4 || x0) && (x1 || !x3 || !x5) && (!x0 || !x3 || x7) && (!x4 || !x2 || x0) && (!x6 || x5 || !x3) && (!x7 || x1 || !x2) && (x6 || x3 || x2) && (!x7 || x4 || !x6) && (!x3 || x0 || x6) && (x1 || !x7 || x6) && (x6 || x0 || x4) && (!x4 || !x2 || x5) && (!x4 || !x6 || x2) && (!x3 || x2 || !x7) && (x5 || !x6 || !x2) && (!x1 || !x6 || !x2) && (!x7 || x4 || x0)) = true",
+"true": true,
+"reference": "by decide",
+"models": 2
+},
+{
+"id": "sat-8-1-F",
+"group": "sat-8-1",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 : Bool, ((!x3 || !x7 || x4) && (!x0 || !x7 || x3) && (!x5 || !x4 || !x3) && (x1 || !x5 || !x4) && (!x6 || !x5 || x2) && (!x1 || !x0 || x6) && (!x0 || !x7 || x3) && (!x2 || x4 || x1) && (!x1 || !x0 || !x4) && (x4 || x2 || !x6) && (!x7 || !x0 || x4) && (x3 || !x0 || x4) && (!x1 || !x2 || !x6) && (!x4 || x0 || !x5) && (!x4 || !x0 || x2) && (x0 || !x2 || x1) && (!x0 || !x7 || x5) && (x5 || x3 || x4) && (x4 || !x7 || x3) && (x7 || x0 || x4) && (!x4 || x0 || x5) && (x6 || !x4 || x5) && (x4 || x7 || x6) && (x1 || !x0 || !x6) && (!x6 || x2 || !x4) && (x5 || x3 || !x1) && (!x7 || !x4 || !x2) && (!x6 || x1 || x2) && (x0 || x2 || !x7) && (x4 || x7 || !x3) && (!x1 || x2 || x3) && (x0 || !x1 || !x6) && (x3 || !x2 || x0) && (x2 || !x3 || x0)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-8-2-T",
+"group": "sat-8-2",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 : Bool, ((x7 || !x4 || !x3) && (!x0 || x7 || !x3) && (x0 || x5 || x7) && (!x5 || !x7 || !x1) && (!x7 || x5 || x1) && (!x6 || !x0 || !x3) && (x1 || !x4 || !x3) && (!x3 || !x7 || !x5) && (!x3 || x6 || x4) && (x0 || !x2 || x4) && (x5 || x6 || !x1) && (x1 || !x6 || x0) && (!x3 || x1 || x0) && (!x5 || x0 || !x2) && (x1 || !x3 || x4) && (x7 || !x6 || x4) && (x3 || !x5 || !x6) && (!x1 || x2 || !x7) && (x4 || !x0 || x5) && (x3 || !x7 || !x0) && (!x1 || !x7 || !x0) && (!x2 || !x1 || x6) && (x6 || !x2 || !x5) && (x1 || x5 || x7) && (x3 || !x6 || x7) && (!x2 || !x3 || !x4) && (x7 || !x5 || x3) && (x1 || x5 || !x6) && (x6 || x1 || x2) && (x2 || x7 || !x5) && (x2 || !x5 || !x3) && (x2 || !x4 || !x6) && (!x0 || !x4 || !x6) && (x7 || !x4 || x2)) = true",
+"true": true,
+"reference": "by decide",
+"models": 1
+},
+{
+"id": "sat-8-2-F",
+"group": "sat-8-2",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 : Bool, ((!x5 || !x1 || x4) && (!x1 || !x7 || x2) && (!x3 || x7 || !x1) && (x7 || !x4 || x3) && (x5 || x3 || !x6) && (x7 || x2 || x6) && (!x0 || x1 || !x4) && (x1 || !x7 || !x6) && (!x4 || x0 || !x5) && (!x2 || !x7 || x0) && (x2 || !x3 || !x4) && (!x5 || x1 || x3) && (!x4 || !x0 || x5) && (x4 || x5 || x2) && (!x4 || !x0 || !x6) && (x5 || !x6 || !x0) && (!x7 || x5 || !x0) && (!x0 || x6 || !x7) && (x5 || x1 || x7) && (x4 || !x0 || !x3) && (!x3 || x4 || x7) && (x2 || x4 || x7) && (x2 || x5 || !x4) && (x7 || x5 || !x0) && (!x4 || !x1 || !x5) && (!x5 || x3 || x6) && (x4 || x6 || x1) && (!x5 || x0 || !x2) && (!x4 || x3 || x1) && (x3 || !x1 || x6) && (x1 || !x5 || !x6) && (x4 || x3 || !x1) && (x3 || !x6 || !x5) && (x3 || !x0 || x1)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-8-3-T",
+"group": "sat-8-3",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 : Bool, ((!x7 || x4 || !x0) && (x1 || !x6 || !x3) && (x4 || !x2 || !x3) && (!x5 || x6 || !x1) && (!x4 || x5 || !x3) && (!x1 || !x7 || x3) && (!x3 || x4 || x6) && (!x4 || x2 || !x3) && (x3 || x2 || !x1) && (x6 || x5 || x3) && (x5 || !x4 || x2) && (x4 || x6 || !x5) && (x5 || !x6 || x3) && (x6 || x4 || x2) && (x6 || !x2 || !x5) && (!x2 || x3 || !x4) && (x3 || x2 || !x0) && (x6 || x0 || x3) && (!x1 || x3 || !x7) && (x1 || !x6 || !x2) && (x1 || x6 || !x7) && (!x2 || !x0 || !x6) && (x1 || !x4 || !x3) && (!x7 || !x3 || !x0) && (!x1 || x0 || !x3) && (!x3 || !x7 || x0) && (x4 || x2 || !x3) && (!x1 || x3 || !x5) && (x6 || !x7 || x4) && (!x2 || x4 || !x3) && (x7 || x2 || !x3) && (x7 || !x1 || !x2) && (!x1 || x6 || x4) && (x5 || x7 || !x2)) = true",
+"true": true,
+"reference": "by decide",
+"models": 4
+},
+{
+"id": "sat-8-3-F",
+"group": "sat-8-3",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 : Bool, ((x7 || !x2 || x5) && (x3 || x6 || x4) && (x3 || !x6 || !x2) && (x6 || !x3 || !x0) && (x7 || x6 || !x5) && (!x5 || !x6 || !x1) && (!x6 || !x2 || x0) && (!x5 || x2 || !x0) && (!x1 || x2 || !x6) && (!x0 || !x6 || x1) && (!x2 || x6 || !x0) && (!x2 || !x6 || x7) && (!x0 || x5 || !x7) && (x5 || !x7 || x1) && (x1 || x3 || !x6) && (!x5 || x1 || !x4) && (x0 || !x7 || x4) && (x4 || !x0 || x3) && (!x0 || x7 || !x5) && (x5 || x6 || !x1) && (!x7 || x3 || !x1) && (x1 || !x3 || x4) && (!x0 || !x2 || !x4) && (x6 || x2 || !x0) && (!x5 || x2 || x1) && (x4 || !x7 || !x2) && (x6 || !x4 || x1) && (x3 || x2 || !x0) && (x3 || x5 || !x6) && (!x2 || x1 || !x7) && (!x7 || !x1 || !x3) && (x2 || x5 || !x6) && (!x3 || !x2 || x7) && (x0 || !x5 || !x6)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-10-0-T",
+"group": "sat-10-0",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 : Bool, ((x9 || x0 || x3) && (!x2 || !x4 || !x5) && (x9 || !x8 || !x7) && (x4 || x0 || !x8) && (!x7 || x3 || !x1) && (x8 || x7 || !x4) && (x0 || x8 || !x4) && (x5 || !x1 || x3) && (!x0 || !x3 || x4) && (!x0 || !x7 || x9) && (x0 || !x6 || !x3) && (!x0 || x4 || x6) && (!x3 || x6 || !x0) && (!x0 || !x4 || x5) && (x0 || x6 || x1) && (!x5 || !x9 || !x3) && (!x1 || !x9 || !x0) && (!x0 || x7 || !x5) && (x1 || !x2 || x7) && (!x4 || x1 || x6) && (x9 || !x1 || !x2) && (!x2 || !x3 || !x5) && (!x9 || !x6 || !x3) && (!x6 || !x1 || !x3) && (x7 || !x3 || !x8) && (!x6 || x2 || !x3) && (!x5 || x1 || !x4) && (x0 || x5 || x2) && (!x6 || x9 || x8) && (!x4 || !x6 || !x0) && (!x1 || x8 || x3) && (!x7 || x0 || !x2) && (x2 || x7 || !x4) && (!x4 || !x8 || x5) && (x6 || x4 || !x5) && (x8 || x5 || x2) && (!x5 || x4 || !x2) && (x6 || x8 || !x3) && (!x1 || x7 || x5) && (x2 || !x0 || x4) && (x6 || !x2 || !x0) && (!x1 || !x2 || !x7) && (x5 || x7 || x8)) = true",
+"true": true,
+"reference": "by decide",
+"models": 4
+},
+{
+"id": "sat-10-0-F",
+"group": "sat-10-0",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 : Bool, ((x8 || x3 || x1) && (!x1 || !x4 || !x8) && (x4 || x5 || !x3) && (x5 || x7 || !x8) && (x8 || x1 || !x0) && (x0 || x1 || !x9) && (x9 || x8 || x2) && (!x6 || !x0 || !x9) && (!x2 || x4 || x3) && (!x5 || !x7 || x1) && (x7 || !x8 || !x6) && (x1 || x4 || !x2) && (!x6 || x3 || !x7) && (x4 || !x0 || !x3) && (!x3 || x2 || !x6) && (x8 || !x4 || !x5) && (!x5 || !x3 || !x9) && (!x2 || x0 || x3) && (!x8 || !x6 || !x1) && (x2 || !x0 || x5) && (x7 || !x9 || x3) && (x6 || x4 || !x8) && (!x2 || x8 || !x4) && (!x2 || x4 || !x8) && (!x2 || !x6 || !x4) && (!x5 || x8 || !x7) && (x4 || !x6 || !x5) && (!x7 || !x9 || !x1) && (x5 || !x9 || !x3) && (x9 || x2 || !x0) && (x8 || x0 || x3) && (!x4 || !x0 || !x8) && (x1 || !x4 || x6) && (!x4 || x2 || !x5) && (!x2 || !x0 || !x7) && (x8 || !x6 || !x2) && (!x2 || x4 || x0) && (x3 || !x0 || !x6) && (!x2 || x1 || !x9) && (x2 || !x7 || !x5) && (!x2 || !x1 || !x6) && (x3 || !x4 || x0) && (x2 || x6 || !x8)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-10-1-T",
+"group": "sat-10-1",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 : Bool, ((!x4 || !x0 || x5) && (!x3 || x0 || x6) && (x9 || x1 || x7) && (!x1 || !x0 || x6) && (!x0 || !x1 || !x4) && (!x2 || x7 || !x5) && (x1 || x0 || x4) && (!x4 || x9 || x3) && (x9 || x5 || x8) && (!x4 || x5 || x9) && (x3 || x5 || !x7) && (!x7 || !x4 || x5) && (!x7 || x6 || x1) && (!x6 || x2 || x7) && (x2 || x4 || !x8) && (x1 || !x2 || x7) && (!x5 || x0 || x2) && (!x5 || !x2 || !x0) && (x6 || !x8 || x5) && (!x9 || x0 || x5) && (!x1 || !x3 || x8) && (!x6 || x7 || x8) && (!x2 || x1 || x8) && (x9 || !x0 || x6) && (!x1 || x3 || x5) && (!x0 || x3 || !x4) && (x7 || x8 || x4) && (!x8 || !x2 || !x1) && (!x2 || !x1 || !x4) && (!x1 || x4 || !x3) && (!x2 || !x5 || !x9) && (x6 || x7 || x1) && (!x5 || !x3 || !x9) && (!x4 || !x7 || x1) && (x8 || !x3 || !x1) && (x8 || !x9 || !x7) && (x8 || x1 || !x9) && (!x5 || !x6 || x0) && (x1 || !x2 || !x7) && (x7 || x6 || !x1) && (x8 || x4 || x5) && (!x4 || x5 || x1) && (!x4 || x7 || !x6)) = true",
+"true": true,
+"reference": "by decide",
+"models": 4
+},
+{
+"id": "sat-10-1-F",
+"group": "sat-10-1",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 : Bool, ((!x5 || !x9 || !x0) && (x9 || x7 || !x2) && (x2 || x5 || !x6) && (x7 || !x8 || x0) && (!x0 || !x1 || !x4) && (!x5 || x1 || x8) && (x9 || !x0 || !x4) && (!x0 || !x3 || x6) && (x6 || !x4 || x8) && (x5 || !x3 || !x0) && (x0 || x2 || !x3) && (!x0 || x3 || x2) && (!x5 || x7 || !x2) && (!x5 || x6 || x4) && (!x4 || !x1 || !x0) && (x5 || !x2 || !x1) && (x2 || x1 || !x7) && (!x6 || !x3 || !x0) && (!x4 || !x5 || x3) && (x0 || !x7 || !x6) && (!x2 || !x7 || x4) && (!x8 || x9 || x6) && (!x8 || !x9 || !x4) && (x1 || x3 || !x6) && (!x7 || !x3 || !x2) && (x4 || x2 || !x7) && (!x5 || x7 || !x4) && (x2 || !x4 || x5) && (!x1 || x8 || !x0) && (!x6 || x2 || x0) && (x2 || !x3 || !x4) && (!x1 || x3 || !x4) && (x8 || !x2 || !x9) && (x6 || !x2 || x1) && (x8 || !x0 || x7) && (x2 || !x5 || !x3) && (!x6 || x8 || x1) && (x3 || x8 || x6) && (x3 || x8 || !x6) && (!x7 || x5 || !x3) && (!x8 || x3 || !x4) && (x9 || x7 || x5) && (x8 || x0 || x1)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-10-2-T",
+"group": "sat-10-2",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 : Bool, ((x1 || !x8 || !x7) && (!x2 || x8 || !x4) && (!x5 || x2 || x7) && (x0 || x6 || x1) && (x9 || x7 || x8) && (x2 || x1 || x6) && (x5 || x7 || x9) && (!x1 || !x7 || !x0) && (!x3 || !x8 || x2) && (!x9 || x0 || x8) && (x0 || !x9 || !x6) && (!x2 || !x9 || x3) && (x8 || !x3 || x1) && (x2 || !x4 || x6) && (!x6 || !x4 || !x2) && (!x0 || !x7 || !x2) && (!x5 || !x9 || !x3) && (!x8 || x4 || x0) && (!x1 || x5 || x3) && (!x7 || !x2 || x8) && (!x2 || x4 || !x6) && (!x4 || !x7 || !x3) && (x6 || x3 || x0) && (!x8 || !x9 || !x4) && (!x0 || x2 || x4) && (x2 || x6 || x9) && (!x4 || !x9 || !x7) && (x0 || !x4 || !x6) && (!x8 || !x4 || x9) && (x4 || x8 || x5) && (x5 || !x4 || x9) && (x2 || x0 || !x9) && (!x5 || !x7 || !x8) && (!x3 || x8 || !x4) && (x0 || x3 || x1) && (x6 || x4 || !x7) && (x3 || !x5 || x1) && (!x6 || !x8 || x3) && (x7 || x5 || x6) && (x1 || x3 || x4) && (!x2 || !x0 || !x4) && (!x1 || x4 || x9) && (!x0 || x1 || !x5)) = true",
+"true": true,
+"reference": "by decide",
+"models": 1
+},
+{
+"id": "sat-10-2-F",
+"group": "sat-10-2",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 : Bool, ((!x2 || x6 || !x0) && (x7 || x8 || x0) && (!x3 || !x2 || x4) && (!x6 || x9 || x5) && (x1 || !x9 || !x8) && (!x3 || !x0 || !x4) && (x5 || x3 || x7) && (x4 || !x7 || !x8) && (!x5 || !x2 || !x8) && (!x6 || x9 || x1) && (!x8 || !x6 || x9) && (x5 || !x9 || !x4) && (!x7 || !x0 || !x6) && (x5 || x3 || x1) && (!x5 || x7 || !x3) && (!x1 || x9 || !x4) && (!x1 || !x0 || !x8) && (x8 || x9 || !x0) && (x8 || !x5 || !x3) && (!x4 || !x2 || !x7) && (x0 || x7 || x6) && (!x4 || x1 || x3) && (!x9 || x3 || x1) && (x2 || !x8 || x4) && (!x7 || x9 || !x4) && (x2 || !x6 || !x8) && (x6 || !x8 || x0) && (x8 || x5 || !x4) && (x6 || !x1 || !x2) && (x0 || x4 || x6) && (!x9 || !x8 || x6) && (x2 || x4 || x8) && (!x0 || x4 || x3) && (x7 || !x6 || !x4) && (!x2 || x8 || !x6) && (x8 || !x9 || !x5) && (x1 || !x0 || !x6) && (!x9 || x2 || !x8) && (!x7 || x5 || x8) && (!x5 || !x1 || x4) && (x3 || x2 || !x0) && (!x5 || !x0 || !x3) && (x6 || x8 || !x1)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-10-3-T",
+"group": "sat-10-3",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 : Bool, ((x3 || x8 || !x6) && (x4 || !x8 || x0) && (!x1 || x0 || x7) && (x6 || x7 || !x0) && (x5 || x4 || x2) && (!x0 || !x2 || !x9) && (x0 || !x5 || x6) && (!x2 || x4 || x0) && (x7 || x5 || !x2) && (!x0 || !x5 || x7) && (!x6 || !x7 || !x5) && (!x0 || x3 || x8) && (x7 || x9 || !x0) && (x0 || !x8 || x6) && (!x3 || !x8 || !x7) && (!x0 || x1 || !x3) && (x3 || !x1 || !x5) && (!x8 || x6 || !x1) && (x1 || x6 || x0) && (x7 || !x0 || !x6) && (!x9 || x6 || !x3) && (x5 || !x2 || x6) && (!x5 || !x6 || x4) && (!x7 || !x0 || !x8) && (!x7 || x2 || x9) && (!x6 || x9 || x3) && (!x3 || x8 || x7) && (x7 || x0 || !x1) && (!x8 || x1 || !x9) && (x5 || x1 || !x4) && (!x6 || !x4 || !x2) && (x5 || !x8 || x3) && (x1 || x3 || x8) && (x4 || x1 || !x9) && (!x8 || !x9 || !x2) && (!x1 || !x2 || x3) && (x4 || !x5 || !x6) && (!x8 || x3 || !x6) && (!x7 || x3 || !x5) && (x9 || !x8 || x4) && (x4 || x7 || !x9) && (!x1 || !x7 || x9) && (x5 || x7 || x0)) = true",
+"true": true,
+"reference": "by decide",
+"models": 4
+},
+{
+"id": "sat-10-3-F",
+"group": "sat-10-3",
+"family": "sat",
+"tier": "medium",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 : Bool, ((!x8 || !x3 || !x0) && (x9 || !x3 || !x6) && (x7 || !x6 || !x9) && (!x7 || x8 || x0) && (!x7 || x6 || !x1) && (x3 || !x5 || x0) && (!x6 || x3 || !x2) && (!x5 || x4 || !x2) && (!x3 || !x1 || !x6) && (!x1 || !x9 || !x5) && (!x9 || x8 || !x0) && (x6 || x1 || !x5) && (!x7 || !x4 || !x6) && (x5 || x0 || !x9) && (!x4 || x6 || !x7) && (!x3 || x7 || !x2) && (x7 || x3 || !x0) && (x6 || x2 || !x7) && (x4 || x9 || x8) && (!x8 || !x1 || x3) && (!x4 || !x7 || !x0) && (!x7 || x4 || x8) && (!x4 || x0 || x2) && (!x9 || x8 || x4) && (!x4 || !x5 || x1) && (x9 || !x3 || !x7) && (!x4 || !x2 || x8) && (!x9 || !x5 || x8) && (!x8 || x3 || !x7) && (x3 || x2 || x6) && (!x0 || x1 || !x7) && (x1 || !x4 || x3) && (!x2 || !x6 || !x3) && (x1 || !x8 || !x2) && (x7 || !x9 || x8) && (!x3 || x6 || x9) && (x9 || !x7 || !x3) && (!x8 || x5 || x4) && (x5 || x0 || !x9) && (x2 || !x5 || !x6) && (x5 || x8 || !x0) && (!x4 || !x9 || !x0) && (x8 || !x1 || x9)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-12-0-T",
+"group": "sat-12-0",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 : Bool, ((x5 || !x2 || !x6) && (!x2 || !x8 || x7) && (!x11 || x7 || x9) && (!x8 || !x10 || x6) && (x2 || !x4 || x1) && (!x2 || !x11 || !x1) && (!x0 || x7 || x11) && (x8 || x6 || x10) && (!x0 || x3 || x8) && (x11 || x4 || x0) && (x0 || x8 || x2) && (x10 || !x3 || !x11) && (x4 || x3 || x7) && (x8 || x10 || x1) && (!x0 || x8 || !x7) && (!x4 || !x6 || !x3) && (!x8 || x9 || !x0) && (!x1 || x9 || x7) && (x0 || x11 || !x3) && (x7 || !x4 || !x2) && (!x3 || x0 || x7) && (!x10 || !x11 || x3) && (x9 || !x10 || x6) && (!x0 || !x7 || x6) && (x10 || x2 || !x7) && (x0 || !x3 || x7) && (x10 || !x11 || !x1) && (x2 || !x7 || !x5) && (!x1 || x11 || x5) && (x11 || x1 || !x6) && (!x8 || !x4 || x1) && (!x3 || !x0 || x1) && (x1 || x7 || !x3) && (!x7 || !x0 || x10) && (x5 || !x1 || x10) && (x4 || x0 || !x10) && (!x7 || !x2 || x3) && (!x0 || !x2 || x3) && (!x10 || x7 || x11) && (!x11 || x10 || !x0) && (!x5 || x11 || !x10) && (x7 || x10 || x3) && (!x8 || x7 || x5) && (!x6 || !x3 || !x9) && (!x2 || x1 || !x8) && (x0 || !x4 || !x7) && (x7 || x3 || x6) && (!x6 || x0 || x8) && (!x9 || x0 || x11) && (x11 || !x5 || x3) && (!x5 || !x1 || x10)) = true",
+"true": true,
+"reference": "by decide",
+"models": 4
+},
+{
+"id": "sat-12-0-F",
+"group": "sat-12-0",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 : Bool, ((!x7 || !x0 || !x11) && (!x5 || !x1 || x11) && (x2 || x6 || x9) && (x5 || !x4 || !x8) && (x7 || !x5 || x8) && (x4 || x11 || x7) && (x5 || !x11 || !x4) && (!x8 || !x10 || !x7) && (!x3 || !x8 || !x2) && (!x5 || x3 || !x2) && (!x7 || x1 || x6) && (x2 || x8 || !x0) && (!x11 || !x3 || x1) && (!x11 || !x2 || !x3) && (!x7 || x11 || !x0) && (!x6 || x4 || !x8) && (!x4 || x8 || !x6) && (!x7 || !x5 || x1) && (x3 || !x11 || !x10) && (!x3 || x8 || x6) && (x10 || !x9 || !x8) && (x1 || x3 || x5) && (!x3 || !x8 || x10) && (!x6 || x11 || x5) && (x6 || x3 || !x1) && (x2 || x0 || x8) && (!x9 || x2 || x6) && (!x7 || !x9 || x1) && (x6 || x9 || x4) && (!x2 || !x8 || !x0) && (!x5 || x3 || !x9) && (x0 || !x9 || !x11) && (x6 || x2 || x5) && (x6 || x7 || x5) && (!x1 || x4 || !x5) && (x10 || !x2 || !x5) && (!x8 || x4 || x11) && (!x5 || !x0 || x7) && (!x10 || !x4 || x0) && (x5 || !x3 || !x11) && (x3 || x4 || !x11) && (!x6 || x3 || !x11) && (!x10 || x9 || !x0) && (x11 || x9 || x10) && (x6 || x7 || !x11) && (x8 || x3 || !x4) && (!x8 || x9 || !x4) && (!x0 || !x2 || x7) && (!x5 || x9 || !x2) && (!x4 || !x8 || x1) && (!x4 || !x0 || x8)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-12-1-T",
+"group": "sat-12-1",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 : Bool, ((x1 || x5 || !x8) && (x4 || x7 || !x9) && (x8 || x3 || x10) && (x1 || x8 || !x3) && (x6 || x3 || !x10) && (!x3 || !x2 || x10) && (x4 || !x3 || x7) && (x11 || x3 || x5) && (!x9 || !x10 || !x5) && (x5 || !x8 || !x1) && (!x8 || x11 || !x2) && (!x8 || !x9 || !x11) && (x2 || !x4 || !x6) && (!x5 || x0 || !x3) && (!x2 || !x10 || x6) && (x6 || x3 || !x1) && (!x7 || x2 || x3) && (x1 || !x3 || !x9) && (!x11 || x10 || x0) && (x1 || x11 || x9) && (x2 || x11 || x6) && (x7 || !x3 || !x4) && (x11 || x9 || x3) && (x9 || x6 || x7) && (!x0 || x3 || !x4) && (!x2 || x9 || x11) && (x9 || !x3 || !x7) && (x3 || x8 || !x10) && (x8 || x7 || x5) && (x1 || x9 || !x11) && (x3 || x2 || x9) && (x4 || !x3 || x7) && (x0 || !x11 || x1) && (x6 || x2 || !x11) && (!x5 || x6 || x3) && (x8 || x11 || x10) && (!x8 || x6 || x10) && (!x8 || !x9 || !x10) && (x5 || !x6 || !x0) && (!x5 || !x0 || !x7) && (x10 || x4 || !x3) && (!x5 || x10 || x1) && (x11 || x7 || !x0) && (x8 || x7 || !x0) && (x11 || !x7 || x4) && (x0 || !x8 || !x1) && (x8 || x3 || !x11) && (!x0 || !x7 || x5) && (!x4 || !x6 || x8) && (x6 || x10 || x4) && (!x9 || !x2 || x11)) = true",
+"true": true,
+"reference": "by decide",
+"models": 4
+},
+{
+"id": "sat-12-1-F",
+"group": "sat-12-1",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 : Bool, ((x7 || x3 || !x9) && (!x5 || x9 || !x3) && (!x6 || x8 || x10) && (!x7 || !x5 || x2) && (!x6 || x9 || !x1) && (!x9 || x4 || !x10) && (!x11 || x7 || !x0) && (!x7 || !x3 || x9) && (x7 || !x2 || x4) && (x0 || x2 || !x6) && (x3 || !x9 || x1) && (x1 || !x7 || x5) && (!x11 || !x5 || !x2) && (!x2 || x3 || x0) && (!x2 || !x4 || !x3) && (!x5 || !x2 || !x4) && (!x7 || x0 || !x3) && (x10 || x6 || x0) && (x7 || !x3 || x0) && (x6 || x2 || !x1) && (x0 || x7 || x10) && (!x10 || !x3 || !x11) && (!x10 || !x9 || !x1) && (!x3 || !x10 || !x5) && (!x0 || !x7 || x11) && (x8 || !x0 || !x11) && (!x5 || !x7 || !x9) && (!x9 || x0 || x5) && (x6 || !x10 || x1) && (!x0 || !x10 || x3) && (x4 || !x2 || x10) && (!x5 || x7 || !x2) && (!x7 || !x5 || !x8) && (!x10 || x0 || x1) && (x4 || !x8 || !x7) && (!x10 || !x2 || !x5) && (!x9 || !x0 || x2) && (x5 || !x2 || x10) && (x5 || !x1 || x11) && (x2 || x8 || x9) && (!x10 || !x5 || !x4) && (!x7 || x10 || x6) && (x11 || !x5 || !x3) && (x9 || x8 || x5) && (x2 || x5 || x3) && (x6 || !x2 || !x7) && (!x1 || !x5 || x7) && (x7 || x0 || x2) && (x3 || !x10 || x2) && (!x7 || x0 || !x4) && (x2 || x9 || x7)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-12-2-T",
+"group": "sat-12-2",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 : Bool, ((x4 || !x3 || x2) && (x7 || !x6 || !x5) && (!x10 || x6 || x9) && (!x11 || !x5 || !x9) && (!x11 || x0 || x6) && (x7 || !x5 || !x2) && (!x6 || x10 || x2) && (!x10 || x11 || x0) && (x6 || x4 || !x2) && (!x11 || !x4 || x2) && (!x7 || x1 || !x0) && (!x7 || x2 || x8) && (!x7 || !x3 || x10) && (!x10 || x4 || x1) && (!x5 || !x3 || !x9) && (!x4 || !x1 || x2) && (!x9 || x8 || x5) && (!x3 || !x7 || !x4) && (!x10 || x1 || x7) && (x10 || x6 || !x7) && (!x6 || !x8 || x11) && (x4 || x6 || x7) && (!x11 || !x0 || x1) && (x9 || x0 || !x10) && (x5 || !x10 || x8) && (!x9 || x4 || x2) && (x5 || x3 || !x9) && (!x2 || !x0 || !x11) && (x7 || x3 || !x9) && (!x4 || x6 || x1) && (!x10 || !x8 || !x11) && (!x6 || x10 || x9) && (!x1 || x6 || x8) && (x4 || !x5 || x10) && (!x0 || !x3 || !x10) && (!x9 || !x0 || x7) && (x4 || x0 || x8) && (!x9 || x1 || x7) && (x4 || x10 || x7) && (x1 || x3 || !x7) && (!x7 || !x10 || !x4) && (!x4 || !x8 || !x11) && (!x0 || !x3 || x2) && (!x5 || !x8 || !x7) && (x11 || !x6 || !x2) && (!x10 || x5 || !x0) && (!x4 || !x2 || !x9) && (!x4 || !x7 || !x9) && (!x3 || x10 || !x11) && (x11 || x4 || x6) && (!x8 || x1 || x6)) = true",
+"true": true,
+"reference": "by decide",
+"models": 4
+},
+{
+"id": "sat-12-2-F",
+"group": "sat-12-2",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 : Bool, ((!x8 || !x7 || x11) && (!x0 || x2 || !x3) && (!x6 || !x4 || x9) && (x7 || x9 || x4) && (!x3 || x5 || x1) && (x5 || !x10 || x1) && (!x9 || x10 || x5) && (!x1 || x0 || !x7) && (x6 || x11 || !x1) && (x4 || x3 || !x5) && (x10 || x9 || !x6) && (x3 || x4 || x5) && (x11 || x8 || x2) && (x4 || !x5 || x0) && (x2 || !x11 || !x0) && (x6 || x7 || !x8) && (!x11 || x3 || !x9) && (!x8 || !x11 || !x1) && (x8 || !x9 || !x5) && (x0 || !x5 || !x11) && (x9 || !x6 || x8) && (!x4 || x9 || !x6) && (x6 || !x1 || x8) && (!x8 || x5 || !x0) && (x11 || !x5 || !x10) && (!x6 || x7 || x3) && (x2 || x7 || !x5) && (!x11 || !x0 || !x5) && (x0 || !x11 || x5) && (x4 || !x2 || !x0) && (x2 || x0 || !x11) && (x5 || x9 || x6) && (!x7 || x6 || !x2) && (x7 || x9 || !x6) && (!x11 || !x9 || x1) && (x7 || !x1 || !x9) && (!x9 || x8 || x10) && (x5 || !x8 || !x10) && (x10 || !x4 || !x8) && (x10 || x3 || x2) && (x4 || !x6 || !x10) && (x10 || !x2 || x0) && (x5 || !x10 || x1) && (x6 || !x10 || x0) && (x3 || !x0 || !x6) && (!x5 || x11 || x4) && (x2 || !x0 || x5) && (!x2 || x5 || !x1) && (!x0 || x7 || !x5) && (!x5 || x8 || x10) && (x6 || !x11 || x10)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-12-3-T",
+"group": "sat-12-3",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 : Bool, ((x11 || !x9 || x4) && (x5 || x10 || !x6) && (!x9 || !x1 || x8) && (!x3 || x10 || !x0) && (!x0 || !x3 || !x8) && (x8 || x3 || x4) && (!x2 || !x3 || x0) && (!x11 || !x8 || x1) && (!x1 || !x6 || x2) && (x6 || !x0 || !x3) && (!x3 || x10 || x7) && (!x7 || !x5 || !x10) && (x8 || !x10 || x5) && (!x0 || x5 || x1) && (!x8 || x3 || !x1) && (x9 || !x4 || x7) && (!x1 || !x4 || x7) && (!x5 || x4 || !x11) && (x9 || !x7 || !x5) && (x0 || x9 || !x6) && (!x4 || x1 || x6) && (!x11 || x1 || x3) && (x3 || !x7 || !x2) && (!x4 || !x3 || !x2) && (!x2 || x0 || x3) && (x0 || !x7 || x9) && (!x5 || !x2 || !x6) && (x10 || !x4 || x5) && (!x8 || x3 || x11) && (x3 || x10 || x0) && (!x1 || !x7 || x11) && (x4 || x9 || !x8) && (x8 || !x9 || x4) && (x10 || x6 || x1) && (!x0 || x10 || x3) && (!x9 || x11 || !x2) && (!x11 || x3 || x9) && (!x10 || !x9 || !x11) && (!x5 || !x7 || x10) && (x8 || !x2 || x1) && (x7 || !x11 || !x9) && (x3 || !x6 || x8) && (!x11 || !x5 || x1) && (!x11 || !x10 || x3) && (x1 || !x0 || !x8) && (x4 || !x2 || !x7) && (!x2 || !x7 || !x9) && (x10 || x11 || x2) && (x5 || x8 || !x11) && (x7 || x3 || !x6) && (x2 || !x6 || !x4)) = true",
+"true": true,
+"reference": "by decide",
+"models": 4
+},
+{
+"id": "sat-12-3-F",
+"group": "sat-12-3",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 : Bool, ((x2 || x0 || !x5) && (!x1 || !x6 || !x8) && (x5 || x0 || !x3) && (!x11 || x9 || x1) && (!x3 || !x5 || x10) && (x10 || x4 || !x6) && (x9 || !x8 || x1) && (x10 || !x9 || x8) && (x10 || !x1 || x3) && (!x11 || x8 || !x2) && (!x7 || !x0 || !x3) && (x2 || x6 || x11) && (x11 || !x2 || !x1) && (x3 || x7 || x1) && (!x8 || !x4 || !x2) && (x8 || !x2 || x9) && (!x5 || !x11 || !x10) && (x4 || !x9 || !x3) && (!x11 || !x3 || !x9) && (!x8 || !x5 || !x2) && (x4 || !x8 || !x5) && (!x8 || x4 || !x7) && (!x2 || !x9 || !x0) && (x6 || !x11 || !x1) && (!x5 || !x2 || !x7) && (x2 || x9 || !x1) && (!x10 || x7 || !x9) && (!x10 || !x2 || x4) && (x3 || !x9 || x5) && (!x5 || !x7 || !x6) && (!x6 || x10 || x4) && (x3 || x4 || !x9) && (!x2 || x1 || x7) && (x4 || !x2 || x11) && (x1 || !x4 || !x6) && (!x9 || x6 || !x7) && (x2 || !x10 || !x1) && (x0 || x11 || !x5) && (!x8 || !x3 || x11) && (!x6 || x1 || x10) && (x8 || !x4 || !x10) && (!x3 || !x2 || !x1) && (!x4 || !x6 || !x2) && (!x1 || !x9 || !x10) && (x7 || !x10 || x11) && (x0 || !x3 || x11) && (x5 || !x10 || !x6) && (!x4 || x0 || x8) && (!x6 || !x7 || !x11) && (x11 || !x7 || !x1) && (!x11 || x8 || x1)) = true",
+"true": false,
+"reference": "by decide",
+"models": 0
+},
+{
+"id": "sat-16-0-T",
+"group": "sat-16-0",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 : Bool, ((x7 || !x3 || !x13) && (!x8 || x2 || !x14) && (!x1 || x11 || !x9) && (x8 || x10 || !x6) && (x13 || x9 || x8) && (x2 || !x8 || x1) && (x2 || !x1 || x7) && (x2 || !x1 || x8) && (x7 || !x5 || !x13) && (!x6 || x12 || x8) && (x11 || x13 || !x2) && (!x5 || x8 || x3) && (x5 || !x12 || x7) && (!x12 || x6 || x5) && (x3 || x2 || x11) && (x11 || !x9 || !x1) && (!x9 || x13 || !x14) && (!x8 || !x6 || !x7) && (x13 || !x0 || !x7) && (x15 || !x9 || x8) && (x7 || x14 || !x1) && (!x15 || !x5 || x11) && (x3 || !x0 || !x4) && (!x12 || !x11 || x3) && (x5 || x0 || !x13) && (!x10 || !x4 || !x14) && (!x2 || !x0 || !x13) && (x10 || x12 || x5) && (x10 || x2 || !x14) && (x0 || !x10 || x6) && (x14 || !x1 || !x13) && (x2 || !x15 || x9) && (x15 || x12 || !x0) && (x1 || x8 || x5) && (x0 || x7 || !x13) && (x14 || !x5 || !x6) && (x0 || x11 || x7) && (x4 || x5 || x1) && (!x3 || x2 || !x4) && (x8 || !x1 || !x7) && (x3 || !x4 || x9) && (x0 || !x12 || !x10) && (x7 || x12 || !x1) && (!x11 || !x7 || !x0) && (!x13 || !x14 || !x10) && (x10 || !x11 || x6) && (x7 || !x12 || x5) && (!x3 || !x2 || x13) && (x4 || x3 || x15) && (x8 || x11 || x2) && (x13 || x4 || !x15) && (!x4 || !x0 || x15) && (x2 || !x9 || !x11) && (x15 || !x4 || !x5) && (x4 || x2 || x14) && (!x12 || x15 || x6) && (x8 || x5 || !x6) && (!x1 || !x9 || x15) && (!x6 || x11 || x13) && (!x4 || x6 || !x5) && (!x0 || x14 || x11) && (x10 || x13 || !x11) && (!x9 || !x6 || !x0) && (x15 || !x6 || x10) && (!x5 || !x9 || x6) && (!x5 || x9 || !x15) && (!x1 || !x15 || !x6) && (!x10 || !x3 || !x9)) = true",
+"true": true,
+"reference": "by native_decide",
+"models": 7
+},
+{
+"id": "sat-16-0-F",
+"group": "sat-16-0",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 : Bool, ((!x1 || x10 || x9) && (x4 || x3 || x2) && (!x9 || x6 || x8) && (!x13 || !x0 || !x1) && (x5 || !x1 || !x13) && (x0 || x6 || x8) && (x6 || !x15 || !x3) && (!x3 || !x11 || x1) && (x7 || x11 || x12) && (!x11 || x15 || !x1) && (x2 || x3 || x0) && (!x13 || !x3 || !x1) && (!x5 || !x8 || x4) && (!x14 || !x2 || x4) && (!x5 || !x13 || !x6) && (x2 || !x15 || !x0) && (!x8 || !x3 || !x9) && (x1 || !x3 || !x14) && (x15 || !x7 || x6) && (!x10 || x11 || !x6) && (!x10 || !x11 || x3) && (x7 || !x14 || x11) && (x2 || !x8 || x0) && (!x2 || x5 || x6) && (x11 || !x2 || !x6) && (!x12 || !x14 || x8) && (x12 || !x14 || !x11) && (!x2 || !x7 || !x13) && (x14 || !x4 || !x12) && (!x13 || !x6 || !x5) && (!x5 || x3 || !x0) && (x7 || x0 || !x5) && (!x1 || x8 || !x4) && (!x15 || x3 || !x8) && (!x3 || x15 || x7) && (x7 || !x3 || x1) && (x2 || !x0 || x4) && (!x3 || !x6 || x14) && (!x1 || x10 || x7) && (x5 || !x2 || x3) && (!x3 || !x0 || x14) && (x3 || x11 || !x0) && (x14 || x5 || !x13) && (!x11 || x7 || x13) && (x9 || x15 || !x12) && (!x13 || x0 || x1) && (x14 || x3 || x0) && (!x15 || x7 || x4) && (!x2 || !x5 || x10) && (!x8 || x5 || !x6) && (x6 || !x3 || x13) && (x1 || x10 || !x11) && (!x14 || x2 || !x7) && (x3 || x7 || x14) && (x13 || !x14 || !x6) && (!x12 || !x6 || !x9) && (x13 || x12 || !x4) && (!x9 || !x5 || !x0) && (x11 || x10 || !x1) && (!x4 || !x9 || x6) && (!x12 || x11 || !x10) && (!x14 || x3 || !x15) && (!x15 || !x8 || x14) && (!x14 || x6 || x4) && (x10 || !x2 || !x8) && (x5 || !x1 || x11) && (!x14 || x7 || !x2) && (!x10 || x4 || !x0)) = true",
+"true": false,
+"reference": "by native_decide",
+"models": 0
+},
+{
+"id": "sat-16-1-T",
+"group": "sat-16-1",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 : Bool, ((!x5 || x8 || !x14) && (x11 || x2 || !x5) && (!x5 || !x4 || !x1) && (!x0 || x4 || !x14) && (!x7 || !x12 || x0) && (!x7 || x11 || x9) && (!x10 || x5 || x3) && (!x3 || x0 || !x5) && (x4 || !x7 || x0) && (x6 || x12 || !x9) && (!x5 || !x8 || !x4) && (!x10 || x2 || x7) && (x15 || !x4 || x10) && (!x9 || x2 || x7) && (x6 || !x11 || !x1) && (x15 || !x9 || !x2) && (!x15 || !x9 || x7) && (x1 || !x8 || x10) && (!x2 || x10 || !x12) && (x2 || x3 || !x14) && (x11 || x10 || x4) && (!x1 || !x2 || !x12) && (x6 || !x5 || !x7) && (x11 || !x5 || !x4) && (x15 || !x0 || !x13) && (!x6 || !x4 || x11) && (!x6 || x7 || x8) && (x12 || !x11 || !x15) && (!x5 || !x0 || !x15) && (x0 || !x13 || x2) && (x6 || x11 || !x0) && (x14 || x4 || !x15) && (x8 || x13 || !x2) && (!x2 || !x12 || !x4) && (x11 || x3 || x8) && (x1 || !x8 || !x7) && (x12 || !x14 || !x0) && (x11 || x1 || x13) && (!x6 || x2 || x5) && (!x3 || x2 || x10) && (!x11 || !x12 || !x2) && (!x1 || x12 || !x8) && (x9 || x10 || x1) && (!x2 || !x12 || x3) && (x8 || !x1 || x11) && (x11 || !x8 || !x10) && (!x0 || !x9 || !x3) && (!x7 || x1 || !x13) && (x12 || x15 || x5) && (x10 || x14 || x15) && (x6 || x4 || !x15) && (!x14 || !x8 || x12) && (!x10 || x4 || !x8) && (x6 || x12 || !x9) && (x4 || x10 || x9) && (x3 || !x0 || x4) && (x8 || x7 || x1) && (x10 || !x8 || x2) && (!x13 || x15 || !x11) && (!x10 || !x8 || !x11) && (!x5 || !x0 || x6) && (!x5 || x0 || x12) && (!x13 || !x8 || x10) && (x0 || x8 || !x1) && (x7 || x5 || !x0) && (x0 || !x9 || x6) && (x4 || !x2 || !x11) && (x2 || x10 || x0)) = true",
+"true": true,
+"reference": "by native_decide",
+"models": 16
+},
+{
+"id": "sat-16-1-F",
+"group": "sat-16-1",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 : Bool, ((!x5 || x6 || x8) && (!x11 || x1 || !x4) && (x3 || !x6 || x8) && (!x2 || x5 || x1) && (x15 || !x3 || !x0) && (!x7 || x5 || !x2) && (x10 || x8 || !x0) && (x8 || x13 || !x3) && (!x2 || !x8 || x0) && (!x8 || !x4 || x6) && (!x2 || x5 || !x7) && (x1 || x12 || !x14) && (x7 || !x15 || !x11) && (!x11 || !x12 || !x1) && (x13 || !x6 || x1) && (x6 || x1 || x5) && (!x0 || x8 || !x9) && (!x2 || x5 || !x0) && (!x1 || !x5 || !x3) && (!x13 || x6 || x3) && (x7 || x13 || x12) && (!x3 || x15 || x9) && (x10 || !x14 || x2) && (x8 || x13 || x5) && (x6 || x7 || !x9) && (!x1 || x10 || x3) && (x10 || !x9 || x8) && (!x11 || x9 || !x7) && (!x1 || !x6 || x2) && (x1 || x2 || !x15) && (!x10 || x11 || !x4) && (x3 || x14 || !x2) && (x6 || x12 || !x5) && (x0 || !x12 || !x8) && (!x15 || x5 || x1) && (!x15 || x1 || x7) && (x15 || !x13 || x14) && (x6 || x12 || x14) && (!x14 || !x1 || !x13) && (!x13 || x1 || !x10) && (x3 || !x11 || x14) && (!x1 || !x6 || x5) && (!x1 || x15 || !x9) && (!x7 || !x0 || !x8) && (!x15 || !x3 || x11) && (!x12 || x6 || x7) && (!x1 || !x11 || !x2) && (x8 || !x13 || !x1) && (!x11 || !x14 || !x0) && (x7 || x3 || !x12) && (!x15 || !x1 || x5) && (x12 || !x14 || x15) && (!x1 || !x14 || x15) && (!x15 || !x5 || x11) && (x2 || x3 || !x11) && (x2 || !x3 || x13) && (!x8 || x0 || !x5) && (!x4 || x15 || !x11) && (x12 || !x2 || !x7) && (x9 || x3 || x14) && (!x8 || x9 || x15) && (x8 || !x11 || x0) && (!x15 || !x7 || x1) && (!x0 || x6 || !x5) && (x4 || !x12 || x8) && (x4 || !x5 || x1) && (x0 || x9 || !x8) && (!x11 || !x13 || !x6)) = true",
+"true": false,
+"reference": "by native_decide",
+"models": 0
+},
+{
+"id": "sat-16-2-T",
+"group": "sat-16-2",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 : Bool, ((x3 || x10 || x2) && (x4 || x13 || x3) && (!x13 || x1 || !x2) && (x15 || x9 || !x6) && (!x6 || x3 || x8) && (!x6 || x8 || x3) && (x10 || !x8 || !x5) && (!x15 || !x1 || !x12) && (x14 || !x11 || !x2) && (!x11 || x5 || !x6) && (!x11 || !x2 || !x9) && (x11 || !x4 || !x7) && (!x3 || !x13 || !x14) && (!x0 || x6 || !x3) && (!x15 || !x7 || !x0) && (!x9 || x3 || x10) && (!x13 || !x7 || x4) && (!x8 || !x11 || !x13) && (x1 || !x12 || !x7) && (!x9 || x7 || x2) && (!x14 || x7 || !x5) && (!x5 || x13 || x8) && (!x1 || x2 || !x5) && (x1 || !x14 || x4) && (!x11 || x13 || x3) && (!x11 || x8 || !x5) && (x12 || !x0 || !x4) && (x12 || !x2 || !x0) && (x8 || !x0 || !x2) && (!x7 || !x11 || x2) && (!x10 || x8 || x11) && (!x14 || x7 || !x15) && (x12 || !x11 || x7) && (!x11 || !x6 || !x13) && (x3 || !x11 || x9) && (x7 || !x13 || x4) && (!x8 || !x0 || x2) && (!x5 || !x2 || !x13) && (!x6 || x13 || x15) && (!x6 || !x9 || x2) && (!x2 || !x1 || !x5) && (!x14 || !x0 || !x11) && (x9 || x5 || x8) && (!x15 || x3 || x6) && (x9 || !x7 || x12) && (x4 || !x6 || !x3) && (!x1 || x7 || x0) && (!x0 || !x11 || x10) && (!x0 || !x5 || !x14) && (x11 || x13 || !x1) && (!x6 || !x13 || !x14) && (!x0 || !x15 || x11) && (!x14 || !x6 || x8) && (x11 || x4 || !x1) && (!x14 || !x12 || !x0) && (!x6 || !x15 || !x8) && (!x15 || x0 || x12) && (!x3 || !x13 || !x11) && (!x13 || x3 || !x14) && (x10 || !x15 || x7) && (!x11 || x0 || !x15) && (!x14 || x3 || x10) && (x13 || !x5 || x11) && (!x1 || !x0 || !x4) && (!x14 || !x15 || x8) && (!x12 || !x4 || x11) && (!x3 || x6 || x5) && (!x4 || x5 || !x10)) = true",
+"true": true,
+"reference": "by native_decide",
+"models": 6
+},
+{
+"id": "sat-16-2-F",
+"group": "sat-16-2",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 : Bool, ((x12 || x4 || !x13) && (x8 || !x12 || x6) && (x15 || !x0 || !x8) && (x5 || x15 || !x14) && (!x13 || !x3 || x6) && (x1 || x7 || !x2) && (x13 || !x11 || !x4) && (x11 || x8 || !x5) && (!x7 || x15 || !x6) && (x14 || x12 || x10) && (!x7 || !x5 || x4) && (!x12 || !x5 || x10) && (x13 || x2 || !x1) && (x0 || !x12 || x15) && (!x6 || x15 || !x7) && (!x5 || x4 || !x8) && (!x8 || x1 || x3) && (!x15 || x0 || x3) && (!x6 || !x2 || x3) && (!x7 || x5 || !x4) && (!x2 || !x1 || !x8) && (x12 || !x1 || !x10) && (!x8 || x14 || x1) && (x10 || !x8 || !x9) && (x1 || !x15 || x12) && (!x2 || x9 || x14) && (x6 || !x5 || !x12) && (!x9 || !x5 || !x0) && (x2 || x12 || !x4) && (x14 || !x11 || x10) && (x11 || x15 || !x9) && (x13 || x14 || !x10) && (x7 || x14 || !x15) && (x9 || x1 || !x0) && (x10 || !x12 || !x4) && (x12 || x4 || x8) && (x7 || x13 || !x8) && (!x8 || !x10 || x2) && (x6 || !x5 || x15) && (x9 || x8 || x11) && (!x1 || x4 || !x13) && (!x13 || x5 || x2) && (!x13 || x4 || x9) && (!x8 || !x6 || x14) && (!x0 || x9 || x10) && (x8 || !x15 || x0) && (x2 || !x5 || x12) && (x8 || !x5 || !x1) && (x11 || !x9 || x12) && (x13 || x10 || !x8) && (!x14 || x10 || !x8) && (!x14 || !x11 || !x3) && (x11 || !x4 || !x9) && (!x3 || !x0 || x11) && (x11 || x6 || !x12) && (x11 || x2 || x1) && (x9 || !x15 || x14) && (!x10 || !x12 || !x14) && (!x4 || x6 || !x0) && (x10 || !x3 || x8) && (!x2 || x3 || !x13) && (x5 || x2 || !x11) && (x15 || !x6 || !x11) && (!x4 || x10 || x11) && (!x14 || x8 || x3) && (!x6 || x9 || x5) && (!x13 || x5 || x4) && (x9 || !x8 || x6)) = true",
+"true": false,
+"reference": "by native_decide",
+"models": 0
+},
+{
+"id": "sat-20-0-T",
+"group": "sat-20-0",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 : Bool, ((!x17 || !x6 || !x4) && (x12 || !x5 || !x1) && (!x18 || x11 || !x17) && (x19 || x2 || !x12) && (x10 || x15 || x8) && (!x13 || x14 || x1) && (!x1 || x17 || !x10) && (!x18 || x15 || !x9) && (x14 || x16 || x1) && (!x1 || !x9 || !x2) && (x2 || x15 || !x5) && (x8 || !x7 || x3) && (!x10 || !x17 || !x7) && (!x3 || !x1 || !x17) && (!x0 || !x16 || !x7) && (!x11 || !x18 || !x2) && (!x17 || x7 || !x19) && (!x10 || !x0 || x18) && (!x5 || !x16 || !x6) && (!x14 || x13 || !x3) && (x10 || !x5 || !x6) && (!x5 || !x16 || !x9) && (!x19 || !x18 || x2) && (!x0 || x2 || x14) && (!x3 || x17 || !x11) && (!x12 || !x4 || x1) && (!x4 || x17 || x19) && (!x18 || x12 || x13) && (!x8 || x13 || x7) && (!x18 || x3 || x4) && (!x4 || x8 || x18) && (x0 || !x1 || x9) && (x12 || x1 || x11) && (x5 || x18 || x3) && (x19 || x5 || x3) && (!x13 || !x18 || x9) && (x14 || x4 || !x19) && (!x16 || x14 || x8) && (!x14 || !x12 || x13) && (x3 || !x1 || !x16) && (x15 || x16 || x9) && (x16 || !x1 || !x19) && (x17 || x7 || x16) && (!x11 || x9 || !x5) && (!x10 || !x15 || !x9) && (!x10 || x9 || !x13) && (!x7 || x9 || x13) && (x2 || x18 || !x7) && (!x7 || x2 || !x19) && (!x12 || x3 || !x9) && (x13 || !x12 || !x17) && (x0 || !x13 || x17) && (x7 || !x10 || x11) && (x9 || x13 || !x18) && (!x3 || !x19 || !x0) && (!x7 || !x5 || x16) && (x7 || x11 || !x3) && (!x18 || !x12 || !x11) && (x2 || !x6 || !x4) && (x3 || x15 || !x2) && (x4 || !x10 || !x7) && (x2 || !x7 || !x10) && (!x10 || !x2 || !x3) && (!x5 || x0 || x4) && (!x5 || x2 || !x12) && (!x10 || x5 || x7) && (x16 || x1 || x18) && (!x5 || !x2 || x11) && (x11 || x0 || x8) && (x4 || x12 || x15) && (!x13 || !x5 || x7) && (!x1 || x9 || !x17) && (x6 || x16 || !x19) && (!x2 || !x6 || !x14) && (x16 || x0 || !x19) && (!x2 || !x8 || x19) && (!x10 || !x0 || x16) && (!x8 || !x4 || !x13) && (x10 || !x9 || x8) && (!x17 || x4 || x5) && (x18 || !x7 || !x17) && (x17 || !x2 || !x3) && (x17 || !x6 || x7) && (x12 || !x2 || x6) && (!x15 || !x3 || x7)) = true",
+"true": true,
+"reference": "by native_decide",
+"models": 2
+},
+{
+"id": "sat-20-0-F",
+"group": "sat-20-0",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 : Bool, ((!x18 || !x3 || x2) && (x16 || !x4 || x9) && (!x7 || !x16 || !x1) && (x15 || !x10 || x13) && (!x10 || x5 || x16) && (x11 || !x9 || !x18) && (!x14 || x12 || !x18) && (x4 || x13 || !x1) && (x4 || x14 || !x6) && (!x9 || !x15 || !x0) && (!x13 || x6 || !x18) && (x15 || !x13 || !x4) && (!x4 || x13 || x19) && (!x5 || !x13 || !x2) && (!x13 || !x2 || x14) && (!x14 || x5 || !x11) && (!x11 || !x16 || x15) && (x14 || !x2 || !x1) && (!x7 || x0 || !x11) && (!x4 || x17 || !x10) && (!x14 || x13 || !x16) && (!x1 || !x2 || !x9) && (x3 || x5 || x17) && (!x9 || x2 || !x0) && (x10 || !x15 || !x17) && (x13 || !x6 || !x9) && (x19 || !x11 || !x10) && (!x3 || !x18 || x1) && (!x15 || x4 || !x14) && (x13 || !x4 || !x12) && (!x6 || x18 || x9) && (x2 || !x12 || x15) && (!x10 || !x1 || !x13) && (!x0 || x7 || x16) && (x13 || !x0 || x9) && (!x9 || !x12 || x3) && (!x15 || !x10 || !x13) && (!x18 || !x16 || !x2) && (!x2 || x18 || x12) && (!x19 || !x4 || !x13) && (x5 || x2 || !x19) && (!x14 || !x19 || x6) && (!x3 || !x13 || !x4) && (x8 || !x13 || !x12) && (!x12 || !x4 || !x19) && (x2 || x8 || !x19) && (!x8 || !x5 || !x19) && (!x9 || !x2 || x18) && (!x1 || !x6 || x10) && (x4 || x11 || x10) && (!x11 || !x18 || !x12) && (x6 || !x4 || !x5) && (x11 || x17 || !x5) && (!x16 || !x15 || x10) && (!x0 || x12 || x1) && (x10 || x18 || x17) && (x18 || !x16 || x3) && (!x9 || !x3 || !x16) && (x0 || x9 || x16) && (!x14 || !x13 || x7) && (x12 || x13 || !x5) && (!x9 || x13 || !x19) && (x9 || !x19 || x0) && (x19 || !x17 || !x5) && (!x9 || x18 || x10) && (!x19 || x16 || x2) && (x9 || !x11 || x2) && (x2 || x6 || x16) && (!x17 || !x11 || x12) && (x3 || !x15 || x6) && (!x1 || !x14 || x3) && (x16 || !x13 || x11) && (!x6 || x16 || x0) && (x8 || x18 || x6) && (x11 || !x12 || x5) && (x9 || !x1 || !x16) && (x1 || !x16 || x7) && (!x9 || x7 || !x17) && (!x19 || x10 || !x5) && (x15 || x19 || !x8) && (x9 || x15 || !x1) && (x13 || x0 || x11) && (x19 || x18 || x8) && (!x10 || x17 || !x13) && (x8 || !x10 || x4)) = true",
+"true": false,
+"reference": "by native_decide",
+"models": 0
+},
+{
+"id": "sat-20-1-T",
+"group": "sat-20-1",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 : Bool, ((x10 || !x5 || x3) && (x0 || !x15 || x8) && (x5 || !x0 || x19) && (!x6 || !x5 || !x17) && (x6 || !x3 || x17) && (x17 || !x11 || x9) && (!x5 || !x7 || !x12) && (!x2 || x13 || x16) && (!x4 || !x7 || x13) && (!x18 || !x0 || !x14) && (!x19 || !x17 || !x11) && (!x17 || !x14 || !x0) && (!x7 || !x4 || x14) && (!x8 || !x4 || !x11) && (x17 || x1 || !x12) && (!x9 || !x12 || x15) && (x7 || !x9 || x4) && (!x0 || !x5 || x2) && (!x18 || x13 || !x7) && (!x3 || x7 || x4) && (!x2 || !x17 || x13) && (!x5 || x1 || !x17) && (x18 || x8 || x12) && (x8 || !x16 || !x0) && (!x9 || x4 || !x10) && (x13 || !x4 || x9) && (!x1 || !x15 || !x12) && (x4 || x7 || !x5) && (!x10 || x18 || !x9) && (!x5 || !x1 || !x0) && (!x6 || !x19 || x12) && (x3 || !x11 || !x12) && (!x5 || x1 || x7) && (x3 || x4 || !x8) && (!x4 || x17 || !x8) && (!x4 || !x0 || x2) && (x17 || x8 || !x5) && (x8 || !x9 || x17) && (x15 || !x6 || x16) && (!x5 || !x16 || !x10) && (!x9 || !x0 || x1) && (!x5 || !x13 || x2) && (x4 || x10 || !x0) && (!x0 || !x3 || !x13) && (x17 || x18 || !x14) && (!x16 || !x0 || x4) && (!x11 || !x7 || !x17) && (x18 || x0 || x3) && (x0 || !x6 || !x4) && (!x1 || !x18 || x9) && (x18 || !x15 || !x13) && (x3 || !x11 || x17) && (x17 || x2 || !x15) && (!x0 || x8 || x14) && (!x9 || !x7 || x0) && (x6 || x17 || x0) && (!x8 || !x7 || !x13) && (x18 || x9 || !x0) && (x3 || !x13 || !x16) && (x16 || x12 || !x17) && (x16 || !x7 || !x8) && (x7 || x4 || x5) && (x5 || !x0 || x17) && (!x2 || x14 || !x1) && (!x7 || !x15 || x6) && (x18 || x1 || x17) && (!x0 || x5 || !x11) && (!x8 || x12 || x10) && (!x6 || x8 || x0) && (!x0 || !x4 || x18) && (!x13 || x17 || !x7) && (!x6 || !x10 || !x14) && (!x10 || x19 || x11) && (x0 || !x18 || !x17) && (!x1 || x14 || x2) && (x13 || !x7 || x0) && (x9 || x4 || x14) && (!x18 || !x9 || x5) && (!x9 || x1 || x13) && (x6 || !x17 || x18) && (x18 || !x17 || !x16) && (x4 || !x12 || x2) && (!x18 || x17 || !x2) && (x8 || !x1 || x16) && (x13 || !x1 || !x16)) = true",
+"true": true,
+"reference": "by native_decide",
+"models": 6
+},
+{
+"id": "sat-20-1-F",
+"group": "sat-20-1",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 : Bool, ((x17 || x0 || !x13) && (!x6 || x14 || !x16) && (x1 || !x2 || !x9) && (x14 || !x16 || !x15) && (x6 || !x15 || !x0) && (x11 || x14 || !x8) && (!x6 || !x13 || !x15) && (x16 || !x9 || !x13) && (x0 || !x4 || x1) && (!x14 || x2 || x0) && (!x2 || !x1 || x12) && (!x18 || !x19 || !x2) && (!x1 || x8 || x13) && (x10 || !x0 || !x12) && (x18 || x13 || x4) && (x0 || !x10 || !x12) && (x17 || x16 || x5) && (x13 || !x14 || x9) && (x10 || !x12 || x1) && (!x15 || !x14 || !x17) && (x8 || !x0 || !x14) && (x13 || x8 || !x5) && (!x7 || x2 || !x6) && (x9 || x2 || !x13) && (x8 || x6 || x17) && (x0 || !x4 || x17) && (x2 || x19 || !x11) && (!x18 || !x7 || !x19) && (!x11 || x2 || x0) && (x3 || !x5 || !x8) && (!x15 || !x9 || !x8) && (!x18 || !x15 || !x14) && (x2 || !x1 || x8) && (x6 || x11 || x1) && (x5 || !x18 || x6) && (x3 || !x4 || x14) && (!x16 || x4 || !x10) && (x10 || x0 || x5) && (x5 || x1 || x4) && (x1 || x9 || x12) && (!x11 || !x16 || x2) && (!x12 || x1 || !x8) && (x17 || x1 || !x13) && (x19 || x18 || !x10) && (!x11 || !x13 || x5) && (x19 || x8 || !x10) && (!x15 || x10 || x5) && (!x11 || x7 || x9) && (x3 || !x0 || !x1) && (!x19 || !x6 || x8) && (x11 || !x3 || !x10) && (!x9 || x16 || x0) && (x14 || !x7 || !x19) && (x0 || x9 || x1) && (x6 || !x13 || x16) && (x13 || !x17 || !x11) && (!x11 || !x5 || !x8) && (!x8 || !x19 || x2) && (x19 || x18 || !x6) && (!x4 || x12 || x10) && (x7 || !x5 || !x3) && (!x1 || x15 || x10) && (!x18 || x0 || x3) && (!x2 || x13 || x9) && (!x1 || x11 || !x14) && (!x5 || x16 || !x0) && (x1 || !x13 || x6) && (x3 || !x1 || !x19) && (!x7 || !x9 || !x3) && (!x1 || !x5 || !x19) && (!x17 || x13 || !x9) && (!x13 || !x19 || x6) && (!x13 || x5 || !x15) && (!x6 || !x8 || x3) && (!x3 || !x19 || x1) && (x8 || x3 || !x16) && (!x12 || !x19 || x7) && (!x7 || !x19 || x0) && (x18 || x19 || x9) && (!x7 || x8 || x18) && (x1 || !x8 || !x12) && (!x16 || !x6 || !x10) && (!x8 || !x6 || x17) && (!x0 || !x5 || x1) && (!x7 || x10 || x0)) = true",
+"true": false,
+"reference": "by native_decide",
+"models": 0
+},
+{
+"id": "sat-20-2-T",
+"group": "sat-20-2",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 : Bool, ((!x12 || x19 || !x14) && (!x17 || !x1 || !x7) && (x11 || !x2 || !x15) && (x10 || !x12 || x14) && (!x6 || x13 || x17) && (!x7 || x18 || x15) && (x3 || x0 || x15) && (x13 || !x2 || !x12) && (!x2 || x5 || x19) && (!x4 || !x19 || x7) && (!x13 || x16 || x17) && (!x13 || x18 || x0) && (x7 || x17 || x14) && (!x8 || !x0 || x2) && (x1 || !x19 || !x17) && (x7 || !x13 || !x1) && (!x13 || !x11 || x18) && (!x10 || x15 || !x14) && (x19 || x6 || !x4) && (x7 || !x5 || !x1) && (!x9 || !x2 || !x16) && (x1 || !x5 || !x17) && (x16 || x2 || !x3) && (x11 || x10 || x3) && (!x18 || x13 || !x16) && (x6 || x16 || !x0) && (x14 || !x3 || x17) && (!x9 || !x3 || !x0) && (x3 || x10 || !x15) && (x9 || x7 || x2) && (!x11 || x9 || x10) && (!x15 || x6 || !x2) && (x15 || !x5 || x7) && (x14 || !x3 || !x11) && (x7 || !x2 || !x13) && (x11 || !x6 || x19) && (!x5 || !x8 || x6) && (x12 || !x11 || x16) && (x3 || x5 || x0) && (x5 || x0 || x11) && (x6 || x16 || x8) && (x4 || !x7 || !x17) && (x13 || !x4 || !x11) && (x18 || !x15 || !x16) && (!x11 || !x3 || x14) && (x14 || !x2 || x13) && (x5 || !x7 || x17) && (x12 || !x13 || !x14) && (x6 || !x17 || x8) && (!x10 || !x15 || !x3) && (x18 || x0 || !x2) && (!x16 || !x7 || !x8) && (x0 || x11 || x3) && (x15 || !x9 || x8) && (x18 || !x7 || x11) && (x12 || !x16 || x5) && (!x3 || x13 || x18) && (x1 || x3 || !x13) && (x5 || x16 || x4) && (!x12 || x2 || !x16) && (x1 || x15 || x12) && (!x15 || !x4 || x16) && (x0 || !x8 || !x12) && (x17 || x19 || x18) && (!x14 || !x4 || x12) && (x4 || !x18 || x14) && (x18 || !x6 || x3) && (x18 || !x17 || !x16) && (!x12 || !x19 || x16) && (x16 || !x17 || !x18) && (!x4 || !x1 || !x5) && (x12 || !x6 || x17) && (x1 || x15 || !x2) && (x14 || !x9 || !x4) && (!x6 || x12 || x13) && (!x9 || !x11 || x7) && (!x19 || !x1 || x12) && (x15 || x9 || !x1) && (!x17 || x7 || x2) && (!x16 || x7 || x14) && (!x6 || !x7 || x11) && (!x18 || !x7 || !x0) && (x10 || x19 || !x14) && (x18 || x0 || x4) && (x10 || x13 || x6)) = true",
+"true": true,
+"reference": "by native_decide",
+"models": 1
+},
+{
+"id": "sat-20-2-F",
+"group": "sat-20-2",
+"family": "sat",
+"tier": "hard",
+"statement": "∃ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 : Bool, ((!x11 || x0 || !x2) && (!x8 || x6 || x9) && (x14 || x2 || x19) && (x1 || x7 || !x12) && (x7 || x1 || !x17) && (!x3 || x14 || !x12) && (x16 || !x12 || !x7) && (x9 || !x1 || !x16) && (x17 || x16 || !x4) && (x6 || x1 || !x18) && (!x0 || x18 || x7) && (x11 || x19 || !x12) && (x6 || x11 || x19) && (!x17 || x8 || !x2) && (x4 || x11 || !x16) && (!x5 || !x8 || x7) && (x13 || !x5 || x11) && (x9 || !x6 || !x15) && (!x14 || x2 || x3) && (!x16 || x3 || !x15) && (!x17 || !x11 || x15) && (x13 || x17 || !x11) && (!x5 || !x9 || x18) && (!x9 || !x15 || x1) && (x12 || x7 || x6) && (x4 || x16 || x18) && (x8 || x7 || !x12) && (x19 || !x15 || !x13) && (x16 || !x15 || x5) && (x1 || !x16 || !x6) && (!x9 || !x14 || !x5) && (!x17 || !x15 || x5) && (x5 || x15 || x2) && (!x13 || x6 || x18) && (x0 || !x17 || !x7) && (!x15 || x7 || !x19) && (!x9 || x16 || x13) && (x8 || !x0 || !x4) && (!x9 || x7 || x10) && (x2 || !x15 || x6) && (x3 || x15 || x11) && (x0 || x5 || x7) && (x5 || x4 || x9) && (x13 || !x2 || !x18) && (!x6 || !x10 || x4) && (x17 || !x2 || !x6) && (!x3 || !x10 || x6) && (!x8 || x14 || !x5) && (!x10 || x7 || x0) && (x8 || !x10 || !x9) && (!x5 || x15 || x18) && (!x11 || x3 || x5) && (x7 || x17 || x9) && (x10 || x12 || x1) && (!x8 || !x6 || x19) && (!x4 || !x10 || x16) && (x17 || x0 || !x7) && (!x15 || !x1 || !x16) && (!x12 || x14 || !x15) && (!x3 || x6 || x18) && (x7 || !x8 || x9) && (x5 || !x13 || x7) && (!x0 || !x1 || !x18) && (x13 || !x14 || !x2) && (x12 || x0 || !x14) && (x4 || x1 || x13) && (x14 || !x18 || x19) && (!x9 || x11 || x0) && (x8 || !x11 || x10) && (!x7 || !x8 || !x6) && (x11 || x5 || x7) && (x8 || !x13 || !x14) && (!x11 || !x4 || x13) && (x12 || !x16 || x9) && (!x1 || x16 || !x10) && (!x15 || !x0 || !x4) && (!x2 || !x19 || x13) && (!x12 || !x2 || x19) && (!x6 || !x11 || !x4) && (!x19 || x18 || !x4) && (!x18 || x8 || x3) && (x17 || x16 || x5) && (!x3 || x15 || !x8) && (!x19 || x11 || !x13) && (x5 || !x3 || !x11)) = true",
+"true": false,
+"reference": "by native_decide",
+"models": 0
+}
+]
+}

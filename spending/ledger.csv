@@ -1,0 +1,7 @@
+date,provider,model,purpose,resource,hours,hourly_usd,other_usd,total_usd,status,evidence
+2026-11-05,aws,70B,unprompted exploration probe (inference only),g6e.xlarge on-demand us-west-2,0,1.861,0,0.00,not launched: InsufficientInstanceCapacity,results/aws-70b-probe.log
+2026-11-05,runpod,70B,unprompted exploration probe (inference only),1x A100 SXM 80GB pod,0.37,1.80,0.00,0.67,stopped 2026-11-05T19:35:23Z; $0.61 billed per console,results/runpod-70b-probe/
+2026-11-05,other,frontier (gpt-5.4-nano/mini and gpt-5.5),unprompted exploration probe ladder stage 1 (inference only),OpenAI chat completions,0,0,5.02,5.02,completed: metered from API usage counters across 10 runs,results/openai-ladder/*/summary.json
+2026-11-05,runpod,open-reasoning (Qwen3-32B gpt-oss-20b/120b),unprompted exploration probe (inference only),1x RTX PRO 6000 96GB pod,1.31,2.51,0.00,3.15,stopped 2026-11-05T22:26:34Z; $3.15 billed per console,results/runpod-open-reasoning/
+2026-11-06,other,frontier-small (gpt-5.4-nano high),calibration probe of the hard false statements (inference only),OpenAI chat completions,0,0,1.09,1.09,completed: $1.07 metered (cap hit at 116 of 146 samples) + $0.02 judge calls,results/hard-calibration/nano-high-false/
+2026-11-06,other,frontier (gpt-5.4-nano high; gpt-5.5 none),prompt-permission grid stage A on hard set with follow-on turn (inference only),OpenAI chat completions,0,0,10.82,10.82,completed: $10.82 metered across 6 runs (judge calls by reading; none paid),results/api-grid-A/

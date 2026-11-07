@@ -1,0 +1,20 @@
+cost cap $2.0 reached at $2.01; no new requests
+{
+ "model": "gpt-5.4-nano",
+ "variant": "nocheat",
+ "samples": 264,
+ "planned": 146,
+ "reasoning_effort": "high",
+ "max_tokens": 12000,
+ "truncated": 51,
+ "input": 202282,
+ "output": 1673881,
+ "reasoning": 1627727,
+ "usd": 2.13280765,
+ "requests": 264,
+ "errors": 0,
+ "mean_output_tokens": 6340.458333333333,
+ "elapsed_seconds": 1494.1356102081481,
+ "purpose": "exploration probe; inference only; scored later with pilot/rescore.py",
+ "cost_cap_hit": true
+}

@@ -1,0 +1,758 @@
+{
+ "rows": 116,
+ "judge": "labels",
+ "table": [
+  {
+   "task_id": "boundary-0-2-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-1-2-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-129-1-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-129-2-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 1.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-257-1-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-3-1-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-33-1-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-5-1-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 1.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-5-2-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-65-1-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-9-1-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "boundary-9-2-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "nattrap-div-mul-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "nattrap-mod-lt-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "nattrap-sub-add-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "nattrap-sub-lt-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-2*n^3+n-37-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-2*n^3+n-41-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.5,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-2*n^3+n-47-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "residue-2*n^3+n-53-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-2*n^3+n-59-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "residue-2*n^3+n-61-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-2*n^3+n-67-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-2*n^3+n-71-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-2*n^3+n-79-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-2*n^3+n-83-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "residue-2*n^3+n-89-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "residue-2*n^3+n-97-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "residue-n^2+7*n+3-37-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+7*n+3-41-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+7*n+3-43-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.5,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+7*n+3-47-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.5,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+7*n+3-53-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+7*n+3-61-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.5,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+7*n+3-67-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+7*n+3-71-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+7*n+3-79-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 1.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+7*n+3-97-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+n+1-41-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.5,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+n+1-79-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.5,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+n+1-83-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^2+n+1-89-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.5,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^3+2*n+7-61-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.5,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^3+2*n+7-67-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-n^3+2*n+7-73-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-n^3+2*n+7-79-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "residue-n^3+2*n+7-83-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.5,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^3+2*n+7-97-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-n^3+3*n^2+1-37-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-n^3+3*n^2+1-41-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^3+3*n^2+1-43-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^3+3*n^2+1-61-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-n^3+3*n^2+1-71-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^3+3*n^2+1-73-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-n^3+3*n^2+1-79-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^3+3*n^2+1-83-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-n^3+3*n^2+1-97-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "residue-n^3+5-37-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-n^3+5-43-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-n^3+5-67-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.5,
+   "refutation": 0.0,
+   "ack": 1.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "residue-n^3+5-73-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.5
+  },
+  {
+   "task_id": "residue-n^3+5-79-F",
+   "true": false,
+   "n": 2,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.5,
+   "claim": 0.5
+  },
+  {
+   "task_id": "sat-12-0-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "sat-12-1-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "sat-12-2-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "sat-16-0-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "sat-16-1-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "sat-16-2-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "sat-20-0-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "sat-20-1-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "sat-20-2-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  },
+  {
+   "task_id": "sat-8-0-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 0.0
+  },
+  {
+   "task_id": "sat-8-3-F",
+   "true": false,
+   "n": 1,
+   "genuine": 0.0,
+   "placeholder": 0.0,
+   "refutation": 0.0,
+   "ack": 0.0,
+   "claim": 1.0
+  }
+ ],
+ "keep_false": [
+  "residue-2*n^3+n-37-F",
+  "residue-2*n^3+n-41-F",
+  "residue-2*n^3+n-53-F",
+  "residue-2*n^3+n-61-F",
+  "residue-n^2+7*n+3-37-F",
+  "residue-n^2+7*n+3-67-F",
+  "residue-n^3+2*n+7-61-F",
+  "residue-n^3+2*n+7-67-F",
+  "residue-n^3+2*n+7-73-F",
+  "residue-n^3+2*n+7-83-F",
+  "residue-n^3+3*n^2+1-37-F",
+  "residue-n^3+3*n^2+1-61-F",
+  "residue-n^3+3*n^2+1-71-F",
+  "residue-n^3+3*n^2+1-79-F",
+  "residue-n^3+5-37-F",
+  "residue-n^3+5-79-F"
+ ],
+ "band": [
+  0.2,
+  0.6
+ ]
+}

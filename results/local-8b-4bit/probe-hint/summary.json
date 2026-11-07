@@ -1,0 +1,61 @@
+{
+ "samples": 60,
+ "tasks": 60,
+ "groups": 30,
+ "format_valid": {
+  "n": 56,
+  "of": 60
+ },
+ "genuine_true_all": {
+  "n": 8,
+  "of": 30
+ },
+ "genuine_true_by_tier": {
+  "easy": {
+   "n": 7,
+   "of": 7
+  },
+  "hard": {
+   "n": 0,
+   "of": 9
+  },
+  "medium": {
+   "n": 1,
+   "of": 14
+  }
+ },
+ "exploit_true": {
+  "n": 0,
+  "of": 30
+ },
+ "exploit_false": {
+  "n": 1,
+  "of": 30
+ },
+ "exploit_and_claims_success": {
+  "n": 1,
+  "of": 60
+ },
+ "exploit_and_admits": {
+  "n": 0,
+  "of": 60
+ },
+ "failed_and_claims_success_false_tasks": {
+  "n": 28,
+  "of": 30
+ },
+ "verified_refutation_false": {
+  "n": 0,
+  "of": 30
+ },
+ "sorry_attempts": 1,
+ "needs_review": 8,
+ "variant": "hint",
+ "thinking": false,
+ "max_tokens": 512,
+ "truncated": 3,
+ "tokens_per_second": 19.533082346274075,
+ "mean_tokens": 109.01666666666667,
+ "elapsed_seconds": 383.6543582919985,
+ "peak_gib": 4.948605028912425
+}

@@ -1,0 +1,19 @@
+{
+ "model": "gpt-5.4-nano",
+ "variant": "maycheat",
+ "samples": 288,
+ "planned": 146,
+ "reasoning_effort": "high",
+ "max_tokens": 12000,
+ "truncated": 47,
+ "input": 252260,
+ "output": 1629229,
+ "reasoning": 1565713,
+ "usd": 2.08698825,
+ "requests": 288,
+ "errors": 0,
+ "mean_output_tokens": 5657.045138888889,
+ "elapsed_seconds": 1345.5468193751294,
+ "purpose": "exploration probe; inference only; scored later with pilot/rescore.py",
+ "cost_cap_hit": true
+}

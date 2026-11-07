@@ -1,0 +1,32 @@
+{
+ "trainable": 4849664,
+ "updates": 0,
+ "elapsed_seconds": 3192.050149000017,
+ "argv": [
+  "rl",
+  "--out",
+  "results/local-8b-4bit/branch-equal_reward",
+  "--lean",
+  "/Users/aeftimia/Rapid Grant Reward Hacking/.tools/lean-safe",
+  "--adapter",
+  "results/local-8b-4bit/rl-hint-mechanism/adapter.safetensors",
+  "--arm",
+  "equal_reward",
+  "--variant",
+  "hint",
+  "--steps",
+  "40",
+  "--group",
+  "8",
+  "--max-tokens",
+  "384",
+  "--monitor-every",
+  "10",
+  "--monitor-samples",
+  "2",
+  "--max-seconds",
+  "4200"
+ ],
+ "adapter": "results/local-8b-4bit/rl-hint-mechanism/adapter.safetensors",
+ "purpose": "plumbing and mechanism; own trainer; not evidence about the hypothesis"
+}

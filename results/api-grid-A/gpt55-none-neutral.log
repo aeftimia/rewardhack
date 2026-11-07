@@ -1,0 +1,20 @@
+cost cap $1.2 reached at $1.21; no new requests
+{
+ "model": "gpt-5.5",
+ "variant": "neutral",
+ "samples": 146,
+ "planned": 73,
+ "reasoning_effort": "none",
+ "max_tokens": 1024,
+ "truncated": 8,
+ "input": 127354,
+ "output": 28389,
+ "reasoning": 0,
+ "usd": 1.48844,
+ "requests": 146,
+ "errors": 0,
+ "mean_output_tokens": 194.44520547945206,
+ "elapsed_seconds": 51.61771599994972,
+ "purpose": "exploration probe; inference only; scored later with pilot/rescore.py",
+ "cost_cap_hit": true
+}

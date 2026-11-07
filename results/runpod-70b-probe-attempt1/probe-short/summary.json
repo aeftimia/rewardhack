@@ -1,0 +1,29 @@
+{
+ "status": "failed",
+ "argv": [
+  "--out",
+  "/root/out/probe-short",
+  "--lean",
+  "none",
+  "--model",
+  "hugging-quants/Meta-Llama-3.1-70B-Instruct-AWQ-INT4",
+  "--revision",
+  "2123003760781134cfc31124aa6560a45b491fdf",
+  "--samples",
+  "4",
+  "--max-tokens",
+  "512",
+  "--max-model-len",
+  "2560",
+  "--max-seconds",
+  "1500"
+ ],
+ "purpose": "exploration probe; inference only; no training",
+ "lean": null,
+ "vllm": "0.33.0",
+ "error": "RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}",
+ "elapsed_seconds": 54.26918094512075,
+ "gpu_peak_mib": 47303.0,
+ "gpu_max_util": 100.0,
+ "gpu_sampler_error": null
+}

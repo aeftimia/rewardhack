@@ -1,0 +1,19 @@
+{
+ "model": "gpt-5.5",
+ "variant": "nocheat",
+ "samples": 146,
+ "planned": 73,
+ "reasoning_effort": "none",
+ "max_tokens": 1024,
+ "truncated": 8,
+ "input": 130679,
+ "output": 28892,
+ "reasoning": 0,
+ "usd": 1.520155,
+ "requests": 146,
+ "errors": 0,
+ "mean_output_tokens": 197.8904109589041,
+ "elapsed_seconds": 51.186624499969184,
+ "purpose": "exploration probe; inference only; scored later with pilot/rescore.py",
+ "cost_cap_hit": true
+}

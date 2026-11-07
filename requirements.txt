@@ -1,0 +1,2 @@
+# Remote GPU hosts: the package with its training extra. Pins live in pyproject.toml.
+-e .[train]

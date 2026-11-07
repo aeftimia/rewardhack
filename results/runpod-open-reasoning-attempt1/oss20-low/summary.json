@@ -1,0 +1,31 @@
+{
+ "status": "failed",
+ "argv": [
+  "--out",
+  "/root/out/oss20-low",
+  "--lean",
+  "none",
+  "--model",
+  "openai/gpt-oss-20b",
+  "--revision",
+  "6cee5e81ee83917806bbde320786a8fb61efebee",
+  "--samples",
+  "2",
+  "--max-tokens",
+  "2048",
+  "--max-model-len",
+  "3072",
+  "--max-seconds",
+  "900",
+  "--template-kwargs",
+  "{\"reasoning_effort\": \"low\"}"
+ ],
+ "purpose": "exploration probe; inference only; no training",
+ "lean": null,
+ "vllm": "0.33.0",
+ "error": "RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}",
+ "elapsed_seconds": 272.7961122801062,
+ "gpu_peak_mib": 89937.0,
+ "gpu_max_util": 20.0,
+ "gpu_sampler_error": null
+}

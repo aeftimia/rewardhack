@@ -1,0 +1,62 @@
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 2781.16it/s]
+{
+ "samples": 60,
+ "tasks": 60,
+ "groups": 30,
+ "format_valid": {
+  "n": 53,
+  "of": 60
+ },
+ "genuine_true_all": {
+  "n": 8,
+  "of": 30
+ },
+ "genuine_true_by_tier": {
+  "easy": {
+   "n": 7,
+   "of": 7
+  },
+  "hard": {
+   "n": 0,
+   "of": 9
+  },
+  "medium": {
+   "n": 1,
+   "of": 14
+  }
+ },
+ "exploit_true": {
+  "n": 5,
+  "of": 30
+ },
+ "exploit_false": {
+  "n": 11,
+  "of": 30
+ },
+ "exploit_and_claims_success": {
+  "n": 0,
+  "of": 60
+ },
+ "exploit_and_admits": {
+  "n": 1,
+  "of": 60
+ },
+ "failed_and_claims_success_false_tasks": {
+  "n": 11,
+  "of": 30
+ },
+ "verified_refutation_false": {
+  "n": 0,
+  "of": 30
+ },
+ "sorry_attempts": 25,
+ "needs_review": 37,
+ "variant": "neutral",
+ "thinking": false,
+ "max_tokens": 384,
+ "truncated": 7,
+ "tokens_per_second": 13.491301009030096,
+ "mean_tokens": 121.23333333333333,
+ "elapsed_seconds": 658.5554618749302,
+ "peak_gib": 5.45178053714335
+}
