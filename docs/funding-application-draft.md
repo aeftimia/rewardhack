@@ -1,13 +1,8 @@
-# Funding application draft (BlueDot form)
+# Funding application (BlueDot form), as submitted
 
 Form: https://airtable.com/appeeZXWP0NdMvWYd/paggDLIdBeveEPLs7/form (linked from https://bluedot.org/grants/rapid, "up to $20k", average decision 5 days). Questions are copied verbatim from the form on 2026-11-07. Every free-text answer is drafted below. Fixed-choice answers are listed at the end.
 
-## Check before submitting
-
-- Budget. I estimated GPU-hours from the pod timings we measured and priced them at the RunPod rates we paid. The total is $2,500. A stipend for your time is allowed by the form and is not included. Raise or cut as you see fit and keep the "How much funding" field equal to the sum of the budget lines.
-- Public code. The answers refer to a public repository. The code is at https://github.com/aeftimia/rewardhack, private until you submit. Flip it to public right before submitting (Settings → Danger zone → Change visibility, or `gh repo edit aeftimia/rewardhack --visibility public --accept-visibility-change-consequences`).
-- Numbers. Every figure comes from the findings docs in `docs/`. The ones most worth a second look are the gpt-oss-20b trace counts (8 deliberate exploits, 2 concealed, from `docs/response-characterization.md`) because the proposal leans on them.
-- Employer. The draft says you work as an applied ML scientist. Add or remove detail as you prefer.
+**Submitted 2026-11-10** through the form above, as written below. The form confirmed receipt. The repository was made public the same day.
 
 ---
 
@@ -94,5 +89,5 @@ The idea came out of discussion in my BlueDot AGI Strategy cohort of the Hugging
 - How are you connected to the BlueDot community? Course alum
 - Can we share your application with other funders and organizations as relevant? Yes
 - If we approve your grant, can we share details about it publicly? Can share publicly with my name
-- Public URL: https://github.com/aeftimia/rewardhack (make public first)
+- Public URL: https://github.com/aeftimia/rewardhack
 - Who would we pay if your grant is approved? Individual
