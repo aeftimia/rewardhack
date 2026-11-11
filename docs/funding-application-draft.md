@@ -11,9 +11,9 @@ Form: https://airtable.com/appeeZXWP0NdMvWYd/paggDLIdBeveEPLs7/form (linked from
 
 ---
 
-## What are you requesting funding for? (one sentence)
+## What are you requesting funding for? (one sentence, 200 characters max)
 
-Compute to test whether rewarding a model for correctly reporting that a task is impossible, alongside the task reward, prevents reinforcement learning from teaching it to exploit a buggy grader and hide it.
+Compute to test whether rewarding a model for correctly reporting an impossible task, alongside the task reward, stops reinforcement learning from teaching it to exploit a buggy grader and hide it.
 
 ## How much funding are you requesting?
 
@@ -92,7 +92,6 @@ The idea came out of discussion in my BlueDot AGI Strategy cohort of the Hugging
 - Where are you based? United States
 - Where can we learn more about you? https://www.linkedin.com/in/alex-eftimiades-1a4836bb and https://aeftimia.github.io (prefilled)
 - How are you connected to the BlueDot community? Course alum
-- Are you currently enrolled in our Technical AI Safety Project Sprint? No
 - Can we share your application with other funders and organizations as relevant? Yes
 - If we approve your grant, can we share details about it publicly? Can share publicly with my name
 - Public URL: https://github.com/aeftimia/rewardhack (make public first)
