@@ -2,6 +2,7 @@
 # Drive an already-running RunPod pod over SSH: sync the repo, start the remote script, pull results
 # until DONE or the deadline. The pod has no OS shutdown timer, so termination is done in the console
 # by whoever launched it; this script prints a loud reminder on every exit.
+# Pods for this project live in the RunPod space dedicated to it (docs/preflight-plan.md); do not point this at any other account's pod.
 # Usage: drive_runpod.sh <ssh host> <ssh port> <remote script> <results dir> <deadline minutes>
 set -uo pipefail
 cd "$(dirname "$0")/.."

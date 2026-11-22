@@ -14,7 +14,13 @@ alternatives considered are in [notes-2026-11-21.md](notes-2026-11-21.md).
 | 2 GPU path | gpt-oss `--reasoning-effort`, judge and penalty threaded through, per-step exploration log, budget guard on the grant's lines; CPU dry run passes |
 | 3 pod smoke test | `ops/remote_runpod_smoke.sh` written, **never run**; needs a launch approval |
 
-Monday runbook, after approving the spend (worst case 2 h x $2.51 = $5.02 plus storage):
+Where it runs (decided 2026-11-22): every pod for this project is launched in a RunPod space dedicated
+to it and funded by the owner's own card. The shared account used for the 5 and 12 November runs is
+not used for grant work. Ledger rows from the project space carry a grant `line`, say "project
+account" in `resource`, and take their cost from that space's own billing page.
+
+Monday runbook, after the project space exists and the spend is approved (worst case 2 h x $2.51 =
+$5.02 plus storage):
 
 ```bash
 .tools/venv/bin/python entrypoints/budget.py check --line gpt-oss-20b-gpu --hourly 2.51 --max-hours 2 --other-usd 0.5 --launch-cap 10
