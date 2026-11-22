@@ -85,9 +85,11 @@ def taskset_rows(taskset):
 def select_tasks(taskset='v1', which='all', part='train', limit=None):
     """The rows a probe or trainer works on: one split of one task set, optionally only true or false statements.
 
-    Probes use the training split so the evaluation split stays held out for trained models.
+    Probes use the training split so the evaluation split stays held out for trained models; `part='all'`
+    is for inference-only data collection where nothing is trained and every statement can be used.
     """
-    rows = split(taskset_rows(taskset))[part]
+    parts = split(taskset_rows(taskset))
+    rows = parts['train'] + parts['evaluation'] if part == 'all' else parts[part]
     if which != 'all':
         rows = [t for t in rows if t['true'] == (which == 'true')]
     return rows[:limit]

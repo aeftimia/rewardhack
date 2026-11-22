@@ -23,6 +23,7 @@ def main():
     ap.add_argument('--max-seconds', type=int, default=1800)
     ap.add_argument('--taskset', choices=TASKSETS, default='v1')
     ap.add_argument('--tasks', choices=['all', 'true', 'false'], default='all')
+    ap.add_argument('--part', choices=['train', 'evaluation', 'all'], default='train', help="'all' only for inference-only collection with no training downstream")
     ap.add_argument('--template-kwargs', default='{}', help='JSON passed to the chat template, e.g. {"enable_thinking": true} or {"reasoning_effort": "high"}')
     run(ap.parse_args())
 

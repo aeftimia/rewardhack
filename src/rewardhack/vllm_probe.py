@@ -35,7 +35,7 @@ def run(args):
         import vllm
         from vllm import LLM, SamplingParams
         summary['vllm'] = vllm.__version__
-        tasks = select_tasks(args.taskset, args.tasks)
+        tasks = select_tasks(args.taskset, args.tasks, getattr(args, 'part', 'train'))
         t0 = time.perf_counter()
         llm = LLM(model=args.model, revision=args.revision, tokenizer_revision=args.revision, seed=args.seed,
                   max_model_len=args.max_model_len, gpu_memory_utilization=args.gpu_memory_utilization,
@@ -65,7 +65,7 @@ def run(args):
                     rows.append(row)
                     sink.write(json.dumps(row, ensure_ascii=False)+'\n')
         summary.update(summarize(rows) if args.lean != 'none' else {'samples': len(rows), 'scored': False},
-                       variant=args.variant, max_tokens=args.max_tokens, generation_seconds=t_gen, lean_seconds=t_lean,
+                       variant=args.variant, part=getattr(args, 'part', 'train'), taskset=args.taskset, max_tokens=args.max_tokens, generation_seconds=t_gen, lean_seconds=t_lean,
                        generated_tokens=generated, tokens_per_second=generated/max(t_gen, 1e-9), mean_tokens=generated/max(len(rows), 1),
                        truncated=sum(r['truncated'] for r in rows), status='completed')
     except BaseException as error:  # recorded, then re-raised: a partial summary is still useful
