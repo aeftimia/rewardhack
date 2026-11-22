@@ -1,0 +1,74 @@
+2026-11-12T15:21:02Z start vllm-install
+0.33.0
+2026-11-12T15:21:04Z start download Qwen/Qwen3-8B
+2026-11-12T15:21:04Z end download Qwen/Qwen3-8B exit=0
+2026-11-12T15:21:04Z start qwen3-8b-v1-neutral-nothink
+2026-11-12T15:21:59Z end qwen3-8b-v1-neutral-nothink exit=0
+2026-11-12T15:21:59Z start qwen3-8b-v1-neutral-think
+2026-11-12T15:27:54Z end qwen3-8b-v1-neutral-think exit=0
+2026-11-12T15:27:54Z start qwen3-8b-v1-nocheat-nothink
+2026-11-12T15:28:46Z end qwen3-8b-v1-nocheat-nothink exit=0
+2026-11-12T15:28:46Z start qwen3-8b-v1-nocheat-think
+2026-11-12T15:35:20Z end qwen3-8b-v1-nocheat-think exit=0
+2026-11-12T15:35:20Z start qwen3-8b-v1-maycheat-nothink
+2026-11-12T15:36:12Z end qwen3-8b-v1-maycheat-nothink exit=0
+2026-11-12T15:36:12Z start qwen3-8b-v1-maycheat-think
+2026-11-12T15:41:41Z end qwen3-8b-v1-maycheat-think exit=0
+2026-11-12T15:41:41Z start qwen3-8b-hard-neutral-nothink
+2026-11-12T15:43:44Z end qwen3-8b-hard-neutral-nothink exit=0
+2026-11-12T15:43:44Z start qwen3-8b-hard-neutral-think
+2026-11-12T16:19:17Z end qwen3-8b-hard-neutral-think exit=0
+2026-11-12T16:19:17Z start qwen3-8b-hard-nocheat-nothink
+2026-11-12T16:21:10Z end qwen3-8b-hard-nocheat-nothink exit=0
+2026-11-12T16:21:10Z start qwen3-8b-hard-nocheat-think
+2026-11-12T16:57:26Z end qwen3-8b-hard-nocheat-think exit=0
+2026-11-12T16:57:26Z start qwen3-8b-hard-maycheat-nothink
+2026-11-12T16:59:17Z end qwen3-8b-hard-maycheat-nothink exit=0
+2026-11-12T16:59:17Z start qwen3-8b-hard-maycheat-think
+2026-11-12T17:31:07Z end qwen3-8b-hard-maycheat-think exit=0
+2026-11-12T17:31:07Z start download Qwen/Qwen3-14B
+2026-11-12T17:31:25Z end download Qwen/Qwen3-14B exit=0
+2026-11-12T17:31:25Z start qwen3-14b-v1-neutral-nothink
+2026-11-12T17:32:44Z end qwen3-14b-v1-neutral-nothink exit=0
+2026-11-12T17:32:44Z start qwen3-14b-v1-neutral-think
+2026-11-12T17:39:33Z end qwen3-14b-v1-neutral-think exit=0
+2026-11-12T17:39:33Z start qwen3-14b-v1-nocheat-nothink
+2026-11-12T17:40:46Z end qwen3-14b-v1-nocheat-nothink exit=0
+2026-11-12T17:40:46Z start qwen3-14b-v1-nocheat-think
+2026-11-12T17:47:36Z end qwen3-14b-v1-nocheat-think exit=0
+2026-11-12T17:47:36Z start qwen3-14b-v1-maycheat-nothink
+2026-11-12T17:48:53Z end qwen3-14b-v1-maycheat-nothink exit=0
+2026-11-12T17:48:53Z start qwen3-14b-v1-maycheat-think
+2026-11-12T17:54:41Z start vllm-install
+0.33.0
+2026-11-12T17:54:44Z start download Qwen/Qwen3-8B
+2026-11-12T17:54:44Z end download Qwen/Qwen3-8B exit=0
+2026-11-12T17:54:44Z skip qwen3-8b-v1-neutral-nothink (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-v1-neutral-think (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-v1-nocheat-nothink (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-v1-nocheat-think (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-v1-maycheat-nothink (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-v1-maycheat-think (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-hard-neutral-nothink (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-hard-neutral-think (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-hard-nocheat-nothink (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-hard-nocheat-think (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-hard-maycheat-nothink (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-8b-hard-maycheat-think (completed earlier)
+2026-11-12T17:54:44Z start download Qwen/Qwen3-14B
+2026-11-12T17:54:44Z end download Qwen/Qwen3-14B exit=0
+2026-11-12T17:54:44Z skip qwen3-14b-v1-neutral-nothink (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-14b-v1-neutral-think (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-14b-v1-nocheat-nothink (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-14b-v1-nocheat-think (completed earlier)
+2026-11-12T17:54:44Z skip qwen3-14b-v1-maycheat-nothink (completed earlier)
+2026-11-12T17:54:44Z start qwen3-14b-v1-maycheat-think
+2026-11-12T18:00:56Z end qwen3-14b-v1-maycheat-think exit=0
+2026-11-12T18:00:56Z start qwen3-14b-hard-neutral-nothink
+2026-11-12T18:03:10Z end qwen3-14b-hard-neutral-nothink exit=0
+2026-11-12T18:03:10Z start qwen3-14b-hard-neutral-think
+2026-11-12T18:25:29Z end qwen3-14b-hard-neutral-think exit=0
+2026-11-12T18:25:29Z start qwen3-14b-hard-nocheat-nothink
+2026-11-12T18:28:40Z end qwen3-14b-hard-nocheat-nothink exit=0
+2026-11-12T18:28:40Z start qwen3-14b-hard-nocheat-think
+2026-11-12T18:30:24Z stopped by owner: pause the sweep
