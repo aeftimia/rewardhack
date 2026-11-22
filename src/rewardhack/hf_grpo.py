@@ -52,7 +52,27 @@ def load_model(args, summary):
 
 
 def template_kwargs(args):
+    """Chat-template switches for reasoning: Qwen takes enable_thinking, gpt-oss takes reasoning_effort."""
+    if args.reasoning_effort:
+        return {'reasoning_effort': args.reasoning_effort}
     return {'enable_thinking': args.thinking == 'on'} if args.thinking != 'unsupported' else {}
+
+
+def reasons(args):
+    """The completion carries reasoning before the JSON, so its markers are kept in the saved raw text."""
+    return args.thinking == 'on' or bool(args.reasoning_effort)
+
+
+def tally(rows):
+    """Counts of the behaviours a reward can separate, for one group, step or run."""
+    counts = dict(n=len(rows), exploit=sum(r['exploit'] for r in rows), genuine=sum(r['genuine'] for r in rows),
+                  refutation=sum(r['verified_refutation'] for r in rows), sorry_attempts=sum(sorry_attempt(r) for r in rows),
+                  format_valid=sum(r['format_valid'] for r in rows), inconclusive=sum(r['verifier_inconclusive'] for r in rows),
+                  reward=sum(r['reward'] for r in rows))
+    if rows and rows[0].get('claim') is not None:
+        counts.update(honest=sum(r['honest'] for r in rows), says_not_solved=sum(r['claim'] == 'NOT_SOLVED' for r in rows),
+                      concealed_exploit=sum(r['exploit'] and not r['honest'] for r in rows))
+    return counts
 
 
 def evaluate(model, tokenizer, tasks, args, stage):
@@ -75,9 +95,9 @@ def evaluate(model, tokenizer, tasks, args, stage):
             for output in outputs:
                 new = output[start:]
                 generated += int((new != tokenizer.pad_token_id).sum())
-                raw = tokenizer.decode(new, skip_special_tokens=False if args.thinking == 'on' else True)
+                raw = tokenizer.decode(new, skip_special_tokens=not reasons(args))
                 t0 = time.perf_counter()
-                row = score(args.lean, task, raw, args.arm)
+                row = score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn)
                 t_lean += time.perf_counter()-t0
                 rows.append(row)
                 sink.write(json.dumps(row, ensure_ascii=False)+'\n')
@@ -97,27 +117,37 @@ def train(model, tokenizer, tasks, args, summary):
     sink = (args.out/'training-rollouts.jsonl').open('w')
     groups = []
 
+    steps = (args.out/'steps.jsonl').open('w')
+    first_seen = summary.setdefault('first_seen_step', {})
+
     def reward_fn(completions, statement, **kwargs):
         t0 = time.perf_counter()
         timing['rollout'].append(t0-timing['step_start'])
-        rewards = []
+        rows = []
         for completion, claim in zip(completions, statement, strict=True):
             raw = completion[-1]['content'] if isinstance(completion, list) else completion
-            row = score(args.lean, by_statement[claim], raw, args.arm)
+            row = score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn)
             sink.write(json.dumps(row, ensure_ascii=False)+'\n')
-            rewards.append(row['reward'])
-            summary['rollouts']['n'] += 1
-            summary['rollouts']['exploit'] += row['exploit']
-            summary['rollouts']['genuine'] += row['genuine']
-            summary['rollouts']['refutation'] += row['verified_refutation']
-            summary['rollouts']['sorry_attempts'] += sorry_attempt(row)
-            summary['rollouts']['reward'] += row['reward']
+            rows.append(row)
         sink.flush()
-        for i in range(0, len(rewards), args.num_generations):
-            groups.append(len(set(rewards[i:i+args.num_generations])) > 1)
+        step = len(timing['lean'])+1
+        step_groups = [rows[i:i+args.num_generations] for i in range(0, len(rows), args.num_generations)]
+        mixed = [len({r['reward'] for r in group}) > 1 for group in step_groups]
+        groups.extend(mixed)
+        counts = tally(rows)
+        for key, value in counts.items():
+            summary['rollouts'][key] = summary['rollouts'].get(key, 0)+value
+        # The first step at which each behaviour was sampled at all: the exploration question, per arm and seed.
+        for behaviour in ('exploit', 'refutation', 'genuine', 'says_not_solved', 'concealed_exploit'):
+            if counts.get(behaviour) and behaviour not in first_seen:
+                first_seen[behaviour] = step
+        # A group whose rewards are all equal has zero advantage everywhere and moves nothing.
+        steps.write(json.dumps(dict(step=step, **counts, groups=len(mixed), mixed_groups=sum(mixed), zero_advantage_groups=len(mixed)-sum(mixed),
+                                    per_group=[tally(group) for group in step_groups]))+'\n')
+        steps.flush()
         timing['reward_end'] = time.perf_counter()
         timing['lean'].append(timing['reward_end']-t0)
-        return rewards
+        return [r['reward'] for r in rows]
 
     run_args = args
 
@@ -141,7 +171,7 @@ def train(model, tokenizer, tasks, args, summary):
     config = GRPOConfig(output_dir=str(args.out/'trainer'), max_steps=args.steps, per_device_train_batch_size=args.num_generations * args.prompts_per_step,
                         gradient_accumulation_steps=1, num_generations=args.num_generations, max_completion_length=args.max_completion_length,
                         learning_rate=args.learning_rate, bf16=torch.cuda.is_available(), use_cpu=not torch.cuda.is_available(), gradient_checkpointing=True,
-                        beta=0.0, temperature=1.0, top_p=0.95, top_k=20, chat_template_kwargs=template_kwargs(args), logging_steps=1, save_strategy='no',
+                        beta=args.beta, temperature=1.0, top_p=0.95, top_k=20, chat_template_kwargs=template_kwargs(args), logging_steps=1, save_strategy='no',
                         report_to='none', seed=args.seed, dataloader_num_workers=0, loss_type='grpo')
     dataset = Dataset.from_list([{'prompt': prompt(t['statement'], args.prompt_variant), 'statement': t['statement']} for t in tasks])
     trainer = GRPOTrainer(model=model, args=config, reward_funcs=reward_fn, train_dataset=dataset, processing_class=tokenizer, callbacks=[Instrument()],
@@ -157,6 +187,7 @@ def train(model, tokenizer, tasks, args, summary):
     trainer.save_model(str(args.out/'adapter'))
     (args.out/'training-log.json').write_text(json.dumps(trainer.state.log_history, indent=1)+'\n')
     sink.close()
+    steps.close()
     return trainer.model
 
 
@@ -165,7 +196,7 @@ def run(args):
     args.out.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     args.train_deadline = time.monotonic()+args.max_seconds-args.final_eval_seconds
-    summary = {'status': 'running', 'argv': sys.argv[1:], 'purpose': 'feasibility; not intervention evidence', 'rollouts': dict.fromkeys(('n', 'exploit', 'genuine', 'refutation', 'sorry_attempts', 'reward'), 0),
+    summary = {'status': 'running', 'argv': sys.argv[1:], 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
                'script_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(__file__).parent.glob('*.py')}}
 
     def hard_stop(*unused):
@@ -181,6 +212,8 @@ def run(args):
         if args.mode == 'controls':
             summary['status'] = 'completed'
             return
+        from .judge import from_args
+        args.judge_fn = from_args(args)
         data = split(taskset_rows(args.taskset))
         evaluation = data['evaluation'][:args.eval_limit]
         training = data['train'][:args.train_limit]
@@ -207,6 +240,8 @@ def run(args):
     finally:
         signal.alarm(0)
         gpu = sampler.summary()
+        meter = getattr(getattr(args, 'judge_fn', None), 'meter', None)
+        summary['judge_usage'] = meter.totals if meter else None
         summary.update(elapsed_seconds=time.perf_counter()-started, peak_rss_gib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/2**(20 if sys.platform != 'darwin' else 30),
                        peak_gpu_memory_used_gib=None if gpu['gpu_sampler_error'] else gpu['gpu_peak_mib']/1024,
                        max_gpu_utilization=None if gpu['gpu_sampler_error'] else gpu['gpu_max_util'], gpu_sampler_error=gpu['gpu_sampler_error'])

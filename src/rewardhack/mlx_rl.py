@@ -92,7 +92,7 @@ def attempt_rate(model, tokenizer, tasks, args, samples):
     for task in tasks:
         ids = encode(tokenizer, task['statement'], args.variant, args.thinking)
         for _ in range(samples):
-            rows.append(score(args.lean, task, sample(model, tokenizer, ids, args.max_tokens)[0], args.arm))
+            rows.append(score(args.lean, task, sample(model, tokenizer, ids, args.max_tokens)[0], args.arm, args.penalty, args.judge_fn))
     return rows
 
 
@@ -135,7 +135,7 @@ def rl(args, model, tokenizer):
         samples = [sample(model, tokenizer, ids, args.max_tokens) for _ in range(args.group)]
         t_rollout = time.perf_counter()-t0
         t0 = time.perf_counter()
-        rows = [score(args.lean, task, s[0], args.arm) for s in samples]
+        rows = [score(args.lean, task, s[0], args.arm, args.penalty, args.judge_fn) for s in samples]
         t_lean = time.perf_counter()-t0
         rewards = mx.array([r['reward'] for r in rows])
         std = float(rewards.std())
@@ -174,6 +174,8 @@ def rl(args, model, tokenizer):
 def run(args):
     args.out.mkdir(parents=True, exist_ok=True)
     mx.random.seed(args.seed)
+    from .judge import from_args
+    args.judge_fn = from_args(args)
     model, tokenizer = load(args.model, revision=args.revision)
     if args.mode == 'probe' and args.adapter:
         attach_lora(model, args, args.adapter)

@@ -13,7 +13,8 @@ finish() { echo "copying results"; pull; date -u +%FT%TZ > "$RESULTS/driver-exit
 trap finish EXIT
 for _ in $(seq 20); do "${SSH[@]}" "root@$HOST" true 2>/dev/null && break; sleep 15; done
 "${SSH[@]}" "root@$HOST" true || { echo 'ssh failed'; exit 1; }
-rsync -az --exclude .tools --exclude spending --exclude results -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
+# results/ stays behind except the hand-read labels, which judge validation on the pod needs (7 MB).
+rsync -az --exclude .tools --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
 "${SSH[@]}" "root@$HOST" "nohup bash pilot-repo/$REMOTE > remote.log 2>&1 < /dev/null & disown"
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60))

@@ -23,6 +23,7 @@ def call(args, messages):
         body['reasoning_effort'] = args.reasoning_effort
     if args.temperature is not None:
         body['temperature'] = args.temperature
+    body.update(getattr(args, 'extra_body', None) or {})
     last = 'no attempt'
     for attempt in range(4):
         try:

@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from rewardhack.budget import MODEL_8B_CAP, TOTAL_CAP, check, read_ledger, spent
+from rewardhack.budget import LINES, TOTAL_CAP, check, grant_spent, read_ledger, spent
 
 
 def main():
@@ -13,22 +13,21 @@ def main():
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('status')
     guard = sub.add_parser('check')
-    guard.add_argument('--provider', required=True, choices=['aws', 'runpod', 'other'])
-    guard.add_argument('--model', required=True)
+    guard.add_argument('--line', required=True, choices=sorted(LINES), help='grant budget line this launch is charged to')
     guard.add_argument('--hourly', type=float, required=True)
     guard.add_argument('--max-hours', type=float, required=True)
     guard.add_argument('--other-usd', type=float, default=0.0)
+    guard.add_argument('--launch-cap', type=float, help='ceiling approved for this one launch')
     args = ap.parse_args()
     rows = read_ledger(args.ledger)
     if args.cmd == 'status':
-        print(f'total ${spent(rows):.2f} of ${TOTAL_CAP}')
-        print(f"8B ${spent(rows, model='8B'):.2f} of ${MODEL_8B_CAP}")
-        for key in ('provider', 'model'):
-            for value in sorted({r[key] for r in rows}):
-                print(f'  {key}={value}: ${spent(rows, **{key: value}):.2f}')
+        print(f'grant ${grant_spent(rows):.2f} of ${TOTAL_CAP:.2f}')
+        for line, cap in LINES.items():
+            print(f'  {line}: ${spent(rows, line=line):.2f} of ${cap:.2f}')
+        print(f"outside the grant (pilot and other funds): ${spent(rows)-grant_spent(rows):.2f}")
         return 0
-    worst, problems = check(rows, args.provider, args.model, args.hourly, args.max_hours, args.other_usd)
-    print(f'worst case ${worst:.2f}; remaining after ${TOTAL_CAP-spent(rows)-worst:.2f}')
+    worst, problems = check(rows, args.line, args.hourly, args.max_hours, args.other_usd, args.launch_cap)
+    print(f'worst case ${worst:.2f}; {args.line} remaining after ${LINES[args.line]-spent(rows, line=args.line)-worst:.2f}')
     for problem in problems:
         print('REFUSED:', problem)
     return 1 if problems else 0

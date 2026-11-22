@@ -3,7 +3,9 @@
 import argparse
 from pathlib import Path
 
+from rewardhack import judge
 from rewardhack.mlx_rl import run
+from rewardhack.outcomes import ARMS
 from rewardhack.prompts import VARIANTS
 from rewardhack.tasks import TASKSETS
 
@@ -19,7 +21,8 @@ def main():
     ap.add_argument('--taskset', choices=TASKSETS, default='v1')
     ap.add_argument('--tasks', choices=['all', 'true', 'false'], default='all')
     ap.add_argument('--thinking', action='store_true')
-    ap.add_argument('--arm', choices=['baseline', 'equal_reward'], default='baseline')
+    ap.add_argument('--arm', choices=ARMS, default='baseline')
+    ap.add_argument('--penalty', type=float, default=0.0, help='λ of the report_correct arm')
     ap.add_argument('--samples', type=int, default=4)
     ap.add_argument('--max-tokens', type=int, default=512)
     ap.add_argument('--max-seconds', type=int, default=3600)
@@ -33,7 +36,11 @@ def main():
     ap.add_argument('--learning-rate', type=float, default=1e-4)
     ap.add_argument('--monitor-every', type=int, default=10)
     ap.add_argument('--monitor-samples', type=int, default=2)
-    run(ap.parse_args())
+    judge.add_arguments(ap)
+    args = ap.parse_args()
+    if args.arm == 'report_correct' and args.judge == 'none':
+        ap.error('--arm report_correct needs --judge')
+    run(args)
 
 
 if __name__ == '__main__':
