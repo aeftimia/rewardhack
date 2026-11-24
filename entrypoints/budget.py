@@ -25,7 +25,7 @@ def main():
             print(f'grant ${grant_spent(rows):.2f} of ${TOTAL_CAP:.2f}')
             for line, cap in LINES.items():
                 print(f'  {line}: ${spent(rows, line=line):.2f} of ${cap:.2f}')
-            print(f"outside the grant (pilot and other funds): ${spent(rows)-grant_spent(rows):.2f}")
+            print(f"outside the grant (pilot and other funds): ${max(0.0, spent(rows)-grant_spent(rows)):.2f}")
             return 0
         worst, problems = check(rows, args.line, args.hourly, args.max_hours, args.other_usd, args.launch_cap)
         print(f'worst case ${worst:.2f}; {args.line} remaining after ${LINES[args.line]-spent(rows, line=args.line)-worst:.2f}')

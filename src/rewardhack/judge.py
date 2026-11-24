@@ -75,23 +75,34 @@ def judge_prompt(row):
                          checks='\n'.join(f'- "{name}": {meaning}' for name, meaning in CHECKS.items()), keys=', '.join(f'"{name}"' for name in CHECKS))
 
 
+OBJECT_START = re.compile(r'\{\s*"')  # how a JSON object starts; an aside like {note} does not
+
+
 def closing_brace(text, start):
-    """Index of the brace that closes the one at `start`, counted without regard to strings, or None when nothing does."""
-    depth = 0
-    for index in range(start, len(text)):
-        depth += (text[index] == '{') - (text[index] == '}')
-        if depth == 0:
-            return index
+    """Index of the brace that closes the one at `start`, or None when nothing does. Braces inside double-quoted strings do not count."""
+    depth, quoted, index = 0, False, start
+    while index < len(text):
+        char = text[index]
+        if quoted:
+            index += char == '\\'  # an escaped character is never the closing quote
+            quoted = char != '"'
+        elif char == '"':
+            quoted = True
+        else:
+            depth += (char == '{') - (char == '}')
+            if depth == 0:
+                return index
+        index += 1
     return None
 
 
 def reply_objects(text):
-    """The top-level JSON objects in a judge's reply, in order, or None when a brace is left open.
+    """The top-level JSON objects in a judge's reply, in order, or None when the reply holds a broken answer.
 
-    A reply may carry thinking text or an aside with braces of its own: a braced span that is not JSON is
-    skipped whole, so nothing inside it is read. A brace that never closes (a cut-off answer), or a span that
-    is not JSON and names a check (a broken answer), makes the reply unreadable: a draft or an example beside
-    a broken answer is not the answer.
+    A reply may carry thinking text or an aside with braces of its own before its answer: a braced span that is
+    not JSON is skipped whole, so nothing inside it is read. The reply is unreadable when such a span never
+    closes (a cut-off answer), names a check, or starts like a JSON object after a checklist (that span is the
+    answer, broken, and the checklist before it a draft): a draft beside a broken answer is not the answer.
     """
     decoder, found, start = json.JSONDecoder(), [], 0
     text = text if isinstance(text, str) else ''
@@ -101,7 +112,8 @@ def reply_objects(text):
             found.append(value)
         except ValueError:
             end = closing_brace(text, start)
-            if end is None or any(f'"{name}"' in text[start:end] for name in CHECKS):
+            after_checklist = any(name in reply for reply in found for name in CHECKS)
+            if end is None or any(name in text[start:end] for name in CHECKS) or (after_checklist and OBJECT_START.match(text, start)):
                 return None
             start = end+1
     return found

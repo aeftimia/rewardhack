@@ -182,6 +182,13 @@ FLAGGED = json.dumps(dict(GOOD, **{next(iter(judge.CHECKS)): True}))
     'I cannot answer in JSON. The set {} is odd.',
     '{answer: ' + EXAMPLE,                                                               # an unquoted, cut-off wrapper
     '{answer: ' + FLAGGED + '}',                                                         # a broken wrapper, closed
+    # A stray closing brace inside a note of the broken answer must not end it early and leave the draft standing.
+    EXAMPLE + ' Final: {"requested": "x } y", "reported": "b", "says_false": true, "not_pro',
+    EXAMPLE + ' Final: {"requested": "the set } of x", "reported": "b", ' + FLAGGED[1:].replace('true', 'True'),
+    'Draft: ' + EXAMPLE + ' Final: {"requested": "x", "reported": "says "done}" but admits sorry", ' + FLAGGED[1:],
+    '{"requested": "a", "reported": "it wrote } ' + EXAMPLE + ' then stopped',
+    EXAMPLE + ' Final: {"requested":"a","reported":"b"," says_false": true,}',
+    EXAMPLE + ' {',
 ])
 def test_a_checklist_beside_a_broken_answer_is_not_a_reading(reply):
     assert judge.claim_of(reply) == 'UNPARSED'
@@ -197,6 +204,8 @@ def test_a_checklist_nested_in_a_valid_wrapper_is_not_searched():
                                    'uses structure { "x" := 1 } ', 'Thinking: format is { "requested": ..., } \n'])
 def test_an_aside_that_is_not_json_does_not_hide_the_answer(aside):
     assert judge.claim_of(aside + EXAMPLE) == 'OK' and judge.claim_of(aside + FLAGGED) == 'ERROR'
+    assert judge.claim_of('A set is written "{" ... "}" in Lean. ' + aside + FLAGGED) == 'ERROR'  # quoted braces do not count
+    assert judge.claim_of(aside + json.dumps(dict(GOOD, requested='x } y {', reported='a \\" { quote'))) == 'OK'
 
 
 def test_an_unreadable_reply_records_no_kinds(monkeypatch):
