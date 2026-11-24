@@ -13,10 +13,31 @@ import time
 from pathlib import Path
 
 from .gpu import GpuSampler
-from .outcomes import completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards
+from .outcomes import completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
+
+
+class VerifierMaskMixin:
+    """Mask undecided rollouts after TRL normalization, including the independent KL loss.
+
+    The reward callback sets a local mask in the same order as its completions.
+    Keeping it with each generated batch also handles TRL's buffered minibatches.
+    """
+    def _generate_and_score_completions(self, inputs):
+        self._verifier_keep = None
+        batch = super()._generate_and_score_completions(inputs)
+        import torch
+        keep = self._verifier_keep
+        if keep is None or len(keep) != len(batch['advantages']):
+            raise ValueError('Verifier mask must match the generated local completions')
+        keep = torch.tensor(keep, dtype=torch.bool, device=batch['advantages'].device)
+        batch['advantages'] = batch['advantages'].masked_fill(~keep, 0.0)
+        # tool_mask affects the loss only, leaving attention to generated tokens intact.
+        mask = keep[:, None].expand_as(batch['completion_mask'])
+        batch['tool_mask'] = batch.get('tool_mask', torch.ones_like(batch['completion_mask'])) * mask
+        return batch
 
 
 def load_model(args, summary):
@@ -93,6 +114,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
                 rows.append(row)
                 sink.write(json.dumps(row, ensure_ascii=False)+'\n')
                 sink.flush()
+    training_rewards(rows, samples)  # probe variation must predict the signal the trainer will actually use
     grouped = reward_groups(rows, samples)
     return dict(summarize(rows), generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
                 samples_per_prompt=samples, reward_groups=grouped['groups'], mixed_reward_groups=grouped['mixed_groups'],
@@ -127,6 +149,7 @@ def train(model, tokenizer, tasks, args, summary):
             truncated = completion_truncated(token_ids, stops, args.max_completion_length)
             rows.append(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated))
         rewards = training_rewards(rows, args.num_generations)
+        trainer._verifier_keep = [training_keep(row) for row in rows]
         sink.write(''.join(json.dumps(row, ensure_ascii=False)+'\n' for row in rows))
         sink.flush()
         step = len(timing['lean'])+1
@@ -171,7 +194,10 @@ def train(model, tokenizer, tasks, args, summary):
                         beta=args.beta, temperature=1.0, top_p=0.95, top_k=20, chat_template_kwargs=template_kwargs(args), logging_steps=1, save_strategy='no',
                         report_to='none', seed=args.seed, dataloader_num_workers=0, loss_type='grpo')
     dataset = Dataset.from_list([{'prompt': prompt(t['statement'], args.prompt_variant), 'statement': t['statement']} for t in tasks])
-    trainer = GRPOTrainer(model=model, args=config, reward_funcs=reward_fn, train_dataset=dataset, processing_class=tokenizer, callbacks=[Instrument()],
+    class VerifiedTrainer(VerifierMaskMixin, GRPOTrainer):
+        pass
+
+    trainer = VerifiedTrainer(model=model, args=config, reward_funcs=reward_fn, train_dataset=dataset, processing_class=tokenizer, callbacks=[Instrument()],
                           peft_config=None if args.adapter else LoraConfig(task_type='CAUSAL_LM', r=args.lora_rank, lora_alpha=2*args.lora_rank,
                                                                            target_modules='all-linear', lora_dropout=0.0))
     before = {n: p.detach().cpu().clone() for n, p in trainer.model.named_parameters() if p.requires_grad}

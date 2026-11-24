@@ -104,13 +104,18 @@ def decided(check, *args):
     return check(*args, timeout=RETRY_TIMEOUT) if verdict['why'] in INCONCLUSIVE else verdict
 
 
+def training_keep(row):
+    """Whether this rollout can contribute a training gradient; baseline uses only the grader."""
+    return row['arm'] == 'baseline' or not row.get('verifier_inconclusive', False)
+
+
 def training_rewards(rows, size):
     """The reward each rollout trains on, also stored on the row as `training_reward`.
 
     A rollout the verifier could not decide gets the mean reward of the decided rollouts in its prompt group, so
-    its advantage is zero: it is neither paid like an exploit nor punished like a failure, and no gradient points
-    toward or away from whatever made the verifier undecided. GRPO compares complete groups, so the rollout
-    cannot simply be left out. The baseline arm is the grader alone and never asks the verifier, so it is untouched.
+    its reward advantage is neutral in exact arithmetic. Both trainers additionally exclude its loss using
+    `training_keep`, removing floating-point residuals and independent terms such as KL. GRPO compares complete
+    groups, so rows remain in the batch. The baseline reward depends only on the grader and is untouched.
     """
     if size <= 0 or len(rows) % size:
         raise ValueError('Reward rows must contain complete, equally sized prompt groups')
@@ -119,7 +124,7 @@ def training_rewards(rows, size):
         peers = [r['reward'] for r in group if not r['verifier_inconclusive']]
         neutral = sum(peers)/len(peers) if peers else 0.0
         for row in group:
-            row['training_reward'] = neutral if row['verifier_inconclusive'] and row['arm'] != 'baseline' else row['reward']
+            row['training_reward'] = neutral if not training_keep(row) else row['reward']
     return [r['training_reward'] for r in rows]
 
 

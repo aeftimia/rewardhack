@@ -273,3 +273,78 @@ def test_rescore_does_not_silently_drop_malformed_rows(args):
     with pytest.raises(ValueError, match='neither raw output nor a transport error'):
         rescore.rescore_file(path, args.lean, {'true': TASK})
     assert not path.with_suffix('.rescored.jsonl').exists()
+
+
+def test_verifier_mask_removes_actual_trl_kl_gradient_without_changing_attention(tmp_path, monkeypatch):
+    """Zero advantages alone leave TRL's KL active; the loss mask must remove both terms."""
+    torch = pytest.importorskip('torch')
+    pytest.importorskip('trl')
+    from transformers import GPT2Config, GPT2LMHeadModel, PreTrainedTokenizerFast
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from trl import GRPOConfig, GRPOTrainer
+    from datasets import Dataset
+
+    backend = Tokenizer(WordLevel({'<pad>': 0, '<eos>': 1, '<unk>': 2, 'hello': 3}, unk_token='<unk>'))
+    tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend, eos_token='<eos>', pad_token='<pad>', unk_token='<unk>')
+    model = GPT2LMHeadModel(GPT2Config(vocab_size=4, n_layer=1, n_head=1, n_embd=8,
+                                     bos_token_id=3, eos_token_id=1, pad_token_id=0))
+    config = GRPOConfig(output_dir=str(tmp_path), use_cpu=True, bf16=False, report_to='none',
+                        num_generations=2, per_device_train_batch_size=2, max_completion_length=2, beta=0, loss_type='grpo')
+
+    class MaskedTrainer(hf_grpo.VerifierMaskMixin, GRPOTrainer):
+        pass
+
+    trainer = MaskedTrainer(model=model, args=config, reward_funcs=lambda completions, **kw: [0.] * len(completions),
+                            train_dataset=Dataset.from_list([{'prompt': 'hello'}]), processing_class=tokenizer)
+    # Supply reference log probabilities directly, so the real KL path needs no checkpoint download.
+    trainer.beta = .1
+    trainer.current_gradient_accumulation_steps = 1
+    batch = dict(prompt_ids=torch.tensor([[3], [3]]), prompt_mask=torch.ones((2, 1), dtype=torch.long),
+                 completion_ids=torch.tensor([[3, 1], [3, 1]]), completion_mask=torch.ones((2, 2), dtype=torch.long),
+                 advantages=torch.tensor([0., 0.]), ref_per_token_logps=torch.full((2, 2), -1.),
+                 tool_mask=torch.tensor([[1, 1], [1, 0]]))
+    seen_attention = []
+    logps = torch.full((2, 2), -2., requires_grad=True)
+
+    def log_probabilities(model, ids, attention_mask, *a, **kw):
+        seen_attention.append(attention_mask.clone())
+        return logps, torch.zeros_like(logps), None
+
+    monkeypatch.setattr(trainer, '_get_per_token_logps_and_entropies', log_probabilities)
+    loss = trainer._compute_loss(model, batch)
+    loss.backward()
+    assert logps.grad[0].abs().sum() > 0  # actual pinned TRL KL acts despite zero advantage
+    logps.grad.zero_()
+
+    def generated(self, inputs):
+        self._verifier_keep = [False, True]
+        return dict(batch, advantages=torch.tensor([1e-7, 0.]))  # normalization roundoff must also be removed
+
+    monkeypatch.setattr(GRPOTrainer, '_generate_and_score_completions', generated)
+    masked = trainer._generate_and_score_completions([])
+    assert masked['advantages'].tolist() == [0., 0.]
+    assert masked['tool_mask'].tolist() == [[0, 0], [1, 0]]
+    assert torch.equal(masked['completion_mask'], batch['completion_mask'])
+    loss = trainer._compute_loss(model, masked)
+    loss.backward()
+    assert logps.grad[0].tolist() == [0., 0.]
+    assert logps.grad[1, 0].abs() > 0 and logps.grad[1, 1] == 0
+    assert torch.equal(seen_attention[0], seen_attention[1])
+
+
+def test_probe_reward_variation_matches_dropped_training_rows(args, monkeypatch):
+    torch = pytest.importorskip('torch')
+    model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])
+    model.generate = lambda **kw: torch.tensor([[1, 2, 3, 4, 9], [1, 2, 3, 4, 9]])
+    args.eval_samples = 2
+    template = outcomes.score('unused', TASK, RAW, 'baseline', truncated=True)
+    rows = [dict(template, arm='report_correct', reward=2., verifier_inconclusive=False),
+            dict(template, arm='report_correct', reward=1., verifier_inconclusive=True)]
+    pending = iter(rows)
+    monkeypatch.setattr(hf_grpo, 'score', lambda *a, **kw: next(pending))
+    summary = hf_grpo.evaluate(model, tokenizer, [TASK], args, 'probe')
+    assert summary['mixed_reward_groups'] == 0 and summary['zero_advantage_groups'] == 1
+    assert outcomes.training_rewards(rows, 2) == [2., 2.]
+    saved = [json.loads(line) for line in (args.out/'probe-evaluation.jsonl').read_text().splitlines()]
+    assert [r['reward'] for r in saved] == [2., 1.]

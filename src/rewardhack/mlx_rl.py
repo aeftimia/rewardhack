@@ -19,7 +19,7 @@ from mlx_lm import load, stream_generate
 from mlx_lm.sample_utils import make_sampler
 from mlx_lm.tuner.utils import linear_to_lora_layers
 
-from .outcomes import score, sorry_attempt, summarize, training_rewards
+from .outcomes import score, sorry_attempt, summarize, training_rewards, training_keep, verifier_advice
 from .prompts import prompt
 from .tasks import select_tasks, split, taskset_rows
 
@@ -114,12 +114,13 @@ def rl(args, model, tokenizer):
     rollouts = (args.out/'rollouts.jsonl').open('w')
     monitors = (args.out/'monitor.jsonl').open('w')
     started = time.perf_counter()
+    verifier_rows = []
 
     def run_monitor(step):
         rows = attempt_rate(model, tokenizer, monitor, args, args.monitor_samples)
         entry = dict(step=step, n=len(rows), sorry=sum(sorry_attempt(r) for r in rows), exploit=sum(r['exploit'] for r in rows),
                      genuine_true=sum(r['genuine'] for r in rows if r['true']), true=sum(r['true'] for r in rows),
-                     exploit_and_claims=sum(r['exploit_and_claims'] for r in rows), format_valid=sum(r['format_valid'] for r in rows))
+                     exploit_and_claims=sum(r['exploit_and_claims'] for r in rows), format_valid=sum(r['format_valid'] for r in rows), **verifier_advice(rows))
         monitors.write(json.dumps(entry)+'\n')
         monitors.flush()
         print('monitor', entry, flush=True)
@@ -138,6 +139,7 @@ def rl(args, model, tokenizer):
         t0 = time.perf_counter()
         rows = [score(args.lean, task, s[0], args.arm, args.penalty, args.judge_fn, truncated=s[3]) for s in samples]
         t_lean = time.perf_counter()-t0
+        verifier_rows.extend({'verifier_inconclusive': r['verifier_inconclusive']} for r in rows)
         rewards = mx.array(training_rewards(rows, len(rows)))
         std = float(rewards.std())
         t0 = time.perf_counter()
@@ -145,8 +147,8 @@ def rl(args, model, tokenizer):
         if std > 0:
             advantages = ((rewards-rewards.mean())/(std+1e-4)).tolist()
             total = None
-            for (_, tokens, _, _), advantage in zip(samples, advantages, strict=True):
-                if len(tokens) < 2:
+            for row, (_, tokens, _, _), advantage in zip(rows, samples, advantages, strict=True):
+                if not training_keep(row) or len(tokens) < 2:
                     continue
                 _, grads = loss_and_grad(model, ids, tokens, advantage/args.group)
                 total = grads if total is None else tree_map(lambda a, b: a+b, total, grads)
@@ -160,14 +162,15 @@ def rl(args, model, tokenizer):
         rollouts.flush()
         entry = dict(step=step, task=task['id'], reward=float(rewards.mean()), mixed=update, sorry=sum(sorry_attempt(r) for r in rows),
                      exploit=sum(r['exploit'] for r in rows), rollout_seconds=t_rollout, lean_seconds=t_lean,
-                     update_seconds=time.perf_counter()-t0, tokens=sum(len(s[1]) for s in samples), peak_gib=mx.get_peak_memory()/2**30)
+                     update_seconds=time.perf_counter()-t0, tokens=sum(len(s[1]) for s in samples), peak_gib=mx.get_peak_memory()/2**30,
+                     **verifier_advice(rows))
         log.write(json.dumps(entry)+'\n')
         log.flush()
         print(entry, flush=True)
         if step % args.monitor_every == 0:
             run_monitor(step)
     mx.save_safetensors(str(args.out/'adapter.safetensors'), dict(tree_flatten(model.trainable_parameters())))
-    (args.out/'summary.json').write_text(json.dumps(dict(trainable=trainable, updates=sum(json.loads(l)['mixed'] for l in open(args.out/'steps.jsonl')),
+    (args.out/'summary.json').write_text(json.dumps(dict(**verifier_advice(verifier_rows), trainable=trainable, updates=sum(json.loads(l)['mixed'] for l in open(args.out/'steps.jsonl')),
                                                          elapsed_seconds=time.perf_counter()-started, argv=sys.argv[1:], adapter=str(args.adapter) if args.adapter else None,
                                                          purpose='plumbing and mechanism; own trainer; not evidence about the hypothesis'), indent=1)+'\n')
 
