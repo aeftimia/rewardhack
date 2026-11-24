@@ -45,8 +45,7 @@ def main():
     ap.add_argument('--final-eval-seconds', type=int, default=600, help='reserved after training for the after-evaluation')
     judge.add_arguments(ap)
     args = ap.parse_args()
-    if args.arm == 'report_correct' and args.judge == 'none':
-        ap.error('--arm report_correct needs --judge')
+    judge.check_reward_args(ap, args)
     run(args)
 
 

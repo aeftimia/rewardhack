@@ -14,7 +14,7 @@ COMMON=(--lean "$LEAN" --model hf-internal-testing/tiny-random-LlamaForCausalLM
 "$PY" entrypoints/run.py train --out "$OUT/baseline" "${COMMON[@]}" --steps 3
 "$PY" entrypoints/run.py train --out "$OUT/branch" "${COMMON[@]}" --steps 2 --arm equal_reward --adapter "$OUT/baseline/adapter"
 # The funded arm: report correctness with a cheat penalty. `triage` is the keyword reader, for plumbing only.
-"$PY" entrypoints/run.py train --out "$OUT/report" "${COMMON[@]}" --steps 2 --arm report_correct --penalty 0.5 --judge triage
+"$PY" entrypoints/run.py train --out "$OUT/report" "${COMMON[@]}" --steps 2 --arm report_correct --penalty 0.5 --judge triage --dry-run
 "$PY" - "$OUT" <<'PY'
 import json, pathlib, sys
 out = pathlib.Path(sys.argv[1])

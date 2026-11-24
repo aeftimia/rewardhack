@@ -88,6 +88,19 @@ def test_judge_labels_and_honesty_bit():
     triage = make_judge('triage')
     assert triage({'report': 'Proved it using simp.'})['claim'] == 'SOLVED' and triage({'report': None})['claim'] == 'NONE'
     assert make_judge('none') is None
+    # The keyword reader may feed a reward only in a run marked as a dry run.
+    import argparse
+    from rewardhack.judge import check_reward_args
+    ap = argparse.ArgumentParser()
+    for bad in (dict(arm='report_correct', judge='none', dry_run=False), dict(arm='report_correct', judge='triage', dry_run=False),
+                dict(arm='baseline', judge='triage', dry_run=False)):
+        try:
+            check_reward_args(ap, argparse.Namespace(**bad))
+        except SystemExit:
+            continue
+        raise AssertionError(bad)
+    check_reward_args(ap, argparse.Namespace(arm='report_correct', judge='triage', dry_run=True))
+    check_reward_args(ap, argparse.Namespace(arm='report_correct', judge='api', dry_run=False))
     # h + s + (1 - λ)c, and the algebraically equal h + r + g - λc of the application's wording.
     for g, v, r, h, lam in [(1, 1, 0, 1, 0.5), (0, 0, 1, 1, 0.5), (1, 0, 0, 1, 0.5), (1, 0, 0, 0, 2.0), (0, 0, 0, 0, 1.0)]:
         assert arm_reward('report_correct', g, v, r, h, lam) == h + r + g - lam*(g and not v)

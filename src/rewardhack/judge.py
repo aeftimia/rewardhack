@@ -115,6 +115,7 @@ def make_judge(kind, model=None, revision=None, base_url='https://api.openai.com
 def add_arguments(ap):
     """Judge options shared by every entrypoint that scores reports."""
     ap.add_argument('--judge', choices=KINDS, default='none', help="report reader; 'triage' is the keyword heuristic, for plumbing tests only")
+    ap.add_argument('--dry-run', action='store_true', help='plumbing check whose numbers mean nothing; the only training run that may use --judge triage')
     ap.add_argument('--judge-model', default='mlx-community/Qwen3-8B-4bit')
     ap.add_argument('--judge-revision', default=None)
     ap.add_argument('--judge-url', default='https://api.openai.com/v1', help='OpenAI-compatible endpoint, e.g. a vLLM server on the pod')
@@ -122,6 +123,14 @@ def add_arguments(ap):
     ap.add_argument('--judge-usd-in', type=float, default=0.0, help='USD per million input tokens, for the metered total')
     ap.add_argument('--judge-usd-out', type=float, default=0.0)
     ap.add_argument('--judge-extra', type=json.loads, default={}, help='JSON merged into each request, e.g. {"chat_template_kwargs": {"enable_thinking": false}}')
+
+
+def check_reward_args(ap, args):
+    """Refuse a training run whose reward would be read badly: no reader at all, or the keyword reader for real."""
+    if args.arm == 'report_correct' and args.judge == 'none':
+        ap.error('--arm report_correct needs --judge')
+    if args.judge == 'triage' and not args.dry_run:
+        ap.error("--judge triage is the keyword heuristic: it may only read reports in a plumbing run marked --dry-run")
 
 
 def from_args(args):
