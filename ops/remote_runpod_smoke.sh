@@ -4,8 +4,8 @@
 # so expect the first launch to find environment problems; every step logs and a failed step does not block
 # the next. Model-written Lean IS executed here (training needs the reward), unlike the inference probes.
 #
-# Answers three questions before any of the $800 line is spent:
-#   1. Does the judge served on this pod agree with the model-read labels?           (judge-validation)
+# Answers before any of the $800 line is spent:
+#   1. Only with JUDGE_KIND=pod: does a judge served on this pod agree with the model-read labels? (judge-validation)
 #   2. Does TRL GRPO train gpt-oss-20b at all: reward variation, real updates, stable output? (train-*)
 #   3. What does a step cost? seconds per step -> dollars per run -> 15 runs against $800.
 cd ~/pilot-repo
@@ -17,6 +17,14 @@ log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
 fail() { log "$1"; touch ~/out/DONE; exit 1; }
 MODEL=openai/gpt-oss-20b; REV=6cee5e81ee83917806bbde320786a8fb61efebee
 JUDGE=${JUDGE_MODEL:-Qwen/Qwen3-8B}; JUDGE_REV=${JUDGE_REV:-b968826d9c46dd6066d109eabc6255188de91218}
+# The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
+# forwards the key into ~/.judge_key (mode 600) only when asked to; Lean never sees it (env -i, no network).
+# JUDGE_KIND=pod serves the small open model here instead, which has not been accepted for a reward.
+JUDGE_KIND=${JUDGE_KIND:-api}
+if [[ $JUDGE_KIND == api ]]; then
+  [[ -s ~/.judge_key ]] || fail 'NO_JUDGE_KEY: run the driver with FORWARD_JUDGE_KEY=1, or set JUDGE_KIND=pod'
+  export OPENAI_API_KEY; OPENAI_API_KEY=$(cat ~/.judge_key); rm -f ~/.judge_key
+fi
 
 # --- Lean, isolated. Proof bodies are model-written, so Lean runs with an empty environment and no network.
 log start lean
@@ -33,17 +41,23 @@ printf '#!/bin/bash\nexec env -i PATH=/usr/bin:/bin %s %s "$@"\n' "$ISOLATE" "$L
 # --- Python: the pinned training stack, and vLLM in its own environment for the judge server.
 log start install
 python -m venv /workspace/train-venv && /workspace/train-venv/bin/pip install -q torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED
-python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
+/workspace/train-venv/bin/pip install -q 'huggingface_hub[cli]' > ~/out/install-hf.log 2>&1
+HF=/workspace/train-venv/bin/hf
+if [[ $JUDGE_KIND == pod ]]; then python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED; fi
 PY=/workspace/train-venv/bin/python
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
 $PY entrypoints/run.py controls --out ~/out/controls --lean ~/lean-safe > ~/out/controls.log 2>&1 || fail VERIFIER_CONTROLS_FAILED
 log 'verifier controls passed'
 
 # --- Downloads (both ungated; no Hugging Face token on this pod).
-for pair in "$MODEL $REV" "$JUDGE $JUDGE_REV"; do set -- $pair
-  log "start download $1"; /workspace/vllm-venv/bin/hf download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-"${1##*/}".log 2>&1 || fail "DOWNLOAD_FAILED $1"
+PAIRS=("$MODEL $REV"); [[ $JUDGE_KIND == pod ]] && PAIRS+=("$JUDGE $JUDGE_REV")
+for pair in "${PAIRS[@]}"; do set -- $pair
+  log "start download $1"; $HF download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-"${1##*/}".log 2>&1 || fail "DOWNLOAD_FAILED $1"
 done
 
+if [[ $JUDGE_KIND == api ]]; then
+JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano --judge-usd-in 0.20 --judge-usd-out 1.25 --judge-max-usd "${JUDGE_MAX_USD:-1}")
+else
 # --- Judge server: a small model in a fixed slice of the card, OpenAI-compatible on localhost.
 log start judge-server
 /workspace/vllm-venv/bin/vllm serve "$JUDGE" --revision "$JUDGE_REV" --port 8001 --host 127.0.0.1 --max-model-len 3072 \
@@ -57,6 +71,7 @@ JUDGE_ARGS=(--judge api --judge-model "$JUDGE" --judge-url http://127.0.0.1:8001
 log start judge-validation
 $PY entrypoints/validate_judge.py --out ~/out/judge-validation --per-category 60 "${JUDGE_ARGS[@]}" > ~/out/judge-validation.log 2>&1
 log "end judge-validation exit=$?"
+fi
 
 # Questions 2 and 3. Low reasoning effort: the unprompted base rate (12/60) was measured there, and high
 # effort truncated 89/120 at 8k tokens. Hard task set, neutral prompt, no hint: unseeded exploration.

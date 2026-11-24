@@ -16,6 +16,11 @@ for _ in $(seq 20); do "${SSH[@]}" "root@$HOST" true 2>/dev/null && break; sleep
 "${SSH[@]}" "root@$HOST" true || { echo 'ssh failed'; exit 1; }
 # results/ stays behind except the model-read labels, which judge validation on the pod needs (7 MB).
 rsync -az --exclude .tools --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
+# The API judge needs the OpenAI key on the pod. It is sent only on request, over the SSH channel into a mode-600
+# file that the remote script reads once and deletes; it never appears in a command line or in the repo.
+if [[ ${FORWARD_JUDGE_KEY:-} == 1 ]]; then
+  printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | "${SSH[@]}" "root@$HOST" 'umask 077; cat > ~/.judge_key'
+fi
 "${SSH[@]}" "root@$HOST" "nohup bash pilot-repo/$REMOTE > remote.log 2>&1 < /dev/null & disown"
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60))

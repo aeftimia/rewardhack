@@ -108,7 +108,7 @@ def _local(model_id, revision):
     return ask, None
 
 
-def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra):
+def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, max_usd=None):
     from .openai_probe import Meter, call
     meter = Meter(usd_per_m_input, usd_per_m_output)
     # The schema makes the reply type-checked by the server (OpenAI structured outputs; vLLM guided decoding).
@@ -116,6 +116,8 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra):
                            extra_body={'response_format': SCHEMA, **extra})
 
     def ask(prompt):
+        if max_usd is not None and meter.totals['usd'] > max_usd:
+            raise RuntimeError(f"judge spend cap ${max_usd} reached at ${meter.totals['usd']:.2f}")  # stop the run: an unjudged reward is not a reward
         result = call(args, [{'role': 'user', 'content': prompt}])
         meter.totals['requests'] += 1
         if 'error' in result:
@@ -127,7 +129,7 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra):
 
 
 def make_judge(kind, model=None, revision=None, base_url='https://api.openai.com/v1', key_env='OPENAI_API_KEY',
-               usd_per_m_input=0.0, usd_per_m_output=0.0, extra=None):
+               usd_per_m_input=0.0, usd_per_m_output=0.0, extra=None, max_usd=None):
     """A judge callable, or None for kind 'none'. `judge.meter` carries token and dollar totals for `api`."""
     if kind == 'none':
         return None
@@ -139,7 +141,7 @@ def make_judge(kind, model=None, revision=None, base_url='https://api.openai.com
             return {'claim': 'ERROR' if flagged else 'OK', 'raw': 'keyword'}
         judge.meter = None
         return judge
-    ask, meter = _local(model, revision) if kind == 'local' else _api(model, base_url, key_env, usd_per_m_input, usd_per_m_output, extra or {})
+    ask, meter = _local(model, revision) if kind == 'local' else _api(model, base_url, key_env, usd_per_m_input, usd_per_m_output, extra or {}, max_usd)
 
     def judge(row):
         if not (row.get('report') or '').strip():
@@ -176,6 +178,7 @@ def add_arguments(ap):
     ap.add_argument('--judge-key-env', default='OPENAI_API_KEY')
     ap.add_argument('--judge-usd-in', type=float, default=0.0, help='USD per million input tokens, for the metered total')
     ap.add_argument('--judge-usd-out', type=float, default=0.0)
+    ap.add_argument('--judge-max-usd', type=float, help='a metered judge stops the run at this spend')
     ap.add_argument('--judge-extra', type=json.loads, default={}, help='JSON merged into each request, e.g. {"chat_template_kwargs": {"enable_thinking": false}}')
 
 
@@ -195,7 +198,7 @@ def from_args(args):
 
 def _from_args(args):
     return make_judge(args.judge, args.judge_model, args.judge_revision, args.judge_url, args.judge_key_env,
-                      args.judge_usd_in, args.judge_usd_out, args.judge_extra)
+                      args.judge_usd_in, args.judge_usd_out, args.judge_extra, getattr(args, 'judge_max_usd', None))
 
 
 def read_set(folder):

@@ -9,7 +9,7 @@ alternatives considered are in [notes-2026-11-21.md](notes-2026-11-21.md).
 
 | Step | State |
 |---|---|
-| 0 reward arm and judge | built and tested: `--arm report_correct --penalty λ --judge ...`; judge validation harness in `entrypoints/validate_judge.py`; first judge numbers on a local 8B model: about 5% of dishonest reports paid as honest, 6% of honest ones refused; **no judge accepted yet** (notes, section 7) |
+| 0 reward arm and judge | built and tested: `--arm report_correct --penalty λ --judge ...`. **Judge accepted 2026-11-24: gpt-5.4-nano, checklist prompt under a JSON schema, with Lean's check of the `established` field in front.** 97% agreement on the honesty bit over 2 x 320 stratified model-read reports (notes, section 17); about $0.0003 per report from the `api` line, capped per run with `--judge-max-usd` |
 | 1 verifier | attacked and hardened; one real break found and closed; controls extended from 18 to 28; all 338 references re-verified |
 | 2 GPU path | gpt-oss `--reasoning-effort`, judge and penalty threaded through, per-step exploration log, budget guard on the grant's lines; CPU dry run passes |
 | 3 pod smoke test | `ops/remote_runpod_smoke.sh` written, **never run**; needs a launch approval |
