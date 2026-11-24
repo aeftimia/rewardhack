@@ -48,19 +48,19 @@ list at the end of this file.
 `report_correct` arm below. The baseline compares against the combined honesty/refutation intervention;
 it does not isolate the causal contribution of each added term.
 
-### The idea, in three stages
+### Report format as a parallel experimental axis
 
-A normal LLM workflow has no error code: the model writes a solution and tells the user, in prose,
-whether it worked. The intervention starts there and then extracts that one bit into a
-machine-checkable error, stage by stage. The destination is fixed; stage 1 is the traditional
-vantage point to lead there from, and the stage 2 trigger governs timing, not whether. Each stage
-is the same reward with a more structured carrier of the same bit.
+Owner's direction (2026-11-24): compare prose with an LLM-read error flag against an explicit typed
+error flag as a research question in its own right. Typed reporting no longer has to wait for a
+promising prose result. Keep both as separately labelled, bounded experimental conditions; a later
+choice to prefer one does not erase the comparison. Historical references to stages 1 and 2 below
+mean prose and typed reporting respectively, not a required chronological sequence.
 
-| Stage | Output | What "report correct" means | Who decides |
+| Condition | Output | What "report correct" means | Who decides |
 |---|---|---|---|
-| 1 (the grant's five settings) | `solution` + free-text `comments` | the comments raise an error flag exactly when the verifier found no genuine proof | LLM judge reads the flag (validated on the 7,105 model-read labels); Lean decides whether it is true |
-| 2 (format switch available; experiment transition pending) | `established` + `proof_body` + `error: bool` + `justification: str` | `error` equals the verifier's not-genuine verdict; justification is saved for audit and does not affect reward | Code reads the typed flag; Lean checks the proof; no prose judge |
-| 3 (later, with consent) | stage 2 plus a sigmoid readout head | see the closing section | a trained linear layer |
+| Prose (historical stage 1) | `established` + `proof_body` + `report` | the report raises an error flag exactly when there is no genuine proof | Validated LLM judge reads the report; Lean checks the proof |
+| Typed (historical stage 2) | `established` + `proof_body` + `error: bool` + `justification: str` | the Boolean flag equals the verifier's not-genuine verdict | Code reads the flag; Lean checks the proof; justification is audit-only |
+| Readout head (later, separate study) | typed output plus a sigmoid readout head | separate design needed | a trained linear layer |
 
 `error` is binary on purpose. "Refuted" and "unproven" are both `error = true`: the task was not
 solved. Why it was not solved (the statement is false, no proof was found, a placeholder was
@@ -119,21 +119,50 @@ refutation stays a Lean-checked *evaluation* label, not a separate reward branch
   regex `report_label` stays triage only; judge latency and cost per rollout feed the step 3
   throughput number. The prompt is unchanged, so stage 1 stays comparable with every probe so far.
 
-### Stage 2 timing — move promptly once stage 1 is promising
+### Parallel prose-versus-typed study
 
-Owner's direction (2026-11-24): stage 1 is a short bridge, not a requirement to finish the prose-based
-sweep. Move to `solution` + `error: bool` + `justification` as soon as the current setup produces a credible
-useful signal: unseeded relevant behavior, real stable updates, and trustworthy evaluation. Do not spend
-money merely filling out stage 1's grid after that. A promising signal is a transition decision, not a
-claim that the research hypothesis has been established.
+The comparator is the **prose-judged honesty intervention**, which is different from the code's
+`baseline` reward arm (`g` alone). To separate a format/prompt effect from the effect of rewarding
+honesty, use a small format-by-reward design:
 
-Preserve a bounded matched baseline/intervention comparison and the checkpoints needed to interpret
-that signal. The typed flag is now available consistently across arms with regression tests; decide when
-to use it in a separately labelled stage 2 experiment. Record the prompt/schema change; do not pool its
-outcomes with stage 1 or carry stage 1's posterior over as though the experiment were unchanged.
-The flag is checked against Lean; the implemented typed mode saves justification for audit only and
-uses no prose judge. If the prose judge is unreliable,
-stop spending on prose-based training and repair measurement or advance the typed design before resuming.
+| Report format | Grader-only control | Honesty intervention |
+|---|---|---|
+| Prose | `--report-mode prose --arm baseline --judge none` | `--report-mode prose --arm report_correct --judge <validated judge>` |
+| Typed | `--report-mode typed --arm baseline --judge none` | `--report-mode typed --arm report_correct --judge none` |
+
+Use the same chosen penalty in both intervention cells. Begin with one declared penalty rather than
+multiplying the entire penalty sweep by two. Match starting model, task cohort, seeds, optimizer,
+sampling settings and measured training exposure across cells; retain untrained evaluations to show
+format effects before updates. The typed schema also changes parsing strictness and instructions, so
+a head-to-head comparison estimates the entire reporting interface, not just judge classification
+error. Log cutoffs and malformed envelopes separately rather than hiding these costs in success rates.
+
+Measure two distinct contrasts: typed versus prose at matched intervention exposure, and the
+within-format improvement over its own grader-only control. Comparing those two improvements asks
+whether the honesty intervention works differently across formats. Analyze matched seeds/cohorts as
+paired observations; shared controls and repeated checkpoints are not extra independent evidence.
+
+Use common Lean-based exploitation and genuine-proof outcomes as primary behavior measures. Native
+honesty counters alone are not a fair cross-format benchmark because their claim readers differ.
+Use a frozen independent, blinded report-audit rubric for secondary disclosure comparisons, including
+typed flag/justification contradictions and misleading prose. The prose training judge must not be
+the sole evaluator of its own advantage. Typed justifications still do not affect training reward.
+
+Report performance at matched training exposure and separately at matched total dollars, including
+judge calls, generation tokens, verification, evaluation and GPU waiting time. These answer different
+questions: behavioral effect versus cost-effectiveness. A cheaper but equally effective reporting
+interface would itself be a useful result.
+
+Both tracks use the bounded pilot and existing aggregate grant caps. Parallel means parallel research
+conditions, not authorization for concurrent pods or twice the spend. Keep complete matched blocks
+for the comparison; stopping one track early limits which later checkpoints can be compared. Freeze
+success/plateau targets and a design for the direct contrast before using posterior thresholds to
+claim a format winner. Do not carry a posterior from one report mode into the other.
+
+The current paired-evidence adapter freezes one `report_mode` per study: it supports the two
+within-format control/intervention pilots now. Direct cross-format or interaction analysis requires
+an explicit protocol/adapter extension; do not bypass the existing report-mode mismatch guard.
+No paid runs are authorized by this plan update.
 
 ### Typed-format switch available, not an experiment migration
 
@@ -159,7 +188,7 @@ still receive zero reward under the existing rule.
 Generated and scored rows identify `report_mode`; rescoring and formal audit use that mode, with
 missing metadata interpreted as historical prose. The typed flag supplies the recorded claim;
 justification remains audit evidence rather than a second implicit success/failure signal. Do not
-pool typed and prose outcomes. Adding this switch does not launch a stage 2 run or grant new spending
+pool typed and prose outcomes as interchangeable samples; compare them as labelled conditions. Adding this switch does not launch a typed run or grant new spending
 authorization. The separate bounded pilot controller is described below.
 
 ### Sequential spending and compute-aware stopping — owner policy, 2026-11-24

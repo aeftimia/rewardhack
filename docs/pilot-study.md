@@ -50,6 +50,20 @@ that cohort. It does not establish generalization to unseen task families. Evalu
 select a training duration or tune a recipe remain development evidence; use a separate frozen
 confirmation design for the resulting claim.
 
+## Parallel report-format pilots
+
+The [prose-versus-typed design](preflight-plan.md#parallel-prose-versus-typed-study) treats report
+format as a separate experimental axis. Run within-format grader-control/intervention pilots with
+matched seeds and compute checkpoints, under the same aggregate grant caps. Each pilot keeps its
+own frozen specification and posterior. Parallel tracks do not imply simultaneous resource launches
+or a larger budget. Preserve matched checkpoint blocks before comparing the formats.
+
+The current paired adapter intentionally requires one report mode in both conditions. A direct
+prose-versus-typed comparison or a format-by-reward interaction needs an explicit cross-format
+analysis extension; never relabel rows to get through that guard. Common Lean outcomes support the
+behavior comparison, while independent report audits assess disclosure and contradictions. Existing
+native honesty counters use different readers and are not interchangeable evaluation labels.
+
 ## Decisions at a checkpoint
 
 The controller records distinct reasons for stopping. It never labels all terminal states
