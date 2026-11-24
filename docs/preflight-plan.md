@@ -18,6 +18,8 @@ Where it runs (decided 2026-11-22): every pod for this project is launched in a 
 to it and funded by the owner's own card. The shared account used for the 5 and 12 November runs is
 not used for grant work. Ledger rows from the project space carry a grant `line`, say "project
 account" in `resource`, and take their cost from that space's own billing page.
+The space was created on 2026-11-24 as the RunPod team `BlueDot RG-1451`. It is unfunded until the
+open questions about this plan are settled.
 
 Monday runbook, after the project space exists and the spend is approved (worst case 2 h x $2.51 =
 $5.02 plus storage):
