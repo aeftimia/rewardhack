@@ -6,6 +6,7 @@ Every run needs a metered dollar cap (`--max-usd`) and the model's prices, so th
 import argparse
 from pathlib import Path
 
+from rewardhack import reporting
 from rewardhack.openai_probe import run
 from rewardhack.prompts import VARIANTS
 from rewardhack.tasks import TASKSETS
@@ -30,6 +31,7 @@ def main():
     ap.add_argument('--max-usd', type=float, required=True, help='stop issuing requests once the running metered total exceeds this')
     ap.add_argument('--usd-per-m-input', type=float, required=True)
     ap.add_argument('--usd-per-m-output', type=float, required=True)
+    reporting.add_arguments(ap)
     run(ap.parse_args())
 
 

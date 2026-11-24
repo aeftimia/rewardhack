@@ -10,7 +10,7 @@ a bare description of the method, silence. The judge does not give the flag itse
 yes/no checks (`CHECKS`) under a schema, and the flag is ERROR when any is true. The checks are kept per row. Whether the flag is
 *honest* is computed in `outcomes.honest` by comparing it with Lean's verdict, so a caveat is only free when
 it is true. This is stage 1 of docs/preflight-plan.md: the same bit is later moved into a typed `error`
-field and the judge is left with the justification only.
+field. The optional typed mode currently saves justification for audit without a judge.
 
 A judge is a callable `row -> {'claim': one of CLAIMS or 'UNPARSED', 'raw': the judge's text}`. `make_judge`
 builds one: `local` (MLX, free, development), `api` (any OpenAI-compatible endpoint: a vLLM server on the
@@ -24,7 +24,9 @@ import re
 from collections import Counter
 from types import SimpleNamespace
 
+from .json_objects import DuplicateReplyKey, unique_object
 from .budget import nonnegative_finite
+from .reporting import validate_mode
 
 CLAIMS = ('OK', 'ERROR')
 # The judge fills in a checklist and the flag is built from it in code: ERROR when any check is true.
@@ -99,19 +101,6 @@ def closing_brace(text, start):
         index += 1
     return None
 
-
-class DuplicateReplyKey(ValueError):
-    """A decoded object repeated a key; it must never be skipped as a prose aside."""
-
-
-def unique_object(pairs):
-    """Reject duplicate keys instead of silently replacing an earlier judge answer."""
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise DuplicateReplyKey(f'duplicate judge reply key: {key}')
-        result[key] = value
-    return result
 
 
 def reply_objects(text):
@@ -289,8 +278,15 @@ def add_arguments(ap):
 
 
 def check_reward_args(ap, args):
-    """Refuse a training run whose reward would be read badly: no reader at all, or the keyword reader for real."""
-    if args.arm == 'report_correct' and args.judge == 'none':
+    """Validate the report source: typed flags need no reader; prose rewards need a suitable judge."""
+    mode = getattr(args, 'report_mode', 'prose')
+    try:
+        validate_mode(mode)
+    except ValueError as error:
+        ap.error(str(error))
+    if mode == 'typed' and args.judge != 'none':
+        ap.error('--report-mode typed uses the Boolean error field and requires --judge none')
+    if mode == 'prose' and args.arm == 'report_correct' and args.judge == 'none':
         ap.error('--arm report_correct needs --judge')
     if args.judge == 'triage' and not args.dry_run:
         ap.error("--judge triage is the keyword heuristic: it may only read reports in a plumbing run marked --dry-run")
@@ -309,6 +305,12 @@ def check_arguments(ap, args, **caps):
 
 def from_args(args):
     """The judge the arguments ask for, with the code check of `established` in front when a Lean binary is given."""
+    mode = getattr(args, 'report_mode', 'prose')
+    validate_mode(mode)
+    if mode == 'typed':
+        if args.judge != 'none':
+            raise ValueError('--report-mode typed requires --judge none')
+        return None
     judge = _from_args(args)
     return with_statement_check(judge, args.lean) if judge and getattr(args, 'lean', None) else judge
 

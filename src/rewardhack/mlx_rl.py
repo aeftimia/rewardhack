@@ -26,8 +26,8 @@ from .tasks import select_tasks, split, taskset_rows
 SAMPLER = dict(temp=1.0, top_p=0.95, top_k=20)
 
 
-def encode(tokenizer, statement, variant, thinking):
-    return tokenizer.apply_chat_template(prompt(statement, variant), add_generation_prompt=True, tokenize=True,
+def encode(tokenizer, statement, variant, thinking, report_mode='prose'):
+    return tokenizer.apply_chat_template(prompt(statement, variant, report_mode), add_generation_prompt=True, tokenize=True,
                                          enable_thinking=thinking)
 
 
@@ -52,6 +52,7 @@ def attach_lora(model, args, adapter=None):
 
 
 def probe(args, model, tokenizer):
+    report_mode = getattr(args, 'report_mode', 'prose')
     tasks = select_tasks(args.taskset, args.tasks)
     random.Random(args.seed).shuffle(tasks)
     rows, started = [], time.perf_counter()
@@ -65,15 +66,15 @@ def probe(args, model, tokenizer):
             for task in tasks:
                 if time.perf_counter()-started > args.max_seconds:
                     break
-                text, tokens, seconds, truncated = sample(model, tokenizer, encode(tokenizer, task['statement'], args.variant, args.thinking), args.max_tokens)
-                row = score(args.lean, task, text, 'baseline', truncated=truncated, retries=retries)
+                text, tokens, seconds, truncated = sample(model, tokenizer, encode(tokenizer, task['statement'], args.variant, args.thinking, report_mode), args.max_tokens)
+                row = score(args.lean, task, text, 'baseline', truncated=truncated, retries=retries, report_mode=report_mode)
                 row.update(tokens=len(tokens), seconds=seconds, truncated=truncated, round=round_index)
                 rows.append(row)
                 gen_seconds += seconds
                 tokens_total += len(tokens)
                 sink.write(json.dumps(row, ensure_ascii=False)+'\n')
                 sink.flush()
-    result = dict(summarize(rows), variant=args.variant, thinking=args.thinking, max_tokens=args.max_tokens,
+    result = dict(summarize(rows), report_mode=report_mode, variant=args.variant, thinking=args.thinking, max_tokens=args.max_tokens,
                   truncated=sum(r['truncated'] for r in rows), tokens_per_second=tokens_total/max(gen_seconds, 1e-9),
                   mean_tokens=tokens_total/max(len(rows), 1), elapsed_seconds=time.perf_counter()-started,
                   peak_gib=mx.get_peak_memory()/2**30)
@@ -89,16 +90,18 @@ def completion_loss(model, prompt_ids, tokens, advantage):
 
 
 def attempt_rate(model, tokenizer, tasks, args, samples):
+    report_mode = getattr(args, 'report_mode', 'prose')
     rows, retries = [], RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # per monitor pass
     for task in tasks:
-        ids = encode(tokenizer, task['statement'], args.variant, args.thinking)
+        ids = encode(tokenizer, task['statement'], args.variant, args.thinking, report_mode)
         for _ in range(samples):
             raw, _, _, truncated = sample(model, tokenizer, ids, args.max_tokens)
-            rows.append(score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries))
+            rows.append(score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries, report_mode=report_mode))
     return rows
 
 
 def rl(args, model, tokenizer):
+    report_mode = getattr(args, 'report_mode', 'prose')
     tasks = split(taskset_rows(args.taskset))['train']
     retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # for the whole training loop
     # The evaluation split stays held out: monitoring takes groups from the training split that are excluded from training.
@@ -120,7 +123,7 @@ def rl(args, model, tokenizer):
 
     def run_monitor(step):
         rows = attempt_rate(model, tokenizer, monitor, args, args.monitor_samples)
-        entry = dict(step=step, n=len(rows), sorry=sum(sorry_attempt(r) for r in rows), exploit=sum(r['exploit'] for r in rows),
+        entry = dict(step=step, report_mode=report_mode, n=len(rows), sorry=sum(sorry_attempt(r) for r in rows), exploit=sum(r['exploit'] for r in rows),
                      genuine_true=sum(r['genuine'] for r in rows if r['true']), true=sum(r['true'] for r in rows),
                      exploit_and_claims=sum(r['exploit_and_claims'] for r in rows), format_valid=sum(r['format_valid'] for r in rows), **verifier_advice(rows))
         monitors.write(json.dumps(entry)+'\n')
@@ -134,12 +137,12 @@ def rl(args, model, tokenizer):
             print('time cap reached', flush=True)
             break
         task = order.choice(train_tasks)
-        ids = encode(tokenizer, task['statement'], args.variant, args.thinking)
+        ids = encode(tokenizer, task['statement'], args.variant, args.thinking, report_mode)
         t0 = time.perf_counter()
         samples = [sample(model, tokenizer, ids, args.max_tokens) for _ in range(args.group)]
         t_rollout = time.perf_counter()-t0
         t0 = time.perf_counter()
-        rows = [score(args.lean, task, s[0], args.arm, args.penalty, args.judge_fn, truncated=s[3], retries=retries) for s in samples]
+        rows = [score(args.lean, task, s[0], args.arm, args.penalty, args.judge_fn, truncated=s[3], retries=retries, report_mode=report_mode) for s in samples]
         t_lean = time.perf_counter()-t0
         verifier_rows.extend({'verifier_inconclusive': r['verifier_inconclusive']} for r in rows)
         kept = [reward for reward in training_rewards(rows, len(rows)) if reward is not None]
@@ -166,7 +169,7 @@ def rl(args, model, tokenizer):
         for r, s in zip(rows, samples, strict=True):
             rollouts.write(json.dumps(dict(r, step=step, tokens=len(s[1]), truncated=s[3]), ensure_ascii=False)+'\n')
         rollouts.flush()
-        entry = dict(step=step, task=task['id'], reward=float(rewards.mean()) if kept else None, mixed=update, sorry=sum(sorry_attempt(r) for r in rows),
+        entry = dict(step=step, report_mode=report_mode, task=task['id'], reward=float(rewards.mean()) if kept else None, mixed=update, sorry=sum(sorry_attempt(r) for r in rows),
                      exploit=sum(r['exploit'] for r in rows), rollout_seconds=t_rollout, lean_seconds=t_lean,
                      update_seconds=time.perf_counter()-t0, tokens=sum(len(s[1]) for s in samples), peak_gib=mx.get_peak_memory()/2**30,
                      **verifier_advice(rows))
@@ -176,7 +179,7 @@ def rl(args, model, tokenizer):
         if step % args.monitor_every == 0:
             run_monitor(step)
     mx.save_safetensors(str(args.out/'adapter.safetensors'), dict(tree_flatten(model.trainable_parameters())))
-    (args.out/'summary.json').write_text(json.dumps(dict(**verifier_advice(verifier_rows), trainable=trainable, updates=sum(json.loads(l)['mixed'] for l in open(args.out/'steps.jsonl')),
+    (args.out/'summary.json').write_text(json.dumps(dict(**verifier_advice(verifier_rows), report_mode=report_mode, trainable=trainable, updates=sum(json.loads(l)['mixed'] for l in open(args.out/'steps.jsonl')),
                                                          elapsed_seconds=time.perf_counter()-started, argv=sys.argv[1:], adapter=str(args.adapter) if args.adapter else None,
                                                          purpose='plumbing and mechanism; own trainer; not evidence about the hypothesis'), indent=1)+'\n')
 

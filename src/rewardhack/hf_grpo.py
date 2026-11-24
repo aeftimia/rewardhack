@@ -99,6 +99,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
     import torch
     device = next(model.parameters()).device
     rows, generated, t_gen, t_lean = [], 0, 0.0, 0.0
+    report_mode = getattr(args, 'report_mode', 'prose')
     retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))
     samples = args.eval_samples if samples is None else samples
     torch.manual_seed(31415)
@@ -106,7 +107,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
     path = args.out/f'{stage}-evaluation.jsonl'
     with path.open('w') as sink:
         for task in tasks:
-            inputs = tokenizer.apply_chat_template(prompt(task['statement'], args.prompt_variant), tokenize=True, return_dict=True,
+            inputs = tokenizer.apply_chat_template(prompt(task['statement'], args.prompt_variant, report_mode), tokenize=True, return_dict=True,
                                                    return_tensors='pt', add_generation_prompt=True, **template_kwargs(args)).to(device)
             t0 = time.perf_counter()
             with torch.inference_mode():
@@ -118,17 +119,17 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
             for output in outputs:
                 new = output[start:]
                 generated += int((new != tokenizer.pad_token_id).sum())
-                raw = tokenizer.decode(new, skip_special_tokens=not reasons(args))
+                raw = tokenizer.decode(new, skip_special_tokens=report_mode == 'typed' or not reasons(args))
                 t0 = time.perf_counter()
                 truncated = completion_truncated(new.tolist(), stop_ids(model, tokenizer), args.max_completion_length)
-                row = score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries)
+                row = score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries, report_mode=report_mode)
                 t_lean += time.perf_counter()-t0
                 rows.append(row)
                 sink.write(json.dumps(row, ensure_ascii=False)+'\n')
                 sink.flush()
     training_rewards(rows, samples)  # probe variation must predict the signal the trainer will actually use
     grouped = reward_groups(rows, samples)
-    return dict(summarize(rows), verifier_retries_denied=retries.denied, generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
+    return dict(summarize(rows), report_mode=report_mode, verifier_retries_denied=retries.denied, generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
                 samples_per_prompt=samples, reward_groups=grouped['groups'], mixed_reward_groups=grouped['mixed_groups'],
                 zero_advantage_groups=grouped['zero_advantage_groups'], per_group=grouped['per_group'],
                 tokens_per_second=generated/max(t_gen, 1e-9), completions_per_hour=len(rows)/max(t_gen+t_lean, 1e-9)*3600)
@@ -141,6 +142,8 @@ def train(model, tokenizer, tasks, args, summary):
     from transformers import TrainerCallback
     from trl import GRPOConfig, GRPOTrainer
     by_statement = {t['statement']: t for t in tasks}
+    report_mode = getattr(args, 'report_mode', 'prose')
+    summary['report_mode'] = report_mode
     stops = stop_ids(model, tokenizer)  # the same stop IDs as `evaluate`, so both paths agree on a finished answer
     timing = {'step_start': 0.0, 'rollout': [], 'lean': [], 'update': [], 'reward_end': 0.0}
     sink = (args.out/'training-rollouts.jsonl').open('w')
@@ -161,7 +164,7 @@ def train(model, tokenizer, tasks, args, summary):
             raw = completion[-1]['content'] if isinstance(completion, list) else completion
             truncated = completion_truncated(token_ids, stops, args.max_completion_length)
             try:
-                rows.append(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries))
+                rows.append(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries, report_mode=report_mode))
             except BaseException:
                 # A stop mid-batch (deadline, judge streak, spend cap) keeps what was already scored and paid for.
                 # Marked, because these rows are in no step, no tally and no complete prompt group.
@@ -219,7 +222,7 @@ def train(model, tokenizer, tasks, args, summary):
                         learning_rate=args.learning_rate, bf16=torch.cuda.is_available(), use_cpu=not torch.cuda.is_available(), gradient_checkpointing=True,
                         beta=args.beta, temperature=1.0, top_p=0.95, top_k=20, chat_template_kwargs=template_kwargs(args), logging_steps=1, save_strategy='no',
                         report_to='none', seed=args.seed, dataloader_num_workers=0, loss_type='grpo')
-    dataset = Dataset.from_list([{'prompt': prompt(t['statement'], args.prompt_variant), 'statement': t['statement']} for t in tasks])
+    dataset = Dataset.from_list([{'prompt': prompt(t['statement'], args.prompt_variant, report_mode), 'statement': t['statement']} for t in tasks])
     class VerifiedTrainer(VerifierMaskMixin, GRPOTrainer):
         pass
 
@@ -245,7 +248,7 @@ def run(args):
     args.out.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     args.train_deadline = time.monotonic()+args.max_seconds-args.final_eval_seconds
-    summary = {'status': 'running', 'argv': sys.argv[1:], 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
+    summary = {'status': 'running', 'report_mode': getattr(args, 'report_mode', 'prose'), 'argv': sys.argv[1:], 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
                'script_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(__file__).parent.glob('*.py')}}
 
     def hard_stop(*unused):

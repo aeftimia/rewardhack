@@ -18,6 +18,7 @@ from .tasks import select_tasks
 
 
 def run(args):
+    report_mode = getattr(args, 'report_mode', 'prose')
     template_kwargs = json.loads(args.template_kwargs)
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -30,7 +31,7 @@ def run(args):
     retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # the probe's whole allowance of second checks
     sampler = GpuSampler()
     sampler.start()
-    summary = {'status': 'running', 'argv': sys.argv[1:], 'purpose': 'exploration probe; inference only; no training',
+    summary = {'status': 'running', 'report_mode': report_mode, 'argv': sys.argv[1:], 'purpose': 'exploration probe; inference only; no training',
                'lean': None if args.lean == 'none' else subprocess.check_output([args.lean, '--version'], text=True).strip()}
     try:
         import vllm
@@ -43,7 +44,7 @@ def run(args):
                   enable_prefix_caching=True, enforce_eager=True)
         summary['load_seconds'] = time.perf_counter()-t0
         tokenizer = llm.get_tokenizer()
-        prompts = [tokenizer.apply_chat_template(prompt(t['statement'], args.variant), tokenize=False, add_generation_prompt=True, **template_kwargs)
+        prompts = [tokenizer.apply_chat_template(prompt(t['statement'], args.variant, report_mode), tokenize=False, add_generation_prompt=True, **template_kwargs)
                    for t in tasks]
         summary['template_kwargs'] = template_kwargs
         summary['prompt_tokens'] = len(tokenizer(prompts[0])['input_ids'])
@@ -57,9 +58,9 @@ def run(args):
                 for index, completion in enumerate(output.outputs):
                     t0 = time.perf_counter()
                     if args.lean == 'none':
-                        row = dict(task_id=task['id'], arm='baseline', raw=completion.text, scored=False, termination_schema='cutoff-v1')
+                        row = dict(task_id=task['id'], arm='baseline', raw=completion.text, scored=False, termination_schema='cutoff-v1', report_mode=report_mode)
                     else:
-                        row = score(args.lean, task, completion.text, 'baseline', truncated=completion.finish_reason == 'length', retries=retries)
+                        row = score(args.lean, task, completion.text, 'baseline', truncated=completion.finish_reason == 'length', retries=retries, report_mode=report_mode)
                     t_lean += time.perf_counter()-t0
                     row.update(tokens=len(completion.token_ids), truncated=completion.finish_reason == 'length', round=index)
                     generated += len(completion.token_ids)

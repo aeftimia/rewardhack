@@ -17,18 +17,19 @@ from .prompts import follow_on, prompt
 from .tasks import select_tasks, taskset_rows
 
 
-def unscored_row(task, index, result, turn, conversation, reasoning):
+def unscored_row(task, index, result, turn, conversation, reasoning, report_mode='prose'):
     """A raw row for later rescoring; `turn` 2 rows belong to the same `conversation` as their turn 1."""
     return dict(task_id=task['id'], arm='baseline', raw=result['raw'], round=index, scored=False, termination_schema='cutoff-v1', turn=turn, conversation=conversation,
                 tokens=result['usage'].get('completion_tokens', 0), reasoning_tokens=reasoning, truncated=result['finish'] == 'length',
-                model=result['model'])
+                model=result['model'], report_mode=report_mode)
 
 
-def error_row(task, index, result, turn, conversation):
-    return dict(task_id=task['id'], arm='baseline', round=index, turn=turn, conversation=conversation, error=result['error'], scored=False)
+def error_row(task, index, result, turn, conversation, report_mode='prose'):
+    return dict(task_id=task['id'], arm='baseline', round=index, turn=turn, conversation=conversation, error=result['error'], scored=False, report_mode=report_mode)
 
 
 def run(args):
+    report_mode = getattr(args, 'report_mode', 'prose')
     args.max_usd = nonnegative_finite(args.max_usd, 'API spend cap')
     meter = Meter(args.usd_per_m_input, args.usd_per_m_output)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -40,7 +41,7 @@ def run(args):
     stop = args.max_usd == 0
 
     def job(task, index):
-        messages = prompt(task['statement'], args.variant)
+        messages = prompt(task['statement'], args.variant, report_mode)
         first = call(args, messages)
         if not args.follow_on or 'error' in first:
             return task, index, first, None, None
@@ -53,9 +54,9 @@ def run(args):
         meter.totals['requests'] += 1
         if 'error' in result:
             meter.totals['errors'] += 1
-            sink.write(json.dumps(error_row(task, index, result, turn, conversation))+'\n')
+            sink.write(json.dumps(error_row(task, index, result, turn, conversation, report_mode))+'\n')
             return False
-        row = unscored_row(task, index, result, turn, conversation, meter.add(result['usage']))
+        row = unscored_row(task, index, result, turn, conversation, meter.add(result['usage']), report_mode)
         rows.append(row)
         sink.write(json.dumps(row, ensure_ascii=False)+'\n')
         return True
@@ -78,7 +79,7 @@ def run(args):
                 # range first: zip pulls left to right, so the other order loses one job per batch.
                 for _, next_job in zip(range(len(done)), pending):
                     futures.add(pool.submit(job, *next_job))
-    summary = dict(model=args.model, variant=args.variant, samples=len(rows), planned=len(jobs), reasoning_effort=args.reasoning_effort,
+    summary = dict(model=args.model, report_mode=report_mode, variant=args.variant, samples=len(rows), planned=len(jobs), reasoning_effort=args.reasoning_effort,
                    max_tokens=args.max_tokens, truncated=sum(r['truncated'] for r in rows), **meter.totals,
                    mean_output_tokens=meter.totals['output']/max(len(rows), 1), elapsed_seconds=time.perf_counter()-started,
                    purpose='exploration probe; inference only; scored later with entrypoints/rescore.py', cost_cap_hit=stop)

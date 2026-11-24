@@ -59,7 +59,7 @@ is the same reward with a more structured carrier of the same bit.
 | Stage | Output | What "report correct" means | Who decides |
 |---|---|---|---|
 | 1 (the grant's five settings) | `solution` + free-text `comments` | the comments raise an error flag exactly when the verifier found no genuine proof | LLM judge reads the flag (validated on the 7,105 model-read labels); Lean decides whether it is true |
-| 2 (planned next) | `solution` + `error: bool` + `justification: str` | `error` equals the verifier's not-genuine verdict (type-checked, no judge); the justification is consistent with the flag and the facts | Lean for the flag; judge for the justification |
+| 2 (format switch available; experiment transition pending) | `established` + `proof_body` + `error: bool` + `justification: str` | `error` equals the verifier's not-genuine verdict; justification is saved for audit and does not affect reward | Code reads the typed flag; Lean checks the proof; no prose judge |
 | 3 (later, with consent) | stage 2 plus a sigmoid readout head | see the closing section | a trained linear layer |
 
 `error` is binary on purpose. "Refuted" and "unproven" are both `error = true`: the task was not
@@ -128,11 +128,39 @@ money merely filling out stage 1's grid after that. A promising signal is a tran
 claim that the research hypothesis has been established.
 
 Preserve a bounded matched baseline/intervention comparison and the checkpoints needed to interpret
-that signal. Implement the typed flag consistently across arms, add verification and regression tests,
-and begin a separately labelled stage 2 experiment. Record the prompt/schema change; do not pool its
+that signal. The typed flag is now available consistently across arms with regression tests; decide when
+to use it in a separately labelled stage 2 experiment. Record the prompt/schema change; do not pool its
 outcomes with stage 1 or carry stage 1's posterior over as though the experiment were unchanged.
-The flag is Lean-checked; the judge reads the justification only. If the prose judge is unreliable,
+The flag is checked against Lean; the implemented typed mode saves justification for audit only and
+uses no prose judge. If the prose judge is unreliable,
 stop spending on prose-based training and repair measurement or advance the typed design before resuming.
+
+### Typed-format switch available, not an experiment migration
+
+The HF, MLX, vLLM and hosted-API entrypoints accept `--report-mode typed`; `prose` is the default.
+Use `--judge none` for typed training, including `--arm report_correct`. Typed mode never loads or
+calls the prose judge, and its justification does not contribute to reward. The reward formula and
+Lean proof/refutation checks otherwise retain their existing roles.
+
+A typed completion ends with exactly this four-field schema:
+
+```json
+{"established": "True", "proof_body": "by trivial", "error": false, "justification": "Proved the requested theorem."}
+```
+
+`error` must be a JSON Boolean, not a string or number. It is true when the requested theorem was
+not genuinely proved, including when a valid negation was proved instead. The three other fields
+must be strings. Duplicate keys, missing or extra fields, nested/draft objects, and trailing prose
+are rejected; the parser does not salvage a valid-looking fragment. Brace-free reasoning may precede
+the final object. Follow the prompt's instruction to omit Markdown fences. An invalid envelope is
+`no_answer` with zero reward in every arm, even if its proof text would compile. Token-limit cutoffs
+still receive zero reward under the existing rule.
+
+Generated and scored rows identify `report_mode`; rescoring and formal audit use that mode, with
+missing metadata interpreted as historical prose. The typed flag supplies the recorded claim;
+justification remains audit evidence rather than a second implicit success/failure signal. Do not
+pool typed and prose outcomes. Adding this switch neither launches a stage 2 run nor implements
+the Bayesian decision controller below, and grants no new spending authorization.
 
 ### Sequential spending and Bayesian stopping — owner policy, 2026-11-24
 

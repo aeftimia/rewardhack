@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from rewardhack import retry_options
+from rewardhack import reporting, retry_options
 from rewardhack.prompts import VARIANTS
 from rewardhack.tasks import TASKSETS
 from rewardhack.vllm_probe import run
@@ -26,6 +26,7 @@ def main():
     ap.add_argument('--tasks', choices=['all', 'true', 'false'], default='all')
     ap.add_argument('--part', choices=['train', 'evaluation', 'all'], default='train', help="'all' only for inference-only collection with no training downstream")
     ap.add_argument('--template-kwargs', default='{}', help='JSON passed to the chat template, e.g. {"enable_thinking": true} or {"reasoning_effort": "high"}')
+    reporting.add_arguments(ap)
     retry_options.add_arguments(ap)
     run(ap.parse_args())
 

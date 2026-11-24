@@ -7,6 +7,7 @@ Entrypoint: `entrypoints/rescore.py`.
 import json
 
 from .outcomes import score, summarize
+from .reporting import validate_mode
 from .tasks import task_index
 from .verifier import INCONCLUSIVE
 
@@ -37,6 +38,8 @@ def stored_reading(old):
 def rescore_file(path, lean, tasks=None):
     tasks = tasks or task_index()
     old_rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    for old in old_rows:
+        validate_mode(old.get('report_mode', 'prose'))
     new_rows, changed, transport_errors = [], [], []
     for number, old in enumerate(old_rows, 1):
         if 'raw' not in old:
@@ -45,9 +48,10 @@ def rescore_file(path, lean, tasks=None):
             transport_errors.append(dict(row=number, task_id=old.get('task_id'), error=old['error']))
             continue  # failed requests are not model answers and never enter behavior rates
         # A judged row keeps its stored reading: rescoring re-runs Lean, not the judge.
-        replay = (lambda row, old=old: stored_reading(old)) if old.get('claim') is not None else None
+        mode = old.get('report_mode', 'prose')
+        replay = (lambda row, old=old: stored_reading(old)) if mode == 'prose' and old.get('claim') is not None else None
         new = score(lean, tasks[old['task_id']], old['raw'], old['arm'], old.get('penalty', 0.0), replay,
-                    truncated=scored_as_cut_off(old))
+                    truncated=scored_as_cut_off(old), report_mode=mode)
         new.update({k: old[k] for k in CARRIED if k in old})
         new_rows.append(new)
         diff = {k: (old.get(k), new[k]) for k in COMPARE if old.get(k) != new[k]}
