@@ -6,7 +6,7 @@
 import argparse
 from pathlib import Path
 
-from rewardhack import judge
+from rewardhack import judge, retry_options
 from rewardhack.hf_grpo import run
 from rewardhack.outcomes import ARMS
 from rewardhack.prompts import VARIANTS
@@ -43,8 +43,7 @@ def main():
     ap.add_argument('--seed', type=int, default=42)
     ap.add_argument('--max-seconds', type=int, default=3600)
     ap.add_argument('--final-eval-seconds', type=int, default=600, help='reserved after training for the after-evaluation')
-    ap.add_argument('--verifier-retry-seconds', type=int, default=120,
-                    help='allowance per phase (probe, each evaluation, training) for second, 60 s verifier checks after a timeout')
+    retry_options.add_arguments(ap)
     judge.add_arguments(ap)
     args = ap.parse_args()
     judge.check_reward_args(ap, args)

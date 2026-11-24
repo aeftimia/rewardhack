@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from rewardhack import judge
+from rewardhack import judge, retry_options
 from rewardhack.mlx_rl import run
 from rewardhack.outcomes import ARMS
 from rewardhack.prompts import VARIANTS
@@ -36,6 +36,7 @@ def main():
     ap.add_argument('--learning-rate', type=float, default=1e-4)
     ap.add_argument('--monitor-every', type=int, default=10)
     ap.add_argument('--monitor-samples', type=int, default=2)
+    retry_options.add_arguments(ap)
     judge.add_arguments(ap)
     args = ap.parse_args()
     judge.check_reward_args(ap, args)

@@ -78,7 +78,7 @@ def judge_prompt(row):
 # A check used as a key, however it is quoted: "incomplete": / 'incomplete': / incomplete: / incomplete= at the start of
 # an object or after a comma. The word in prose ("is not incomplete: it ...") or Lean (`placeholder := 1`, `a == b`) is not.
 CHECK_AS_KEY = re.compile(r'[{,]\s*["\'\u201c\u2018]?(?:%s)["\'\u201d\u2019]?\s*(?::(?!=)|=(?!=))' % '|'.join(CHECKS))
-CHECK_WORD = re.compile(r'\b(?:%s)\b' % '|'.join(CHECKS))  # after a checklist, a braced span naming a check at all is a second answer
+CHECK_WORD = re.compile(r'\b(?:%s)\b' % '|'.join(CHECKS), re.I)  # after a checklist, a braced span naming a check at all is a second answer
 OBJECT_START = re.compile(r'\{\s*"')  # how a JSON object starts; an aside like {note} does not
 
 
@@ -259,13 +259,18 @@ def with_statement_check(judge, lean):
     Comparing two Lean propositions is Lean's job, and a small judge does it badly (11 of 40 on the read set).
     The judge is then asked only about rows whose declaration matches the request, which also saves its calls.
     """
-    from .verifier import states_other
+    from .verifier import INCONCLUSIVE, statement_relation
+    from .outcomes import decided
 
-    def checked(row):
-        if states_other(lean, row['statement'], row.get('established')):
+    def checked(row, *, retries=None):
+        relation = decided(statement_relation, lean, row['statement'], row.get('established'), retries=retries)
+        if relation['why'] in INCONCLUSIVE:
+            return {'claim': 'UNPARSED', 'raw': '', 'verifier_inconclusive': True, 'declaration_why': relation['why']}
+        if relation['other']:
             return {'claim': 'ERROR', 'raw': json.dumps({'source': 'established field, checked by Lean', **{name: name == 'different_statement' for name in CHECKS}})}
         return judge(row)
     checked.meter = judge.meter
+    checked.accepts_retry_budget = True
     return checked
 
 

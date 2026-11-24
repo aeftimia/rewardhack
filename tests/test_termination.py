@@ -164,7 +164,10 @@ def test_vllm_finish_reason_reaches_scoring(args, monkeypatch):
     monkeypatch.setattr(vllm_probe.signal, 'signal', lambda *a: None)
     monkeypatch.setattr(vllm_probe.signal, 'alarm', lambda *a: None)
     monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: pytest.fail('cutoff reached Lean'))
+    real, allowances = vllm_probe.score, []
+    monkeypatch.setattr(vllm_probe, 'score', lambda *a, **kw: allowances.append(kw.get('retries')) or real(*a, **kw))
     vllm_probe.run(args)
+    assert isinstance(allowances[0], outcomes.RetryBudget)  # second verifier checks are bounded on this path too
     row = json.loads((args.out/'rows.jsonl').read_text())
     assert row['truncated'] is True and row['reward'] == 0 and row['format_valid'] is False
 
@@ -331,6 +334,13 @@ def test_verifier_mask_removes_actual_trl_kl_gradient_without_changing_attention
     assert logps.grad[0].tolist() == [0., 0.]
     assert logps.grad[1, 0].abs() > 0 and logps.grad[1, 1] == 0
     assert torch.equal(seen_attention[0], seen_attention[1])
+    kept_gradient = logps.grad[1].clone()
+    # Removing the dropped row entirely must produce the same kept-row gradient.
+    # A mask alone leaves TRL's outer batch mean diluted by the dropped row.
+    only_kept = {key: value[1:] for key, value in masked.items()}
+    logps = torch.full((1, 2), -2., requires_grad=True)
+    trainer._compute_loss(model, only_kept).backward()
+    torch.testing.assert_close(logps.grad[0], kept_gradient)
 
 
 def test_probe_reward_variation_matches_dropped_training_rows(args, monkeypatch):
@@ -394,21 +404,21 @@ def test_training_records_what_the_verifier_cost_it(args, monkeypatch):
     assert all(isinstance(kw['retries'], outcomes.RetryBudget) for kw in seen) and seen[0]['retries'] is seen[1]['retries']
     step = json.loads((args.out/'steps.jsonl').read_text())
     assert (step['unverified_rate'], step['check_verifier'], step['retries_denied'], step['variation_lost_to_verifier']) == (0.5, True, 0, 1)
-    assert summary['training_verifier'] == dict(unverified_rate=0.5, check_verifier=True, retries_denied=0)
+    assert summary['training_verifier'] == dict(unverified_rate=0.5, check_verifier=True, retries_denied=0, variation_lost_groups=1)
     assert summary['early_stop'] == outcomes.VERIFIER_UNDECIDED and json.loads((args.out/'live.json').read_text())['check_verifier'] is True
 
 
 def test_no_variation_is_not_blamed_on_the_verifier(args, monkeypatch):
     model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])
     args.num_generations, args.stop_no_variation, args.save_every, args.train_deadline = 2, 1, 99, float('inf')
-    scripted_scores(monkeypatch, [(0.0, False), (0.0, True)])  # the undecided rollout scored the same as its peer
+    scripted_scores(monkeypatch, [(0.0, False), (0.0, False)])  # every rollout decided, and all the same
     def drive(reward, callback):
         reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
         callback.on_step_end(None, SimpleNamespace(global_step=1), SimpleNamespace(should_training_stop=False), model=None)
     trl_stub(monkeypatch, drive)
     summary = dict(rollouts={})
     hf_grpo.train(model, tokenizer, [TASK], args, summary)
-    assert summary['early_stop'] == outcomes.NO_VARIATION and summary['training_verifier']['check_verifier'] is True
+    assert summary['early_stop'] == outcomes.NO_VARIATION and summary['training_verifier']['unverified_rate'] == 0
 
 
 def test_a_stop_mid_batch_keeps_and_marks_the_scored_rollouts(args, monkeypatch):
@@ -433,3 +443,11 @@ def test_evaluation_bounds_its_second_checks(args, monkeypatch):
     seen = scripted_scores(monkeypatch, [(0.0, False)])
     summary = hf_grpo.evaluate(model, tokenizer, [TASK], args, 'probe')
     assert seen[0]['retries'].left == 0 and summary['verifier_retries_denied'] == 0
+
+
+def test_rescore_keeps_the_partial_batch_mark(args, monkeypatch):
+    monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: pytest.fail('cutoff reached Lean'))
+    path = args.out/'rollouts.jsonl'
+    path.write_text(json.dumps(dict(task_id='true', raw=RAW, arm='baseline', genuine_why='truncated', truncated=True, partial_batch=True))+'\n')
+    rescore.rescore_file(path, args.lean, {'true': TASK})
+    assert json.loads(path.with_suffix('.rescored.jsonl').read_text())['partial_batch'] is True

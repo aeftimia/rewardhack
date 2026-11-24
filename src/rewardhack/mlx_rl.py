@@ -156,7 +156,7 @@ def rl(args, model, tokenizer):
                 advantage = next(advantages)
                 if len(tokens) < 2:
                     continue
-                _, grads = loss_and_grad(model, ids, tokens, advantage/args.group)
+                _, grads = loss_and_grad(model, ids, tokens, advantage/len(kept))
                 total = grads if total is None else tree_map(lambda a, b: a+b, total, grads)
                 mx.eval(total)
             if total is not None:

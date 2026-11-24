@@ -33,11 +33,22 @@ class VerifierMaskMixin:
         if keep is None or len(keep) != len(batch['advantages']):
             raise ValueError('Verifier mask must match the generated local completions')
         keep = torch.tensor(keep, dtype=torch.bool, device=batch['advantages'].device)
+        batch['verifier_keep'] = keep
         batch['advantages'] = batch['advantages'].masked_fill(~keep, 0.0)
         # tool_mask affects the loss only, leaving attention to generated tokens intact.
         mask = keep[:, None].expand_as(batch['completion_mask'])
         batch['tool_mask'] = batch.get('tool_mask', torch.ones_like(batch['completion_mask'])) * mask
         return batch
+
+    def _compute_loss(self, model, inputs):
+        loss = super()._compute_loss(model, inputs)
+        keep = inputs.get('verifier_keep')
+        if keep is None:
+            return loss
+        # GRPO averages sequence losses over the original batch. Remove the zeroed
+        # rows from that denominator too; DDP averages rank gradients afterwards.
+        count = self.accelerator.reduce(keep.sum().to(loss.dtype), reduction='sum')
+        return loss * (keep.numel() * self.accelerator.num_processes / count.clamp(min=1))
 
 
 def load_model(args, summary):
@@ -194,8 +205,9 @@ def train(model, tokenizer, tasks, args, summary):
             if state.global_step % run_args.save_every == 0:
                 kwargs['model'].save_pretrained(str(run_args.out/f'adapter-step{state.global_step}'))
             if state.global_step >= run_args.stop_no_variation and not any(groups):
-                # Say which it was: the policy produced no variation, or the verifier left the varying rollouts undecided.
-                summary['early_stop'] = VERIFIER_UNDECIDED if any(lost) else NO_VARIATION
+                verifier = summary.setdefault('training_verifier', {})
+                verifier['variation_lost_groups'] = sum(lost)
+                summary['early_stop'] = VERIFIER_UNDECIDED if verifier.get('unverified_rate') else NO_VARIATION
                 control.should_training_stop = True
             if time.monotonic() > run_args.train_deadline:
                 summary['early_stop'] = 'deadline'

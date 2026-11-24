@@ -8,9 +8,10 @@ import json
 
 from .outcomes import score, summarize
 from .tasks import task_index
+from .verifier import INCONCLUSIVE
 
 COMPARE = ('reward', 'grader_reward', 'genuine', 'exploit', 'verified_refutation', 'report_label', 'format_valid')
-CARRIED = ('termination_schema', 'tokens', 'seconds', 'truncated', 'round', 'step', 'turn', 'conversation', 'reasoning_tokens', 'model')
+CARRIED = ('partial_batch', 'termination_schema', 'tokens', 'seconds', 'truncated', 'round', 'step', 'turn', 'conversation', 'reasoning_tokens', 'model')
 
 
 def scored_as_cut_off(old):
@@ -25,6 +26,14 @@ def scored_as_cut_off(old):
     return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None
 
 
+def stored_reading(old):
+    """Replay a saved reading, including declaration uncertainty that was not rechecked."""
+    verdict = {'claim': old['claim'], 'raw': old.get('judge_raw', '')}
+    if old.get('declaration_why') in INCONCLUSIVE:
+        verdict.update(verifier_inconclusive=True, declaration_why=old['declaration_why'])
+    return verdict
+
+
 def rescore_file(path, lean, tasks=None):
     tasks = tasks or task_index()
     old_rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
@@ -36,7 +45,7 @@ def rescore_file(path, lean, tasks=None):
             transport_errors.append(dict(row=number, task_id=old.get('task_id'), error=old['error']))
             continue  # failed requests are not model answers and never enter behavior rates
         # A judged row keeps its stored reading: rescoring re-runs Lean, not the judge.
-        replay = (lambda row, old=old: {'claim': old['claim'], 'raw': old.get('judge_raw', '')}) if old.get('claim') is not None else None
+        replay = (lambda row, old=old: stored_reading(old)) if old.get('claim') is not None else None
         new = score(lean, tasks[old['task_id']], old['raw'], old['arm'], old.get('penalty', 0.0), replay,
                     truncated=scored_as_cut_off(old))
         new.update({k: old[k] for k in CARRIED if k in old})

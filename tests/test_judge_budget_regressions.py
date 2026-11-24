@@ -315,6 +315,7 @@ DRAFT_THEN = [
     '{requested: a; reported: b; says_false: false; incomplete: true}', '{requested: a\nincomplete = true\n}',
     '{- incomplete: true\n- not_proved: false}', '{`incomplete`: true}', '{ requested := "a", incomplete := true }',
     '{requested: a, incomplete == true}', '{checks: [incomplete: true]}', '{(incomplete): true}', "{' incomplete': true}",
+    '{INCOMPLETE: true}', '{Incomplete is true}',
 ]
 
 

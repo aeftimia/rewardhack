@@ -64,12 +64,15 @@ def train_stub(monkeypatch, tmp_path):
     model = SimpleNamespace(trainable_parameters=lambda: {}, parameters=lambda: {})
 
     def run(rewards, undecided, arm='report_correct'):
+        gradient_calls.clear()
+        updates.clear()
         rows = [dict(arm=arm, reward=reward, verifier_inconclusive=unverified, body='',
                      exploit=False, genuine=False, true=True, exploit_and_claims=False, format_valid=True)
                 for reward, unverified in zip(rewards, undecided, strict=True)]
         samples = iter((str(i), [10+i, 2], 0.0, False) for i in range(len(rows)))
         monkeypatch.setattr(mlx_rl, 'sample', lambda *a: next(samples))
-        monkeypatch.setattr(mlx_rl, 'score', lambda lean, task, raw, *a, **kw: dict(rows[int(raw)]))
+        allowances = []
+        monkeypatch.setattr(mlx_rl, 'score', lambda lean, task, raw, *a, **kw: allowances.append(kw.get('retries')) or dict(rows[int(raw)]))
         monkeypatch.setattr(mlx_rl, 'attempt_rate', lambda *a: [dict(row) for row in rows])
         args = SimpleNamespace(out=tmp_path, taskset='v1', seed=0, adapter=None, learning_rate=.01,
                                monitor_samples=1, steps=1, max_seconds=100, variant='neutral', thinking=False,
@@ -79,7 +82,8 @@ def train_stub(monkeypatch, tmp_path):
         records = {name: [json.loads(line) for line in (tmp_path / name).read_text().splitlines()]
                    for name in ('steps.jsonl', 'monitor.jsonl', 'rollouts.jsonl')}
         records['summary'] = json.loads((tmp_path / 'summary.json').read_text())
-        return records, gradient_calls, updates
+        records['allowances'] = allowances
+        return records, list(gradient_calls), list(updates)
 
     return run
 
@@ -93,6 +97,9 @@ def test_all_undecided_rows_skip_training_and_warn_in_every_summary(train_stub):
         assert record['unverified_rate'] == 1.0
         assert record['check_verifier'] is True
     assert [row['training_reward'] for row in records['rollouts.jsonl']] == [None, None]
+    assert records['steps.jsonl'][0]['reward'] is None  # nothing was kept: no mean reward, not a mean of 0
+    allowances = records['allowances']
+    assert len(allowances) == 2 and allowances[0] is allowances[1] and type(allowances[0]).__name__ == 'RetryBudget'
 
 
 @pytest.mark.parametrize('arm', ['report_correct', 'equal_reward'])
@@ -105,7 +112,7 @@ def test_mixed_group_skips_undecided_gradient_pass(train_stub, arm):
     assert records['summary']['check_verifier'] is True
     assert [row['training_reward'] for row in records['rollouts.jsonl']] == [1.0, 0.0, None]
     # Mean and spread come from the two decided rollouts alone: the undecided one does not scale their step.
-    assert gradients[0][1] == pytest.approx(-gradients[1][1]) and abs(gradients[0][1]) == pytest.approx(1/3, rel=1e-3)
+    assert gradients[0][1] == pytest.approx(-gradients[1][1]) and abs(gradients[0][1]) == pytest.approx(1/2, rel=1e-3)
 
 
 def test_baseline_keeps_grader_rewards_and_gradients_for_undecided_rows(train_stub):
@@ -125,3 +132,9 @@ def test_decided_rows_train_without_verifier_warning(train_stub):
     for record in records['steps.jsonl'] + records['monitor.jsonl'] + [records['summary']]:
         assert record['unverified_rate'] == 0.0
         assert record['check_verifier'] is False
+
+
+def test_dropped_rows_do_not_dilute_kept_gradients(train_stub):
+    _, two_gradients, _ = train_stub([1., 0.], [False, False])
+    _, padded_gradients, _ = train_stub([1., 0., 1., 0.], [False, False, True, True])
+    assert padded_gradients == two_gradients

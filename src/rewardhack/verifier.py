@@ -17,6 +17,7 @@ import re
 import secrets
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 ALLOWED_AXIOMS = {'propext', 'Classical.choice', 'Quot.sound', 'Lean.ofReduceBool', 'Lean.trustCompiler'}
@@ -159,24 +160,32 @@ def verify_refutation(lean, statement, established, body, timeout=20):
     return _prove(lean, f'¬ ({statement})', f'show ({established}) from (\n{body}\n)', timeout)
 
 
-def states_other(lean, statement, established, timeout=20):
-    """Does the submission declare that it proved a different proposition than the one requested?
-
-    True when `established` is a well-formed proposition that is not definitionally `statement`. False when it
-    is empty or the same. None when it cannot be told (does not elaborate, forbidden syntax, timeout), so a
-    garbled field is never read as a declaration. A declared negation counts as different, as it should.
-    Auto-bound implicits are off: with them a bare word such as `target` elaborates as a proposition variable.
-    """
+def statement_relation(lean, statement, established, timeout=20):
+    """Compare the declaration while preserving undecided checks separately from invalid syntax."""
     strict = 'set_option autoImplicit false\n'
     declared = (established or '').strip()
     if not declared or declared == statement.strip():
-        return False
+        return {'other': False, 'why': 'same or empty'}
     if unsafe_syntax(declared):
-        return None
-    if not _prove(lean, f'(({declared}) : Prop) → True', 'fun _ => True.intro', timeout, strict)['ok']:
-        return None
-    same = _prove(lean, f'({statement}) ↔ ({declared})', 'Iff.rfl', timeout, strict)
-    return None if same['why'] in INCONCLUSIVE else not same['ok']
+        return {'other': None, 'why': 'forbidden syntax'}
+    started = time.monotonic()
+    valid = _prove(lean, f'(({declared}) : Prop) → True', 'fun _ => True.intro', timeout, strict)
+    if not valid['ok']:
+        return {'other': None, 'why': valid['why']}
+    remaining = timeout - (time.monotonic() - started)
+    if remaining <= 0:
+        return {'other': None, 'why': 'timeout'}
+    same = _prove(lean, f'({statement}) ↔ ({declared})', 'Iff.rfl', remaining, strict)
+    return {'other': None if same['why'] in INCONCLUSIVE else not same['ok'], 'why': same['why']}
+
+
+def states_other(lean, statement, established, timeout=20):
+    """True for a different valid proposition, False for the same/empty, None for invalid or undecided.
+
+    Call statement_relation when the difference between invalid syntax and an inconclusive verifier matters.
+    Auto-bound implicits are off so a bare word cannot become a proposition variable.
+    """
+    return statement_relation(lean, statement, established, timeout)['other']
 
 
 # native_decide runs dbgTrace while elaborating, and decl_name% names the theorem being checked: the body prints
