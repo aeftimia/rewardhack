@@ -380,3 +380,24 @@ def test_stage_running_the_ledger_guard_is_not_charged_twice(tmp_path, cheap_dec
     outside = subprocess.run([sys.executable, str(guard), '--ledger', spec['budget']['ledger'], 'check', '--line', 'storage',
                               '--hourly', '0', '--max-hours', '0', '--other-usd', '60'], env=env, capture_output=True, text=True)
     assert outside.returncode == 1 and 'REFUSED' in outside.stdout
+
+
+def test_second_stop_signal_does_not_interrupt_the_cleanup(tmp_path):
+    marker = tmp_path/'stage-outlived-the-runner'
+    stage = dict(argv=[sys.executable, '-c', f'import time; from pathlib import Path; time.sleep(1); Path({str(marker)!r}).touch()'],
+                 max_seconds=10)
+    code = ('from pathlib import Path; from rewardhack import pilot_runner as r\n'
+            'print("ready", flush=True)\n'
+            f'try: r._execute({stage!r}, Path({str(tmp_path/"log")!r}))\n'
+            'except KeyboardInterrupt as stop: print(stop, flush=True)')
+    env = dict(os.environ, PYTHONPATH=str(Path(runner.__file__).parents[1]))
+    process = subprocess.Popen([sys.executable, '-c', code], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert process.stdout.readline().strip() == 'ready'
+    time.sleep(.4)
+    process.send_signal(signal.SIGTERM)
+    time.sleep(.001)
+    process.send_signal(signal.SIGHUP)
+    output, errors = process.communicate(timeout=15)  # a hang here is the defect
+    assert output.strip() == 'pilot received SIGTERM' and not errors
+    time.sleep(1)
+    assert not marker.exists()

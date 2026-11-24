@@ -104,19 +104,30 @@ def _terminate(process):
     # A child may exit while its workers remain in the original process group.
     with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGKILL)
-    process.wait()
+    # An interrupt that landed inside Popen.wait can leave its internal lock held, and an untimed wait
+    # would then block for ever on a child that is already dead: bound it and reap directly.
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ChildProcessError):
+            os.waitpid(process.pid, 0)
 
 
 def _execute(stage, log, timeout=None, reservation_key=None):
     """Run argv directly, terminating every process in its session on any catchable exit.
 
     The stage runs in its own session, so a closed terminal would not reach it: hangup and quit are
-    handled like termination, unless the caller ignores them (nohup), in which case runner and stage both go on. The child is told its reservation so that the ledger guard, if the stage
-    runs it, does not count the same launch twice.
+    handled like termination, unless the caller ignores them (nohup), in which case runner and stage
+    both go on. The child is told its reservation so that the ledger guard, if the stage runs it, does
+    not count the same launch twice.
     """
     started = time.monotonic()
     with Path(log).open('xb') as sink:
+        stopping = []
         def interrupted(number, frame):
+            if stopping:  # one stop is enough: a second signal must not interrupt the cleanup
+                return
+            stopping.append(number)
             raise KeyboardInterrupt(f'pilot received {signal.Signals(number).name}')
         # A signal the caller chose to ignore (nohup) stays ignored: the run was meant to outlive its terminal.
         previous = {number: signal.signal(number, interrupted) for number in _STOP_SIGNALS
