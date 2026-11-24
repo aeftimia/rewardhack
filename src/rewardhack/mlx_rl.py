@@ -19,7 +19,7 @@ from mlx_lm import load, stream_generate
 from mlx_lm.sample_utils import make_sampler
 from mlx_lm.tuner.utils import linear_to_lora_layers
 
-from .outcomes import score, sorry_attempt, summarize, training_rewards, training_keep, verifier_advice
+from .outcomes import RETRY_SECONDS, RetryBudget, score, sorry_attempt, summarize, training_rewards, training_keep, verifier_advice
 from .prompts import prompt
 from .tasks import select_tasks, split, taskset_rows
 
@@ -55,6 +55,7 @@ def probe(args, model, tokenizer):
     tasks = select_tasks(args.taskset, args.tasks)
     random.Random(args.seed).shuffle(tasks)
     rows, started = [], time.perf_counter()
+    retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))
     gen_seconds = tokens_total = 0
     with (args.out/'rows.jsonl').open('w') as sink:
         # Whole passes over all tasks, so a time-capped run stays balanced.
@@ -65,7 +66,7 @@ def probe(args, model, tokenizer):
                 if time.perf_counter()-started > args.max_seconds:
                     break
                 text, tokens, seconds, truncated = sample(model, tokenizer, encode(tokenizer, task['statement'], args.variant, args.thinking), args.max_tokens)
-                row = score(args.lean, task, text, 'baseline', truncated=truncated)
+                row = score(args.lean, task, text, 'baseline', truncated=truncated, retries=retries)
                 row.update(tokens=len(tokens), seconds=seconds, truncated=truncated, round=round_index)
                 rows.append(row)
                 gen_seconds += seconds
@@ -88,17 +89,18 @@ def completion_loss(model, prompt_ids, tokens, advantage):
 
 
 def attempt_rate(model, tokenizer, tasks, args, samples):
-    rows = []
+    rows, retries = [], RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # per monitor pass
     for task in tasks:
         ids = encode(tokenizer, task['statement'], args.variant, args.thinking)
         for _ in range(samples):
             raw, _, _, truncated = sample(model, tokenizer, ids, args.max_tokens)
-            rows.append(score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated))
+            rows.append(score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries))
     return rows
 
 
 def rl(args, model, tokenizer):
     tasks = split(taskset_rows(args.taskset))['train']
+    retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # for the whole training loop
     # The evaluation split stays held out: monitoring takes groups from the training split that are excluded from training.
     groups = sorted({t['group'] for t in tasks})
     random.Random(args.seed).shuffle(groups)
@@ -137,7 +139,7 @@ def rl(args, model, tokenizer):
         samples = [sample(model, tokenizer, ids, args.max_tokens) for _ in range(args.group)]
         t_rollout = time.perf_counter()-t0
         t0 = time.perf_counter()
-        rows = [score(args.lean, task, s[0], args.arm, args.penalty, args.judge_fn, truncated=s[3]) for s in samples]
+        rows = [score(args.lean, task, s[0], args.arm, args.penalty, args.judge_fn, truncated=s[3], retries=retries) for s in samples]
         t_lean = time.perf_counter()-t0
         verifier_rows.extend({'verifier_inconclusive': r['verifier_inconclusive']} for r in rows)
         kept = [reward for reward in training_rewards(rows, len(rows)) if reward is not None]
@@ -164,7 +166,7 @@ def rl(args, model, tokenizer):
         for r, s in zip(rows, samples, strict=True):
             rollouts.write(json.dumps(dict(r, step=step, tokens=len(s[1]), truncated=s[3]), ensure_ascii=False)+'\n')
         rollouts.flush()
-        entry = dict(step=step, task=task['id'], reward=float(rewards.mean()), mixed=update, sorry=sum(sorry_attempt(r) for r in rows),
+        entry = dict(step=step, task=task['id'], reward=float(rewards.mean()) if kept else None, mixed=update, sorry=sum(sorry_attempt(r) for r in rows),
                      exploit=sum(r['exploit'] for r in rows), rollout_seconds=t_rollout, lean_seconds=t_lean,
                      update_seconds=time.perf_counter()-t0, tokens=sum(len(s[1]) for s in samples), peak_gib=mx.get_peak_memory()/2**30,
                      **verifier_advice(rows))

@@ -12,7 +12,7 @@ import sys
 import time
 
 from .gpu import GpuSampler
-from .outcomes import score, summarize
+from .outcomes import RETRY_SECONDS, RetryBudget, score, summarize
 from .prompts import prompt
 from .tasks import select_tasks
 
@@ -27,6 +27,7 @@ def run(args):
     signal.alarm(args.max_seconds)
 
     started = time.perf_counter()
+    retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # the probe's whole allowance of second checks
     sampler = GpuSampler()
     sampler.start()
     summary = {'status': 'running', 'argv': sys.argv[1:], 'purpose': 'exploration probe; inference only; no training',
@@ -58,7 +59,7 @@ def run(args):
                     if args.lean == 'none':
                         row = dict(task_id=task['id'], arm='baseline', raw=completion.text, scored=False, termination_schema='cutoff-v1')
                     else:
-                        row = score(args.lean, task, completion.text, 'baseline', truncated=completion.finish_reason == 'length')
+                        row = score(args.lean, task, completion.text, 'baseline', truncated=completion.finish_reason == 'length', retries=retries)
                     t_lean += time.perf_counter()-t0
                     row.update(tokens=len(completion.token_ids), truncated=completion.finish_reason == 'length', round=index)
                     generated += len(completion.token_ids)

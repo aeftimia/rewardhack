@@ -348,3 +348,88 @@ def test_probe_reward_variation_matches_dropped_training_rows(args, monkeypatch)
     assert outcomes.training_rewards(rows, 2) == [2., None]
     saved = [json.loads(line) for line in (args.out/'probe-evaluation.jsonl').read_text().splitlines()]
     assert [r['reward'] for r in saved] == [2., 1.]
+
+
+def trl_stub(monkeypatch, drive):
+    """The trainer's reward function and step callback, driven by `drive(reward_fn, callback)` in place of TRL."""
+    class Trainer:
+        def __init__(self, model, reward_funcs, callbacks, **kwargs):
+            self.model, self.reward, self.callbacks = model, reward_funcs, callbacks
+            self.state = SimpleNamespace(global_step=1, log_history=[])
+        def train(self):
+            drive(self.reward, self.callbacks[0])
+        def save_model(self, path):
+            pass
+    for name, attrs in {'datasets': dict(Dataset=SimpleNamespace(from_list=lambda rows: rows)), 'peft': dict(LoraConfig=lambda **kw: kw),
+                        'transformers': dict(TrainerCallback=object), 'trl': dict(GRPOTrainer=Trainer, GRPOConfig=lambda **kw: kw)}.items():
+        module = ModuleType(name)
+        module.__dict__.update(attrs)
+        monkeypatch.setitem(sys.modules, name, module)
+
+
+def scripted_scores(monkeypatch, verdicts):
+    """`hf_grpo.score` returns scripted (reward, undecided) rows, or raises a scripted exception; records its keywords."""
+    template, seen, pending = outcomes.score('unused', TASK, RAW, 'baseline', truncated=True), [], iter(verdicts)
+    def score(*a, **kw):
+        seen.append(kw)
+        verdict = next(pending)
+        if isinstance(verdict, BaseException):
+            raise verdict
+        return dict(template, arm='report_correct', reward=verdict[0], verifier_inconclusive=verdict[1], truncated=False)
+    monkeypatch.setattr(hf_grpo, 'score', score)
+    return seen
+
+
+def test_training_records_what_the_verifier_cost_it(args, monkeypatch):
+    model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])
+    args.num_generations, args.stop_no_variation, args.save_every, args.train_deadline = 2, 1, 99, float('inf')
+    seen = scripted_scores(monkeypatch, [(0.0, False), (1.5, True)])
+    def drive(reward, callback):
+        assert reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]]) == [0.0, None]
+        control = callback.on_step_end(None, SimpleNamespace(global_step=1), SimpleNamespace(should_training_stop=False), model=None)
+        assert control.should_training_stop
+    trl_stub(monkeypatch, drive)
+    summary = dict(rollouts={})
+    hf_grpo.train(model, tokenizer, [TASK], args, summary)
+    assert all(isinstance(kw['retries'], outcomes.RetryBudget) for kw in seen) and seen[0]['retries'] is seen[1]['retries']
+    step = json.loads((args.out/'steps.jsonl').read_text())
+    assert (step['unverified_rate'], step['check_verifier'], step['retries_denied'], step['variation_lost_to_verifier']) == (0.5, True, 0, 1)
+    assert summary['training_verifier'] == dict(unverified_rate=0.5, check_verifier=True, retries_denied=0)
+    assert summary['early_stop'] == outcomes.VERIFIER_UNDECIDED and json.loads((args.out/'live.json').read_text())['check_verifier'] is True
+
+
+def test_no_variation_is_not_blamed_on_the_verifier(args, monkeypatch):
+    model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])
+    args.num_generations, args.stop_no_variation, args.save_every, args.train_deadline = 2, 1, 99, float('inf')
+    scripted_scores(monkeypatch, [(0.0, False), (0.0, True)])  # the undecided rollout scored the same as its peer
+    def drive(reward, callback):
+        reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
+        callback.on_step_end(None, SimpleNamespace(global_step=1), SimpleNamespace(should_training_stop=False), model=None)
+    trl_stub(monkeypatch, drive)
+    summary = dict(rollouts={})
+    hf_grpo.train(model, tokenizer, [TASK], args, summary)
+    assert summary['early_stop'] == outcomes.NO_VARIATION and summary['training_verifier']['check_verifier'] is True
+
+
+def test_a_stop_mid_batch_keeps_and_marks_the_scored_rollouts(args, monkeypatch):
+    model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])
+    args.num_generations = 2
+    scripted_scores(monkeypatch, [(1.0, False), TimeoutError('hard deadline')])
+    def drive(reward, callback):
+        with pytest.raises(TimeoutError):
+            reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
+    trl_stub(monkeypatch, drive)
+    summary = dict(rollouts={})
+    hf_grpo.train(model, tokenizer, [TASK], args, summary)
+    saved = [json.loads(line) for line in (args.out/'training-rollouts.jsonl').read_text().splitlines()]
+    assert len(saved) == 1 and saved[0]['partial_batch'] is True and summary['partial_batch_rows'] == 1
+    assert summary['rollouts'] == {} and (args.out/'steps.jsonl').read_text() == ''
+
+
+def test_evaluation_bounds_its_second_checks(args, monkeypatch):
+    torch = pytest.importorskip('torch')
+    model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])
+    args.verifier_retry_seconds = 0
+    seen = scripted_scores(monkeypatch, [(0.0, False)])
+    summary = hf_grpo.evaluate(model, tokenizer, [TASK], args, 'probe')
+    assert seen[0]['retries'].left == 0 and summary['verifier_retries_denied'] == 0

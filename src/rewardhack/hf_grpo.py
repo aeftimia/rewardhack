@@ -133,7 +133,7 @@ def train(model, tokenizer, tasks, args, summary):
     stops = stop_ids(model, tokenizer)  # the same stop IDs as `evaluate`, so both paths agree on a finished answer
     timing = {'step_start': 0.0, 'rollout': [], 'lean': [], 'update': [], 'reward_end': 0.0}
     sink = (args.out/'training-rollouts.jsonl').open('w')
-    groups, undecided = [], []
+    groups, undecided, lost = [], [], []
     retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # for the whole training phase, so the deadline reserve holds
 
     steps = (args.out/'steps.jsonl').open('w')
@@ -153,8 +153,10 @@ def train(model, tokenizer, tasks, args, summary):
                 rows.append(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries))
             except BaseException:
                 # A stop mid-batch (deadline, judge streak, spend cap) keeps what was already scored and paid for.
-                sink.write(''.join(json.dumps(row, ensure_ascii=False)+'\n' for row in rows))
+                # Marked, because these rows are in no step, no tally and no complete prompt group.
+                sink.write(''.join(json.dumps(dict(row, partial_batch=True), ensure_ascii=False)+'\n' for row in rows))
                 sink.flush()
+                summary['partial_batch_rows'] = len(rows)
                 raise
         rewards = training_rewards(rows, args.num_generations)
         trainer._verifier_keep = [training_keep(row) for row in rows]
@@ -165,6 +167,7 @@ def train(model, tokenizer, tasks, args, summary):
         step = len(timing['lean'])+1
         grouped = reward_groups(rows, args.num_generations)
         groups.extend([True]*grouped['mixed_groups'] + [False]*grouped['zero_advantage_groups'])
+        lost.append(grouped['variation_lost_to_verifier'])
         counts = tally(rows)
         for key, value in counts.items():
             summary['rollouts'][key] = summary['rollouts'].get(key, 0)+value
@@ -173,7 +176,7 @@ def train(model, tokenizer, tasks, args, summary):
             if counts.get(behaviour) and behaviour not in first_seen:
                 first_seen[behaviour] = step
         # A group whose rewards are all equal has zero advantage everywhere and moves nothing.
-        steps.write(json.dumps(dict(step=step, **counts, **verifier_advice(rows), **grouped))+'\n')
+        steps.write(json.dumps(dict(step=step, **counts, **verifier_advice(rows), retries_denied=retries.denied, **grouped))+'\n')
         steps.flush()
         timing['reward_end'] = time.perf_counter()
         timing['lean'].append(timing['reward_end']-t0)
@@ -191,8 +194,8 @@ def train(model, tokenizer, tasks, args, summary):
             if state.global_step % run_args.save_every == 0:
                 kwargs['model'].save_pretrained(str(run_args.out/f'adapter-step{state.global_step}'))
             if state.global_step >= run_args.stop_no_variation and not any(groups):
-                # Undecided rollouts leave a group without variation too: say which it was.
-                summary['early_stop'] = VERIFIER_UNDECIDED if summary.get('training_verifier', {}).get('check_verifier') else NO_VARIATION
+                # Say which it was: the policy produced no variation, or the verifier left the varying rollouts undecided.
+                summary['early_stop'] = VERIFIER_UNDECIDED if any(lost) else NO_VARIATION
                 control.should_training_stop = True
             if time.monotonic() > run_args.train_deadline:
                 summary['early_stop'] = 'deadline'

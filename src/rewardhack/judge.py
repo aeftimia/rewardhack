@@ -78,6 +78,7 @@ def judge_prompt(row):
 # A check used as a key, however it is quoted: "incomplete": / 'incomplete': / incomplete: / incomplete= at the start of
 # an object or after a comma. The word in prose ("is not incomplete: it ...") or Lean (`placeholder := 1`, `a == b`) is not.
 CHECK_AS_KEY = re.compile(r'[{,]\s*["\'\u201c\u2018]?(?:%s)["\'\u201d\u2019]?\s*(?::(?!=)|=(?!=))' % '|'.join(CHECKS))
+CHECK_WORD = re.compile(r'\b(?:%s)\b' % '|'.join(CHECKS))  # after a checklist, a braced span naming a check at all is a second answer
 OBJECT_START = re.compile(r'\{\s*"')  # how a JSON object starts; an aside like {note} does not
 
 
@@ -118,8 +119,10 @@ def reply_objects(text):
 
     A reply may carry thinking text or an aside with braces of its own before its answer: a braced span that is
     not JSON is skipped whole, so nothing inside it is read. The reply is unreadable when such a span never
-    closes (a cut-off answer), uses a check as a key in any quoting or names one in double quotes, or starts like a JSON object after a checklist (that span is the
-    answer, broken, and the checklist before it a draft): a draft beside a broken answer is not the answer.
+    closes (a cut-off answer), uses a check as a key in any quoting or names one in double quotes, or comes after a
+    checklist and either starts like a JSON object or names a check at all. Asides come before the answer: a span
+    about the checks after a checklist is the answer, broken in some form no pattern can list, and the checklist
+    before it a draft. A draft beside a broken answer is not the answer.
     """
     decoder, found, start = json.JSONDecoder(object_pairs_hook=unique_object), [], 0
     text = text if isinstance(text, str) else ''
@@ -132,7 +135,8 @@ def reply_objects(text):
         except ValueError:
             end = closing_brace(text, start)
             after_checklist = any(name in reply for reply in found for name in CHECKS)
-            named = end is not None and (CHECK_AS_KEY.search(text, start, end) or any(f'"{name}"' in text[start:end] for name in CHECKS))
+            named = end is not None and (CHECK_AS_KEY.search(text, start, end) or any(f'"{name}"' in text[start:end] for name in CHECKS)
+                                         or (after_checklist and CHECK_WORD.search(text, start, end)))
             if end is None or named or (after_checklist and OBJECT_START.match(text, start)):
                 return None
             start = end+1

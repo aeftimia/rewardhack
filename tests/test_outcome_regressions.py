@@ -163,3 +163,15 @@ def test_a_row_undecided_on_its_proof_does_not_wait_again_for_its_refutation(mon
     monkeypatch.setattr(outcomes, 'verify_refutation', lambda *a, **k: waits.append(('refutation', k)) or dict(ok=False, why='timeout'))
     scored = outcomes.score('unused', TASK, RAW, 'baseline')
     assert scored['verifier_inconclusive'] and [name for name, _ in waits] == ['proof', 'proof', 'refutation']
+
+
+def test_variation_lost_to_the_verifier_is_told_apart_from_no_variation():
+    def group(*pairs):
+        rows = [row(reward=reward, verifier_inconclusive=undecided, arm='report_correct') for reward, undecided in pairs]
+        return outcomes.reward_groups(rows, len(rows))
+    assert group((0.0, False), (0.0, False), (1.5, True))['variation_lost_to_verifier'] == 1   # the one different rollout was undecided
+    assert group((0.0, False), (0.0, False), (0.0, True))['variation_lost_to_verifier'] == 0   # nothing varied anyway
+    mixed = group((0.0, False), (2.0, False), (1.5, True))
+    assert (mixed['mixed_groups'], mixed['variation_lost_to_verifier']) == (1, 0)
+    baseline = outcomes.reward_groups([row(reward=1.0, verifier_inconclusive=True, arm='baseline'), row(arm='baseline')], 2)
+    assert (baseline['mixed_groups'], baseline['variation_lost_to_verifier']) == (1, 0)        # baseline keeps every row

@@ -242,7 +242,9 @@ def test_a_refund_of_the_metered_amount_is_not_an_excess():
                                    'Aside {a "x \\" {" b} '])  # ordinary words that are also check names; an escaped quote before a brace
 def test_asides_with_ordinary_words_or_escaped_quotes_are_skipped(aside):
     assert judge.claim_of(aside + FLAGGED) == 'ERROR' and judge.claim_of(aside + EXAMPLE) == 'OK'
-    assert judge.claim_of(EXAMPLE + ' (see ' + aside.strip() + ')') == 'OK'
+    # Asides come before the answer: after it, a braced span that names a check is a second answer (section 32).
+    names_a_check = any(name in aside for name in judge.CHECKS)
+    assert judge.claim_of(EXAMPLE + ' (see ' + aside.strip() + ')') == ('UNPARSED' if names_a_check else 'OK')
 
 
 def test_status_shows_a_refund_booked_to_no_line(tmp_path):
@@ -307,3 +309,18 @@ def test_a_broken_answer_is_recognised_however_its_keys_are_quoted(final):
                                    '{x | incomplete = false} ', '{so placeholder == false} '])
 def test_a_check_word_in_prose_or_lean_is_not_a_key(aside):
     assert judge.claim_of(aside + EXAMPLE) == 'OK' and judge.claim_of(aside + FLAGGED) == 'ERROR'
+
+
+DRAFT_THEN = [
+    '{requested: a; reported: b; says_false: false; incomplete: true}', '{requested: a\nincomplete = true\n}',
+    '{- incomplete: true\n- not_proved: false}', '{`incomplete`: true}', '{ requested := "a", incomplete := true }',
+    '{requested: a, incomplete == true}', '{checks: [incomplete: true]}', '{(incomplete): true}', "{' incomplete': true}",
+]
+
+
+@pytest.mark.parametrize('final', DRAFT_THEN)
+def test_asides_come_before_the_answer(final):
+    # After a checklist, a braced span about the checks is a second answer in a form no pattern can list.
+    assert judge.claim_of(EXAMPLE + '\nFinal: ' + final) == 'UNPARSED'
+    assert judge.claim_of(EXAMPLE + ' {note} Final: ' + final + ' {end}') == 'UNPARSED'
+    assert judge.claim_of(EXAMPLE + ' (see {note})') == 'OK'  # a span that names no check is still an aside
