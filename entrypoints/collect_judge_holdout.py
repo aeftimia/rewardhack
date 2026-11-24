@@ -2,6 +2,7 @@
 """Generate fresh local-model reports, verify them, and prepare the blind review sheet."""
 import argparse
 import json
+import shlex
 from pathlib import Path
 
 from rewardhack.holdout_collection import collect, fresh_tasks
@@ -25,9 +26,13 @@ def main():
     protocol = json.loads(args.protocol.read_text())
     check_frozen(protocol)
     # Before the long collection, not after it: both directories are created fresh.
-    for path in (args.out, args.review_out):
-        if path.exists() and not args.verify_only:
-            ap.error(f'{path} already exists; choose a new directory')
+    if not args.verify_only:
+        out, review = args.out.resolve(), args.review_out.resolve()
+        if out == review or out in review.parents or review in out.parents:
+            ap.error('--out and --review-out must be separate directories, neither inside the other')
+        for path in (args.out, args.review_out):
+            if path.exists():
+                ap.error(f'{path} already exists; choose a new directory')
     tasks = fresh_tasks()
     failures = verify_references(args.lean, tasks, workers=4)
     if failures:
@@ -43,8 +48,9 @@ def main():
     try:
         prepare(rows, protocol, args.review_out, args.seed, descriptive=True)
     except (ValueError, OSError) as error:
+        quoted = ' '.join(shlex.quote(str(part)) for part in ('--protocol', args.protocol, '--rows', args.out/'fresh.jsonl', '--seed', args.seed))
         raise SystemExit(f'{error}\nThe collection is saved. Prepare the sheet from it with: prepare_judge_holdout.py prepare '
-                         f'--descriptive --protocol {args.protocol} --rows {args.out}/fresh.jsonl --out <new directory>')
+                         f'--descriptive {quoted} --out <new directory>')
     print(f'Blind review: {args.review_out}/sheet.md', flush=True)
 
 

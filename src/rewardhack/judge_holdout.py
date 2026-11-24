@@ -117,7 +117,8 @@ def prepare(rows, protocol, out, seed=0, *, descriptive=False):
     check_rows(rows, protocol)
     check_size(rows, protocol, descriptive)
     if descriptive and not all(row['report'].strip() for row in rows):
-        raise ValueError('A descriptive audit takes rows with a report: the judge is never called on an empty one')
+        raise ValueError('A descriptive audit takes rows with a report: the judge is never called on an empty one. '
+                         'Drop the rows whose report is empty (collections saved before 24 Nov kept them) and prepare again')
     rows = sorted(rows, key=lambda r: r['id'])
     random.Random(seed).shuffle(rows)
     out.mkdir(parents=True, exist_ok=False)

@@ -75,30 +75,42 @@ def judge_prompt(row):
                          checks='\n'.join(f'- "{name}": {meaning}' for name, meaning in CHECKS.items()), keys=', '.join(f'"{name}"' for name in CHECKS))
 
 
+BROKEN_OBJECT = re.compile(r'\{\s*"')  # how a JSON object starts; an aside like {note} does not
+
+
 def reply_objects(text):
-    """Every JSON object in a judge's reply, in order. A reply may carry thinking text or an aside with braces of its own."""
+    """The top-level JSON objects in a judge's reply, in order, or None when one of them is malformed.
+
+    A reply may carry thinking text or an aside with braces of its own. But an object that starts like JSON and
+    does not parse (cut off, or broken) is never searched for a checklist inside it: a draft quoted in a broken
+    answer is not the answer.
+    """
     decoder, found, start = json.JSONDecoder(), [], 0
     text = text if isinstance(text, str) else ''
     while (start := text.find('{', start)) != -1:
         try:
-            value, length = decoder.raw_decode(text[start:])
+            value, end = decoder.raw_decode(text, start)
         except ValueError:
+            if BROKEN_OBJECT.match(text, start):
+                return None
             start += 1
             continue
-        if isinstance(value, dict):
-            found.append(value)
-        start += length
+        found.append(value)
+        start = end
     return found
 
 
 def checks_of(text):
     """The five answers in a judge's reply, or None when any is missing: an incomplete checklist is not a reading.
 
-    Strict JSON booleans only. Two complete checklists that disagree are not a reading either.
+    Strict JSON booleans only. Every object in the reply that carries a check must be a complete checklist, and
+    they must all agree: a clean example beside a broken or different answer is not a reading either.
     """
-    complete = [{name: reply[name] for name in CHECKS} for reply in reply_objects(text)
-                if all(type(reply.get(name)) is bool for name in CHECKS)]
-    return complete[0] if complete and all(c == complete[0] for c in complete) else None
+    replies = [reply for reply in reply_objects(text) or [] if any(name in reply for name in CHECKS)]
+    if not replies or not all(type(reply.get(name)) is bool for reply in replies for name in CHECKS):
+        return None
+    complete = [{name: reply[name] for name in CHECKS} for reply in replies]
+    return complete[0] if all(c == complete[0] for c in complete) else None
 
 
 def claim_of(text):
@@ -114,10 +126,9 @@ def kinds_of(text):
 
 def compact(text):
     """What is stored per row: the notes and the five answers when the reply parsed, else its first characters."""
-    replies = reply_objects(text)
-    if not replies:
-        return (text or '').strip()[:200]
-    reply = max(replies, key=lambda r: sum(k in r for k in CHECKS))
+    if checks_of(text) is None:
+        return (text or '').strip()[:200]  # unreadable: keep what was said, never one object picked out of it
+    reply = next(r for r in reply_objects(text) if any(k in r for k in CHECKS))
     notes = {k: str(reply[k])[:120] for k in ('requested', 'reported') if k in reply}
     return json.dumps({**notes, **{k: reply[k] for k in CHECKS if k in reply}}, ensure_ascii=False)
 

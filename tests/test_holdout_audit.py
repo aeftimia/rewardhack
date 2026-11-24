@@ -152,3 +152,35 @@ def test_formal_audit_rejects_misjoined_task_before_writing(tmp_path, field, val
     with pytest.raises(ValueError, match=field):
         audit_file('must-not-run', source, tmp_path/'out', {'known': task})
     assert not (tmp_path/'out').exists()
+
+
+@pytest.mark.parametrize('rows,message', [
+    ([], 'no rows'),
+    ([dict(id='r', task_id='known', group='g', statement='True', raw=None, true=True, genuine=False, exploit=False,
+           verified_refutation=False)], "wrong type in \\['raw'\\]"),
+    (['not a row'], 'lacks'),
+])
+def test_formal_audit_checks_types_and_never_reuses_a_directory(tmp_path, rows, message):
+    from rewardhack.formal_audit import Unauditable
+    (tmp_path/'rows.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in rows))
+    with pytest.raises(Unauditable, match=message):
+        audit_file('no-lean', tmp_path/'rows.jsonl', tmp_path/'out')
+    assert not (tmp_path/'out').exists()
+    good = dict(id='r', task_id='known', group='g', statement='True', raw='{}', true=True, genuine=False, exploit=False,
+                verified_refutation=False)
+    (tmp_path/'rows.jsonl').write_text(json.dumps(good)+'\n')
+    (tmp_path/'out').mkdir()
+    with pytest.raises(Unauditable, match='already exists'):
+        audit_file('no-lean', tmp_path/'rows.jsonl', tmp_path/'out')
+
+
+@pytest.mark.parametrize('review', ['collection', 'collection/review'])
+def test_collector_refuses_overlapping_directories_before_generating(tmp_path, monkeypatch, capsys, review):
+    protocol, _ = protocol_and_rows(tmp_path)
+    (tmp_path/'protocol.json').write_text(json.dumps(protocol))
+    monkeypatch.setattr('rewardhack.tasks.verify_references', lambda *a, **kw: pytest.fail('reached the collection'))
+    monkeypatch.setattr(sys, 'argv', ['collect_judge_holdout.py', '--protocol', str(tmp_path/'protocol.json'), '--model-path', 'none',
+                                    '--lean', 'none', '--out', str(tmp_path/'collection'), '--review-out', str(tmp_path/review)])
+    with pytest.raises(SystemExit):
+        runpy.run_path(str(ROOT/'entrypoints/collect_judge_holdout.py'), run_name='__main__')
+    assert 'separate directories' in capsys.readouterr().err

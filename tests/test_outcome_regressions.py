@@ -85,3 +85,9 @@ def test_stop_ids_match_trl_tokenizer_eos():
     assert outcomes.stop_ids(NS(generation_config=NS(eos_token_id=[9, 10])), tokenizer) == 9
     assert outcomes.stop_ids(NS(generation_config=NS(eos_token_id=None)), tokenizer) == 9
     assert outcomes.stop_ids(NS(), tokenizer) == 9
+
+
+def test_tally_reads_rows_saved_before_the_inconclusive_label():
+    old = row()
+    del old['verifier_inconclusive']
+    assert outcomes.tally([old])['inconclusive'] == 0 and outcomes.reward_groups([old], 1)['groups'] == 1

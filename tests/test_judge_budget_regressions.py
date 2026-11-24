@@ -96,7 +96,7 @@ def test_refund_rows_lower_spend_only_when_marked():
     for bad in ('3.5', 'nan', '-inf', 'bad', None):  # a refund is never a charge and never unbounded
         with pytest.raises(ValueError, match='ledger row 2 total_usd'):
             budget.spent([charge, dict(line='api', total_usd=bad, status='refund')], line='api')
-    with pytest.raises(ValueError, match='ledger total'):  # refunds cannot take a line below zero
+    with pytest.raises(ValueError, match="refunds exceed charges on line 'api' by \\$1.00"):  # never below zero
         budget.spent([dict(line='api', total_usd='-1', status='refund')], line='api')
 
 
@@ -153,3 +153,41 @@ def test_zero_probe_cap_preserves_plan_without_requests(tmp_path, monkeypatch):
     openai_probe.run(args)
     summary = json.loads((tmp_path/'summary.json').read_text())
     assert summary['requests'] == 0 and summary['planned'] == 1 and summary['cost_cap_hit']
+
+
+def test_refunds_in_a_free_text_ledger():
+    # Status is free text in the real ledger, and decimal dollars do not add exactly in binary.
+    rows = [dict(line='api', total_usd='0.3', status='completed: metered'),
+            dict(line='api', total_usd='-0.1', status='Refund: per console'),
+            dict(line='api', total_usd='-0.2', status='refund')]
+    assert budget.spent(rows, line='api') == 0 and str(budget.spent(rows, line='api')) == '0.0'
+    assert budget.check(rows, 'api', 1, 1) == (1, [])
+    with pytest.raises(ValueError, match='status starts with "refund"'):  # the refusal says how to book a refund
+        budget.spent([dict(line='api', total_usd='-0.06', status='refunded?')])
+    with pytest.raises(ValueError, match='refunds exceed charges'):  # a refund on another line than its charge
+        budget.spent([dict(line='', total_usd='5', status='paid'), dict(line='api', total_usd='-5', status='refund')], line='api')
+
+
+EXAMPLE = json.dumps(GOOD)
+FLAGGED = json.dumps(dict(GOOD, **{next(iter(judge.CHECKS)): True}))
+
+
+@pytest.mark.parametrize('reply', [
+    '<think>e.g. ' + EXAMPLE + '</think> ' + EXAMPLE.replace('false', '"false"', 1),   # the answer itself is not boolean
+    '<think>e.g. ' + EXAMPLE + '</think> ' + json.dumps({next(iter(judge.CHECKS)): True}),  # the answer is incomplete
+    '{"requested": "x", "draft": ' + FLAGGED + ', "claims',                              # a draft inside a cut-off answer
+    '{"requested": "a", "reported": "it wrote ' + EXAMPLE.replace('"', "'") + ' then stopped',
+    '{"requested": "a", "reported": "it wrote ' + EXAMPLE + ' then stopped',
+    EXAMPLE + FLAGGED,
+    'I cannot answer in JSON. The set {} is odd.',
+])
+def test_a_checklist_beside_a_broken_answer_is_not_a_reading(reply):
+    assert judge.claim_of(reply) == 'UNPARSED'
+    stored = judge.compact(reply)
+    # What is stored is what was said, so reading it again cannot turn the row into a verdict.
+    assert stored == reply.strip()[:200] and judge.claim_of(stored) == 'UNPARSED' and judge.kinds_of(stored) == []
+
+
+def test_a_checklist_nested_in_a_valid_wrapper_is_not_searched():
+    assert judge.claim_of(json.dumps(dict(answer=GOOD))) == 'UNPARSED'
+    assert judge.claim_of(json.dumps(dict(GOOD, requested=dict(GOOD, note='nested')))) == 'OK'

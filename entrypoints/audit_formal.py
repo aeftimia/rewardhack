@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from rewardhack.formal_audit import audit_file
+from rewardhack.formal_audit import Unauditable, audit_file
 from rewardhack.holdout_collection import fresh_tasks
 
 
@@ -16,7 +16,7 @@ def main():
     args = ap.parse_args()
     try:
         print(json.dumps(audit_file(args.lean, args.rows, args.out, {t['id']: t for t in fresh_tasks()}), indent=2))
-    except ValueError as error:
+    except Unauditable as error:  # nothing was written; an error once the audit is running is a real failure
         ap.error(str(error))
 
 

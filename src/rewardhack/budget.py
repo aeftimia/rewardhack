@@ -8,6 +8,7 @@ Money a provider returns is its own row with `status` `refund` and a negative to
 """
 import csv
 import math
+import re
 from pathlib import Path
 
 LEDGER = Path('spending/ledger.csv')  # relative to the project root; entrypoints pass an explicit path
@@ -35,20 +36,29 @@ def nonnegative_finite(value, name):
     return number
 
 
-REFUND = 'refund'  # the one `status` whose total may be negative: money a provider returned
+REFUND = 'refund'  # first word of the `status` of a row whose total may be negative: money a provider returned
+
+
+def is_refund(row):
+    """`status` is free text ("completed: $0.07 metered ..."), so a refund is marked by its first word."""
+    return re.match(r'refund\b', (row.get('status') or '').strip().lower()) is not None
 
 
 def row_total(row, number):
-    """A row's cost. Every row is validated, whichever line is asked for: a malformed ledger is not a basis for a launch.
+    """A row's cost in whole cents. Every row is validated, whichever line is asked for: a malformed ledger is not a basis for a launch.
 
-    A negative total lowers what counts as spent, so it has to say what it is: `status` must be `refund`.
+    A negative total lowers what counts as spent, so it has to say what it is: `status` must start with `refund`.
     """
     line = row.get('line')
     if line not in (None, '') and line not in LINES:
         raise ValueError(f'ledger row {number} has unknown budget line {line!r}')
     name = f'ledger row {number} total_usd'
-    if (row.get('status') or '').strip().lower() != REFUND:
-        return nonnegative_finite(row.get('total_usd'), name)
+    if not is_refund(row):
+        try:
+            return nonnegative_finite(row.get('total_usd'), name)
+        except ValueError:
+            raise ValueError(f'{name} must be a finite, nonnegative number (a refund is a negative total '
+                             f'on a row whose status starts with "{REFUND}")') from None
     try:
         return -nonnegative_finite(-float(row.get('total_usd')), name)
     except (TypeError, ValueError, OverflowError):
@@ -58,7 +68,13 @@ def row_total(row, number):
 def spent(rows, **match):
     totals = [row_total(r, i) for i, r in enumerate(rows, 1)]
     total = sum(t for t, r in zip(totals, rows) if all(r.get(k) == v for k, v in match.items()))
-    return nonnegative_finite(total, 'ledger total')
+    if not math.isfinite(total):
+        raise ValueError('ledger total must be a finite, nonnegative number')
+    total = round(total, 6)  # ledger amounts are dollars with at most a few decimals; binary sums of them are not exact
+    if total < 0:
+        where = ' on '+', '.join(f'{k} {v!r}' for k, v in match.items()) if match else ''
+        raise ValueError(f'refunds exceed charges{where} by ${-total:.2f}; book each refund to the line of its charge')
+    return total + 0.0  # never -0.0
 
 
 def grant_spent(rows):

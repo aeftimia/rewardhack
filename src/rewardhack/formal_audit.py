@@ -31,22 +31,32 @@ def audit_row(lean, row):
 NEEDS = ('id', 'task_id', 'group', 'statement', 'raw', 'true', 'genuine', 'exploit', 'verified_refutation')
 
 
+TYPES = dict(id=str, task_id=str, group=str, statement=str, raw=str, true=bool, genuine=bool, exploit=bool, verified_refutation=bool)
+
+
+class Unauditable(ValueError):
+    """The input was refused before anything was written."""
+
+
 def check_auditable(rows, tasks=None):
     """Refuse before anything is written: the audit re-scores `raw` and compares with the saved verdicts."""
+    if not rows:
+        raise Unauditable('no rows to audit')
     for number, row in enumerate(rows, 1):
-        missing = [key for key in NEEDS if key not in row]
+        missing = [key for key in NEEDS if key not in row] if isinstance(row, dict) else list(NEEDS)
         if missing:
-            raise ValueError(f'row {number} lacks {missing}; the formal audit needs a collection written by '
-                             f'collect_judge_holdout.py (fresh.jsonl), with {list(NEEDS)}')
-        if type(row['true']) is not bool:
-            raise ValueError(f'row {number} true must be a boolean')
+            raise Unauditable(f'row {number} lacks {missing}; the formal audit needs a collection written by '
+                              f'collect_judge_holdout.py (fresh.jsonl or attempts.jsonl), with {list(NEEDS)}')
+        wrong = [key for key, kind in TYPES.items() if type(row[key]) is not kind]
+        if wrong:
+            raise Unauditable(f'row {number} has the wrong type in {wrong}')
         if tasks is not None:
             if row['task_id'] not in tasks:
-                raise ValueError(f"row {number} has task {row['task_id']!r}, which is not in the supplied task set")
+                raise Unauditable(f"row {number} has task {row['task_id']!r}, which is not in the supplied task set")
             task = tasks[row['task_id']]
             for key in ('statement', 'true', 'group'):
                 if row[key] != task[key]:
-                    raise ValueError(f'row {number} {key} differs from the supplied task')
+                    raise Unauditable(f'row {number} {key} differs from the supplied task')
 
 
 def audit_file(lean, source, out, tasks=None):
@@ -54,7 +64,9 @@ def audit_file(lean, source, out, tasks=None):
     source, out = Path(source), Path(out)
     rows = [json.loads(line) for line in source.read_text().splitlines() if line.strip()]
     check_auditable(rows, tasks)
-    out.mkdir(parents=True, exist_ok=False)
+    if out.exists():
+        raise Unauditable(f'{out} already exists; choose a new directory')
+    out.mkdir(parents=True)
     checked = []
     with (out/'formal-verdicts.jsonl').open('w') as sink:
         for row in rows:
@@ -66,7 +78,7 @@ def audit_file(lean, source, out, tasks=None):
                 result['reference_verified'] = reference['ok']
             checked.append(result)
             sink.write(json.dumps(result)+'\n'); sink.flush()
-    summary = dict(reports=len(checked),
+    summary = dict(reports=len(checked), no_report=sum(not (r.get('report') or '').strip() for r in rows),
                    counts={key: sum(bool(r[key]) for r in checked) for key in
                            ('genuine', 'grader_pass', 'exploit', 'verified_refutation', 'needs_prose_reading', 'inconclusive', 'agrees_with_saved_verdicts')},
                    declaration_relations=dict(Counter(r['declaration_relation'] for r in checked)),
