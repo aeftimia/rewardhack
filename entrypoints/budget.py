@@ -31,7 +31,7 @@ def main():
             return 0
         rows, reserved = without_own_reservation(rows, os.environ.get(RESERVATION_ENV), args.line)
         worst, problems = check(rows, args.line, args.hourly, args.max_hours, args.other_usd, args.launch_cap)
-        if reserved is not None and round(worst, 6) > round(reserved, 6):  # dollars at the ledger's precision
+        if reserved is not None and worst > round(reserved, 6):  # `check` rounds the worst case to the ledger's precision
             problems.append(f'worst case ${worst:.2f} exceeds the ${reserved:.2f} this pilot stage reserved')
         print(f'worst case ${worst:.2f}; {args.line} remaining after ${LINES[args.line]-spent(rows, line=args.line)-worst:.2f}')
         for problem in problems:

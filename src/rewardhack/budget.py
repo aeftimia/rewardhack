@@ -144,15 +144,16 @@ def check(rows, line, hourly, hours, other=0.0, launch_cap=None):
     other = nonnegative_finite(other, 'other costs')
     if launch_cap is not None:
         launch_cap = nonnegative_finite(launch_cap, 'launch cap')
-    worst = nonnegative_finite(hourly*hours+other, 'worst-case cost')
+    # Dollars at the ledger's precision, as in `spent`: 2.7*24 is not 64.8 in binary, and a launch that exactly fills a cap is allowed.
+    worst = round(nonnegative_finite(hourly*hours+other, 'worst-case cost'), 6)
     problems = []
     if line not in LINES:
         return worst, [f'unknown budget line {line!r}; choose from {sorted(LINES)}']
     if launch_cap is not None and worst > launch_cap:
         problems.append(f'worst case ${worst:.2f} exceeds the ${launch_cap:.2f} approved for this launch')
     line_spent, total_spent = spent(rows, line=line), grant_spent(rows)
-    if line_spent+worst > LINES[line]:
+    if round(line_spent+worst, 6) > LINES[line]:
         problems.append(f'{line} ${line_spent:.2f}+${worst:.2f} exceeds ${LINES[line]:.2f}')
-    if total_spent+worst > TOTAL_CAP:
+    if round(total_spent+worst, 6) > TOTAL_CAP:
         problems.append(f'grant total ${total_spent:.2f}+${worst:.2f} exceeds ${TOTAL_CAP:.2f}')
     return worst, problems

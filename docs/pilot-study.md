@@ -148,7 +148,8 @@ launch whose worst case exceeds it, instead of counting the launch twice. The gu
 remember what it has passed, inside a stage or outside one: a stage that makes more than one guarded
 launch must enter each charge in the ledger before the next check, or the same reservation covers each of them. Wall-time limits bound each
 command and the overall pilot. A stage runs in its own process group, which the runner kills on a
-time-out, a failure, or a hangup, interrupt, quit or termination signal. A runner killed outright
+time-out, a failure, or a hangup, interrupt, quit or termination signal. A signal the runner was
+started ignoring (a hangup under `nohup`) stays ignored, and both runner and stage carry on. A runner killed outright
 (`SIGKILL`, power loss) cannot do that: find and stop the stage's processes by hand before anything else. Commands run as argument lists,
 not interpolated shell strings.
 

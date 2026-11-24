@@ -1,5 +1,6 @@
 """Existing grant guards must see the pilot's shared worst-cost commitments."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -29,6 +30,23 @@ def test_legacy_budget_check_refuses_a_fully_reserved_line(tmp_path):
                              '--line', 'storage', '--hourly', '1', '--max-hours', '1'],
                             capture_output=True, text=True)
     assert result.returncode == 1 and 'REFUSED:' in result.stdout
+
+
+def test_launch_that_exactly_fills_a_cap_is_not_refused_by_binary_rounding(tmp_path):
+    ledger = tmp_path/'ledger.csv'
+    ledger.write_text('line,total_usd,status\nstorage,35.2,completed\n')
+    assert 35.2+2.7*24 > 100  # the unrounded sum
+    assert budget.check(budget.read_ledger(ledger), 'storage', 2.7, 24) == (64.8, [])
+    assert budget.check(budget.read_ledger(ledger), 'storage', 2.7, 24, other=.01)[1]
+    assert budget.check([], 'api', 1.1, 3, launch_cap=3.3) == (3.3, [])
+    # Inside a pilot stage: a launch equal to the stage's own reservation, on a line it fills exactly.
+    budget.reservation_path(ledger).write_text(json.dumps([reservation(key='k', total=64.8)]))
+    script = Path(__file__).resolve().parents[1]/'entrypoints'/'budget.py'
+    def guard(hours, key='k'):
+        return subprocess.run([sys.executable, str(script), '--ledger', str(ledger), 'check', '--line', 'storage',
+                               '--hourly', '2.7', '--max-hours', hours],
+                              env=dict(os.environ, **{budget.RESERVATION_ENV: key}), capture_output=True, text=True).returncode
+    assert (guard('24'), guard('24.01'), guard('24', key='other')) == (0, 1, 1)
 
 
 def test_reading_reservations_never_changes_measured_csv(tmp_path):

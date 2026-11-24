@@ -111,7 +111,7 @@ def _execute(stage, log, timeout=None, reservation_key=None):
     """Run argv directly, terminating every process in its session on any catchable exit.
 
     The stage runs in its own session, so a closed terminal would not reach it: hangup and quit are
-    handled like termination. The child is told its reservation so that the ledger guard, if the stage
+    handled like termination, unless the caller ignores them (nohup), in which case runner and stage both go on. The child is told its reservation so that the ledger guard, if the stage
     runs it, does not count the same launch twice.
     """
     started = time.monotonic()
@@ -120,7 +120,7 @@ def _execute(stage, log, timeout=None, reservation_key=None):
             raise KeyboardInterrupt(f'pilot received {signal.Signals(number).name}')
         # A signal the caller chose to ignore (nohup) stays ignored: the run was meant to outlive its terminal.
         previous = {number: signal.signal(number, interrupted) for number in _STOP_SIGNALS
-                    if signal.getsignal(number) is not signal.SIG_IGN}
+                    if signal.getsignal(number) not in (signal.SIG_IGN, None)}  # None: installed outside Python, not restorable
         process = None
         try:
             environment = dict(os.environ)
