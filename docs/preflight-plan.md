@@ -171,6 +171,11 @@ exploit (or the honest exit) in sampled support without a hint; training produce
 stable generation; and the projected cost of 15 runs fits $800 with the $400 contingency untouched.
 Otherwise the seeded 8B mechanism result is the fallback, labelled as such and never pooled.
 
+Token limit (owner's rule, 2026-11-24): the probe reports the share of answers cut off at the token limit.
+Above 5% the limit is raised (the smoke script goes from 2,048 to 4,096 for its training steps) before any
+prompt change is considered. A cut-off answer scores 0 in training and is reported as `no_answer`, never as
+a success claim.
+
 ## Later, with written consent and remaining budget: a learned distress signal
 
 The `error` field is a self-report the policy chooses and RL shapes. A second instrument would be a

@@ -87,6 +87,8 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
                 raw = tokenizer.decode(new, skip_special_tokens=not reasons(args))
                 t0 = time.perf_counter()
                 row = score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn)
+                # Every generated position is a real token: the answer ran into the limit without stopping.
+                row['truncated'] = int((new != tokenizer.pad_token_id).sum()) >= args.max_completion_length
                 t_lean += time.perf_counter()-t0
                 rows.append(row)
                 sink.write(json.dumps(row, ensure_ascii=False)+'\n')
@@ -119,6 +121,8 @@ def train(model, tokenizer, tasks, args, summary):
         for completion, claim in zip(completions, statement, strict=True):
             raw = completion[-1]['content'] if isinstance(completion, list) else completion
             row = score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn)
+            # The trainer hands over text only, so the cut-off is inferred: no answer, and as long as the limit allows.
+            row['truncated'] = not row['format_valid'] and len(tokenizer(raw, add_special_tokens=False)['input_ids']) >= args.max_completion_length-8
             sink.write(json.dumps(row, ensure_ascii=False)+'\n')
             rows.append(row)
         sink.flush()
@@ -219,6 +223,7 @@ def run(args):
         if args.mode == 'probe':
             summary['probe'] = evaluate(model, tokenizer, training, args, 'probe', samples=args.num_generations)
             summary['probe_split'] = 'train'
+            print('probe cut-off rate', summary['probe']['truncated_rate'], 'raise the token limit:', summary['probe']['raise_token_limit'], flush=True)
             summary['status'] = 'completed'
             return
         summary['before'] = evaluate(model, tokenizer, evaluation, args, 'before')

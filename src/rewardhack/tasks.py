@@ -116,8 +116,8 @@ def select_tasks(taskset='v1', which='all', part='train', limit=None):
 
 
 def task_index():
-    """id -> row across every task set, for rescoring saved rows."""
-    return {t['id']: t for taskset in TASKSETS for t in taskset_rows(taskset)}
+    """id -> row across every task set, each stamped with the set it belongs to, for rescoring and exporting saved rows."""
+    return {t['id']: dict(t, taskset=taskset) for taskset in TASKSETS for t in taskset_rows(taskset)}
 
 
 def verify_references(lean, rows, workers=4, timeout=180):

@@ -31,7 +31,9 @@ rsync -az --exclude .tools --exclude spending --include 'results/' --include 're
 if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == api ]]; then
   printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | "${SSH[@]}" "root@$HOST" 'umask 077; cat > ~/.judge_key'
 fi
-"${SSH[@]}" "root@$HOST" "mkdir -p out; rm -f out/DONE out/EXIT_CODE out/EXIT_CODE.tmp; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > remote.log 2>&1 < /dev/null &"
+# A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
+# The remote log goes inside it so the runner's own errors are pulled with the results.
+"${SSH[@]}" "root@$HOST" "rm -rf out; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60))
 while ((SECONDS < END)); do

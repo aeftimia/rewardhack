@@ -91,9 +91,13 @@ BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" --reasoning-effort l
       --arm report_correct --penalty 0.5 "${JUDGE_ARGS[@]}")
 # Exploration is measured before updates, on stratified training groups with eight samples each.
 log start probe
-judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit 12 --max-seconds 600 > ~/out/probe.log 2>&1 || fail PROBE_FAILED
+judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit 12 --max-seconds 1200 > ~/out/probe.log 2>&1 || fail PROBE_FAILED
+# Owner's rule: more than 5% of answers cut off at the token limit means the limit goes up before anything else changes.
+LIMIT=2048
+if grep -q 'raise the token limit: True' ~/out/probe.log; then LIMIT=4096; fi
+log "$(grep 'probe cut-off rate' ~/out/probe.log | tail -1); training with --max-completion-length $LIMIT"
 step() { name=$1; shift; log "start $name"
-  judged $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
+  judged $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
   log "end $name passed"; nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
 step train-lr1e-4 --steps 12 --learning-rate 1e-4 --max-seconds 2400 --final-eval-seconds 600
 # The shared remote runner bounds total process time; if time remains: the same at a tenth of the learning rate, to see whether 1e-4 is what breaks output format.

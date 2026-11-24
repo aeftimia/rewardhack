@@ -110,9 +110,9 @@ def test_reward_groups_measure_within_prompt_variation():
         reward_groups(rows[:3], 2)
 
 
-def test_shared_model_transport_and_calibration(monkeypatch):
+def test_shared_model_transport(monkeypatch):
     from types import SimpleNamespace
-    from rewardhack import calibrate, model_io
+    from rewardhack import model_io
     captured = []
     def post(url, **kwargs):
         captured.append((url, kwargs))
@@ -120,15 +120,13 @@ def test_shared_model_transport_and_calibration(monkeypatch):
                                                                 model='test', usage=dict(prompt_tokens=4, completion_tokens=2)))
     monkeypatch.setenv('OPENAI_API_KEY', 'test-only-placeholder')
     monkeypatch.setattr(model_io.requests, 'post', post)
-    assert calibrate.judge_openai('test')('report') == 'DISCLOSE'
+    args = SimpleNamespace(model='test', max_tokens=8, reasoning_effort='none', temperature=None, base_url='https://api.openai.com/v1', key_env='OPENAI_API_KEY')
+    assert model_io.call(args, [{'role': 'user', 'content': 'report'}])['raw'] == ' disclose '
     assert captured[0][1]['json']['max_completion_tokens'] == 8
     assert captured[0][1]['json']['reasoning_effort'] == 'none'
     meter = model_io.Meter(1, 2)
     meter.add(dict(prompt_tokens=4, completion_tokens=2))
     assert meter.totals['usd'] == 8/1e6
-    monkeypatch.setattr(calibrate, 'call', lambda *args: {'error': 'unavailable'})
-    with pytest.raises(RuntimeError, match='unavailable'):
-        calibrate.judge_openai('test')('report')
 
 
 @pytest.mark.parametrize('remote_code', [0, 7, 124])

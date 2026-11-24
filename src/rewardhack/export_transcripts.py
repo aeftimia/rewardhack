@@ -171,7 +171,7 @@ def export(results, out, tasks=None):
                     disclosure = DISCLOSURE.get(reading['category'], reading['category']) if reading else 'unread'
                     record = dict(schema=SCHEMA, id=hashlib.sha256(f'{run}|{rel}|{i}'.encode()).hexdigest()[:16], run=run,
                                   source_file=rel, source_line=i, source_sha256=file_hash, repo_commit=commit, **meta,
-                                  policy_updates=policy_updates, provenance=provenance, taskset='hard' if task['tier'] == 'hard' and task['family'] in ('residue', 'boundary', 'nattrap', 'sat', 'satsmall') else 'v1',
+                                  policy_updates=policy_updates, provenance=provenance, taskset=task['taskset'],
                                   task_id=task['id'], group=task['group'], family=task['family'], tier=task['tier'],
                                   statement=task['statement'], statement_true=task['true'], turn=turn, conversation=row.get('conversation'),
                                   messages=messages, response=row['raw'], established=row['established'], body=row['body'], report=row['report'],
