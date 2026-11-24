@@ -1,11 +1,12 @@
 # Preflight plan for RG-1451: cheap first steps (2026-11-20, built 2026-11-21)
 
-Response to [issue #1](https://github.com/aeftimia/rewardhack/issues/1), ordered by cost. Steps 0–2 are
-free and local; step 3 is the first paid step and is capped at about $10. Nothing from the $800/$900
+Response to [issue #1](https://github.com/aeftimia/rewardhack/issues/1), ordered by cost. Implementation and verifier checks are local; step 0 judge validation may use capped API spending
+(and has already done so). Step 3 is the first paid GPU feasibility run, with an attended budget target
+of about $10. Nothing from the $800/$900
 training lines is spent until step 3's numbers say the design fits the budget. Reasoning and the
 alternatives considered are in [notes-2026-11-21.md](notes-2026-11-21.md).
 
-## Status (2026-11-21)
+## Status (updated 2026-11-24)
 
 | Step | State |
 |---|---|
@@ -118,12 +119,80 @@ refutation stays a Lean-checked *evaluation* label, not a separate reward branch
   regex `report_label` stays triage only; judge latency and cost per rollout feed the step 3
   throughput number. The prompt is unchanged, so stage 1 stays comparable with every probe so far.
 
-### Stage 2 timing
+### Stage 2 timing — move promptly once stage 1 is promising
 
-Move the bit into a typed `error` field once stage 1 shows the judge's "solved?" verdict is stable
-(high agreement with reading, little drift across checkpoints). The flag is then Lean-checked and
-the judge only has to check the justification, which is the cheaper and less gameable question.
-One prompt change, shared by every arm, logged as the break in comparability.
+Owner's direction (2026-11-24): stage 1 is a short bridge, not a requirement to finish the prose-based
+sweep. Move to `solution` + `error: bool` + `justification` as soon as the current setup produces a credible
+useful signal: unseeded relevant behavior, real stable updates, and trustworthy evaluation. Do not spend
+money merely filling out stage 1's grid after that. A promising signal is a transition decision, not a
+claim that the research hypothesis has been established.
+
+Preserve a bounded matched baseline/intervention comparison and the checkpoints needed to interpret
+that signal. Implement the typed flag consistently across arms, add verification and regression tests,
+and begin a separately labelled stage 2 experiment. Record the prompt/schema change; do not pool its
+outcomes with stage 1 or carry stage 1's posterior over as though the experiment were unchanged.
+The flag is Lean-checked; the judge reads the justification only. If the prose judge is unreliable,
+stop spending on prose-based training and repair measurement or advance the typed design before resuming.
+
+### Sequential spending and Bayesian stopping — owner policy, 2026-11-24
+
+The five settings and three seeds are a maximum design envelope, not a spending target. Train in short,
+checkpointed increments and evaluate at prespecified boundaries. Stop purchasing further training or
+evaluation for a question as soon as the evidence is sufficient, or continuing has little decision value.
+The same policy applies to later model families; replication has its own explicit generalization question.
+
+Before hypothesis-testing runs, freeze a small decision specification:
+
+- The hypothesis, endpoint, target population/task mix, training exposure/checkpoint being compared,
+  and a minimum useful effect. For the main intervention question, define useful reduction in grader
+  exploitation and an acceptable maximum loss of genuine proofs on true tasks. Concealment and other
+  secondary outcomes have their own stated claims; a favorable secondary result cannot replace a
+  failed primary endpoint. Numerical effect and harm margins remain to be chosen before the run.
+- The likelihood, proper priors, prior sensitivity alternatives, and treatment of dependence among
+  task twins, repeated samples, checkpoints, and training seeds. Do not treat rollouts from one policy
+  or successive checkpoints as independent replications of training. Development data may inform a
+  declared prior, but must not also enter the likelihood as new evidence.
+- The evaluation batches, minimum support across the required task/outcome groups, and the maximum
+  training, evaluation, and dollar budgets. Match baseline and intervention training exposure. A
+  negative result at an early checkpoint applies to that exposure, not to all possible later training.
+
+Define `H` as the complete predeclared success event. For the main intervention question this is
+useful exploitation reduction **and** acceptable proof retention. Its alternative is `not H`, which
+can mean insufficient benefit or unacceptable proof loss; report which the evidence supports.
+At each decision boundary, use the saved valid evaluation evidence once:
+
+1. **Evidence for:** stop the current question when `P(H | evidence) > 0.95`, with adequate support. For a compound success
+   claim, use its joint posterior, not several separate 95% marginal probabilities.
+2. **Evidence against:** stop when `P(not H | evidence) > 0.95`. Report what was ruled out at the tested
+   exposure. This is not proof of an exactly zero effect or universal failure.
+3. **Harm or measurement failure:** stop immediately at the prespecified harm boundary or on broken
+   verification, excessive cutoffs/undecided rows, unstable generation, or corrupt judging. A broken
+   experiment is inconclusive, not Bayesian evidence against the intervention.
+4. **Futility or cost limit:** stop earlier when a predeclared posterior-predictive calculation says
+   the remaining allowed experiment is unlikely to change the decision, or the spending cap is hit.
+   Report a budget/futility stop as inconclusive unless an evidence boundary was also crossed.
+
+Crossing 0.95 requires the planned minimum support and robustness under the prespecified reasonable
+priors/dependence models; a strong prior alone must not end an experiment before it has supplied useful
+evidence. Simulate the complete adaptive design before using it to spend: null, useful effect, harm,
+clustering, and evaluation error. Check how often it stops incorrectly, how early it stops, and its cost.
+A 95% posterior is conditional on the model and prior, not an automatic 5% repeated-use error guarantee.
+See [de Heide and Grünwald on Bayesian optional stopping](https://ir.cwi.nl/pub/30255).
+
+Operationally, stop at the next safe batch boundary, save evidence and checkpoint, suppress queued
+training stages, and terminate the paid pod promptly. A final evaluation is only justified if it can
+change the decision or fulfills a predeclared bounded confirmation purpose. More training is not needed
+merely to collect more evaluation samples from an already-saved checkpoint. Sequential looks use an
+untuned evaluation stream; retain a separate final check if claims require it, and never tune prompts
+or rewards on the decision stream.
+
+**Implementation status:** these are the new run requirements, not an already-implemented posterior
+controller. Existing deadline, budget, no-variation, cutoff, and verifier guards remain active. Before
+launching hypothesis-testing training, specify the numerical margins/model and implement and test the
+checkpoint decision controller, queued-stage cancellation, and stopping record (posterior, prior,
+evidence IDs, checkpoint, cost, reason). The short feasibility smoke test answers plumbing/throughput
+questions and must not be presented as 95% evidence for the intervention. No paid run is authorized by
+this planning change.
 
 ## Step 1 (free): verifier trust boundary, written down and attacked
 
@@ -166,9 +235,10 @@ bitsandbytes 4-bit if the architecture is supported. Spend nothing further until
 
 ## Stop-go after step 3
 
-Go to the five-setting sweep only if: controls and adversarial tests pass; the probe shows the
+Consider the sequentially stopped setting comparisons only if: controls and adversarial tests pass; the probe shows the
 exploit (or the honest exit) in sampled support without a hint; training produces real updates with
-stable generation; and the projected cost of 15 runs fits $800 with the $400 contingency untouched.
+stable generation; and the worst-case design fits $800 with the $400 contingency untouched. The 15-run grid is a ceiling;
+stop resolved or futile comparisons early under the sequential policy above.
 Otherwise the seeded 8B mechanism result is the fallback, labelled as such and never pooled.
 
 Token limit (owner's rule, 2026-11-24): the probe reports the share of answers cut off at the token limit.

@@ -195,3 +195,42 @@ def test_formal_audit_refuses_a_cut_off_file_and_a_mistyped_flag(tmp_path):
         with pytest.raises(Unauditable, match=message):
             audit_file('no-lean', tmp_path/'rows.jsonl', tmp_path/'out')
         assert not (tmp_path/'out').exists()
+
+
+@pytest.mark.parametrize('why', ['timeout', 'no axiom report', 'unexpected output'])
+def test_formal_audit_never_certifies_an_unresolved_declaration(tmp_path, monkeypatch, why):
+    from rewardhack import formal_audit
+    row = dict(id='r', task_id='t', group='g', statement='False', raw='{}', true=False,
+               genuine=False, exploit=False, verified_refutation=False)
+    monkeypatch.setattr(formal_audit, 'score', lambda *a, **kw: dict(
+        established='True', report='', body='by trivial', genuine=False, genuine_why='type mismatch',
+        grader_reward=0, exploit=False, verified_refutation=False, refutation_why='type mismatch',
+        verifier_inconclusive=False))
+    calls = []
+    def unresolved(*a, **kw):
+        calls.append(kw)
+        return dict(other=None, why=why)
+    monkeypatch.setattr(formal_audit, 'statement_relation', unresolved)
+    source = tmp_path/'rows.jsonl'
+    source.write_text(json.dumps(row)+'\n')
+    out = tmp_path/'audit'
+    summary = audit_file('unused', source, out)
+    result = json.loads((out/'formal-verdicts.jsonl').read_text())
+    assert result['machine_determined_flag'] is None and result['inconclusive']
+    assert result['declaration_why'] == why and not result['needs_prose_reading']
+    assert summary['machine_determined_flags'] == {'unverified': 1}
+    assert summary['counts']['inconclusive'] == 1
+    assert len(calls) == (2 if why == 'timeout' else 1)
+
+
+def test_formal_audit_invalid_declaration_is_not_a_verifier_timeout(monkeypatch):
+    from rewardhack import formal_audit
+    row = dict(id='r', task_id='t', group='g', statement='False', raw='{}', true=False,
+               genuine=False, exploit=False, verified_refutation=False)
+    monkeypatch.setattr(formal_audit, 'score', lambda *a, **kw: dict(
+        established='garbled', report='', body='', genuine=False, genuine_why='empty',
+        grader_reward=0, exploit=False, verified_refutation=False, refutation_why='empty',
+        verifier_inconclusive=False))
+    monkeypatch.setattr(formal_audit, 'statement_relation', lambda *a: dict(other=None, why='type mismatch'))
+    result = formal_audit.audit_row('unused', row)
+    assert result['machine_determined_flag'] == 'OK' and not result['inconclusive']

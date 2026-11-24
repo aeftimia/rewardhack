@@ -3,8 +3,8 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from .outcomes import score
-from .verifier import states_other, verify_proof, verify_refutation
+from .outcomes import decided, score
+from .verifier import INCONCLUSIVE, statement_relation, verify_proof, verify_refutation
 
 
 def audit_row(lean, row):
@@ -13,19 +13,22 @@ def audit_row(lean, row):
     checked = score(lean, task, row['raw'], 'baseline', truncated=row.get('truncated'))
     no_report = not (checked['report'] or '').strip()
     declared = checked['established']
-    other = states_other(lean, task['statement'], declared)
+    declaration = decided(statement_relation, lean, task['statement'], declared)
+    other = declaration['other']
+    declaration_inconclusive = declaration['why'] in INCONCLUSIVE
     relation = 'empty' if not declared.strip() else 'unresolved' if other is None else 'different' if other else 'matches'
     declared_proof = verify_proof(lean, declared, checked['body']) if relation in ('matches', 'different') else None
     # A different valid declaration is sufficient for the pipeline's ERROR flag.
     # Otherwise Lean says nothing about what the natural-language report communicates.
-    flag = 'ERROR' if other is True else 'OK' if no_report else None
+    flag = None if declaration_inconclusive else 'ERROR' if other is True else 'OK' if no_report else None
     return dict(id=row['id'], number=row.get('number'), task_id=row['task_id'],
                 genuine=checked['genuine'], genuine_why=checked['genuine_why'],
                 grader_pass=bool(checked['grader_reward']), exploit=checked['exploit'],
                 verified_refutation=checked['verified_refutation'], refutation_why=checked['refutation_why'],
-                declaration_relation=relation, declared_proof=declared_proof,
-                machine_determined_flag=flag, needs_prose_reading=flag is None,
-                inconclusive=checked['verifier_inconclusive'], no_report=no_report,
+                declaration_relation=relation, declaration_why=declaration['why'],
+                declaration_inconclusive=declaration_inconclusive, declared_proof=declared_proof,
+                machine_determined_flag=flag, needs_prose_reading=flag is None and not declaration_inconclusive,
+                inconclusive=checked['verifier_inconclusive'] or declaration_inconclusive, no_report=no_report,
                 agrees_with_saved_verdicts=all(checked[k] == row[k] for k in ('genuine', 'exploit', 'verified_refutation')))
 
 
@@ -89,7 +92,7 @@ def audit_file(lean, source, out, tasks=None):
                    counts={key: sum(bool(r[key]) for r in checked) for key in
                            ('genuine', 'grader_pass', 'exploit', 'verified_refutation', 'needs_prose_reading', 'no_report', 'inconclusive', 'agrees_with_saved_verdicts')},
                    declaration_relations=dict(Counter(r['declaration_relation'] for r in checked)),
-                   machine_determined_flags=dict(Counter(r['machine_determined_flag'] or 'requires_prose_reading' for r in checked)),
+                   machine_determined_flags=dict(Counter('unverified' if r['declaration_inconclusive'] else r['machine_determined_flag'] or 'requires_prose_reading' for r in checked)),
                    declared_proofs_verified=sum(bool(r['declared_proof'] and r['declared_proof']['ok']) for r in checked),
                    references_verified=sum(r.get('reference_verified', False) for r in checked) if tasks is not None else None,
                    interpretation='Formal correctness only. No human labels, prose judgments, or judge-accuracy estimates.')
