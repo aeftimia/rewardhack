@@ -77,7 +77,7 @@ The controller records distinct reasons for stopping. It never labels all termin
 | Predicted futility | Even the conservative upper bound on reaching the targets at any remaining planned checkpoint is below 0.05 under every variant. This is a forecast within the remaining compute allowance, not universal failure. |
 | Practical plateau | Under every variant, the joint probability that all endpoint changes remain smaller than their declared plateau margins throughout the remaining checkpoint schedule exceeds 0.95. This is bounded-horizon stability, not proof of the final asymptote. |
 | Budget or schedule exhausted | No further scheduled work is launched. This is inconclusive unless an evidence decision was independently reached. |
-| Model mismatch | At least one required sensitivity variant cannot fit an endpoint with any declared shape under the leave-one-out diagnostic. The result is inconclusive; inspect or redesign the model before more spending. |
+| Model mismatch | At least one required sensitivity variant cannot fit an endpoint with any declared shape under the leave-one-out diagnostic. It stops the pilot once the maturity requirements hold; earlier it is recorded and the next scheduled checkpoint still runs. The result is inconclusive; inspect or redesign the model before spending beyond this pilot. |
 | Invalid evidence, failed stage or interrupted stage | The run stops for repair. Measurement failure is not evidence against the hypothesis, and an uncertain paid stage is not automatically rerun. |
 
 Targets are optional during the exploratory pilot. With `target: null`, success and futility
@@ -111,7 +111,7 @@ These are conditional, approximate Gaussian posteriors. Gaussian effect distribu
 beyond the physical range of a rate difference, and the implementation does not hide this by
 clipping probabilities or effect estimates. The curve family and random-effect assumptions may
 miss a real RL trajectory. A 95% posterior does not guarantee a 5% repeated-use false-decision
-rate. A leave-one-out residual alarm stops as model mismatch when every declared shape fails
+rate. A leave-one-out residual alarm stops a mature pilot as model mismatch when every declared shape fails
 for an endpoint under any required sensitivity variant; passing that check does not establish model
 correctness. Inspect the recorded model sensitivities and simulate delayed improvement, null effects,
 harm, seed dependence and measurement error before using a real design to stop paid work.
@@ -144,7 +144,9 @@ release command. The runner refuses to resume, or even re-read, a pilot output w
 were removed or changed, so edit the registry by hand only after the pilot has its terminal decision,
 and keep the output folder as the record. A stage command that runs the `budget.py check` guard
 is told its own reservation: the guard sets that one reservation aside on its line and refuses a
-launch whose worst case exceeds it, instead of counting the launch twice. Wall-time limits bound each
+launch whose worst case exceeds it, instead of counting the launch twice. The guard does not
+remember what it has passed, inside a stage or outside one: a stage that makes more than one guarded
+launch must enter each charge in the ledger before the next check, or the same reservation covers each of them. Wall-time limits bound each
 command and the overall pilot. A stage runs in its own process group, which the runner kills on a
 time-out, a failure, or a hangup, interrupt, quit or termination signal. A runner killed outright
 (`SIGKILL`, power loss) cannot do that: find and stop the stage's processes by hand before anything else. Commands run as argument lists,

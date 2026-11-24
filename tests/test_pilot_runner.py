@@ -343,6 +343,15 @@ def test_catchable_signal_to_runner_kills_the_detached_stage(tmp_path, number):
     assert not marker.exists()
 
 
+def test_ignored_hangup_stays_ignored_so_nohup_still_protects_a_run(tmp_path):
+    stage = dict(argv=[sys.executable, '-c', 'import os,signal,time; os.kill(os.getppid(), signal.SIGHUP); time.sleep(.3)'], max_seconds=10)
+    code = ('import signal; from pathlib import Path; from rewardhack import pilot_runner as r; signal.signal(signal.SIGHUP, signal.SIG_IGN); '
+            f'print(r._execute({stage!r}, Path({str(tmp_path/"log")!r}))["exit_code"], signal.getsignal(signal.SIGHUP) is signal.SIG_IGN)')
+    env = dict(os.environ, PYTHONPATH=str(Path(runner.__file__).parents[1]))
+    result = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=20)
+    assert result.stdout.split() == ['0', 'True'], result.stderr
+
+
 def test_stages_that_exactly_fill_the_pilot_cap_all_run(tmp_path, cheap_decision):
     path, spec = fixture_spec(tmp_path, cost=.1, cap=.3)  # 0.1+0.1+0.1 > 0.3 in binary floating point
     assert runner.plan(path)['planned_worst_usd'] == .3
@@ -359,7 +368,7 @@ def test_stage_running_the_ledger_guard_is_not_charged_twice(tmp_path, cheap_dec
     code = ('import json,os,subprocess,sys; from pathlib import Path\n'
             f'run=lambda line,usd: subprocess.run([sys.executable,{str(guard)!r},"--ledger",{spec["budget"]["ledger"]!r},"check",'
             '"--line",line,"--hourly","0","--max-hours","0","--other-usd",usd]).returncode\n'
-            f'Path({str(report)!r}).write_text(json.dumps([run("storage","60"),run("storage","61"),run("api","300")]))')
+            f'Path({str(report)!r}).write_text(json.dumps([run("storage","60"),run("storage","60.01"),run("api","300")]))')
     spec['stages'][0]['argv'] = [sys.executable, '-c', code]
     path.write_text(json.dumps(spec))
     env = dict(os.environ, PYTHONPATH=str(Path(runner.__file__).parents[1]))

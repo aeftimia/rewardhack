@@ -118,7 +118,9 @@ def _execute(stage, log, timeout=None, reservation_key=None):
     with Path(log).open('xb') as sink:
         def interrupted(number, frame):
             raise KeyboardInterrupt(f'pilot received {signal.Signals(number).name}')
-        previous = {number: signal.signal(number, interrupted) for number in _STOP_SIGNALS}
+        # A signal the caller chose to ignore (nohup) stays ignored: the run was meant to outlive its terminal.
+        previous = {number: signal.signal(number, interrupted) for number in _STOP_SIGNALS
+                    if signal.getsignal(number) is not signal.SIG_IGN}
         process = None
         try:
             environment = dict(os.environ)

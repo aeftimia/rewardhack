@@ -36,6 +36,8 @@ def without_own_reservation(rows, key, line):
     The stage's worst case is in the registry before its command starts. Counting the launch again on
     top of it would refuse any stage larger than half of what is left. Only the one reservation named
     by the runner is set aside, and only on its own line; the caller must hold the launch within it.
+    The guard keeps no record of launches it has passed, here as anywhere else: a stage that makes
+    several guarded launches must enter each charge in the ledger before the next check.
     """
     own = [r for r in rows if key and r.get('key') == key and r.get('line') == line]
     return [r for r in rows if not any(r is o for o in own)], (own[0]['total_usd'] if own else None)
