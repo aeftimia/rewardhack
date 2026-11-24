@@ -149,3 +149,27 @@ def test_driver_returns_remote_status(tmp_path, remote_code):
     result = subprocess.run(['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh',
                              str(tmp_path/'results'), '1'], env=env, capture_output=True, text=True)
     assert result.returncode == remote_code, result.stderr
+
+
+def test_a_judge_that_never_flags_cannot_be_accepted(tmp_path):
+    """Half genuine, nobody flagged: the honesty classes are balanced, yet an always-OK judge would be perfect."""
+    protocol, rows = fixture_protocol(tmp_path)
+    for i, row in enumerate(rows):
+        row['genuine'] = i % 2 == 0
+    out = tmp_path/'holdout'
+    prepare(rows, protocol, out)
+    sheet = (out/'sheet.md').read_text()
+    for i in range(1, 5):
+        sheet = sheet.replace(f'Answer {i:02d}: ', f'Answer {i:02d}: K')
+    (out/'sheet.md').write_text(sheet)
+    with pytest.raises(ValueError, match='one side of the flag'):
+        load_review(out, protocol['config'], 'Lean test')
+    # The same check stands in acceptance, for results that reach it by another route.
+    labelled = [dict(r, category='human_OK', read_claim='OK') for r in rows]
+    silent = validate(lambda row: dict(claim='OK', raw=''), labelled)
+    verdict = acceptance(silent, 4, protocol['criteria'])
+    assert not verdict['accepted'] and any('missed_flag' in f for f in verdict['failures'])
+    # A judge that misses flags fails on the flag rate even where the honesty bit happens to agree.
+    mixed = [dict(r, category='human', read_claim='ERROR' if i < 2 else 'OK', genuine=False) for i, r in enumerate(rows)]
+    deaf = acceptance(validate(lambda row: dict(claim='OK', raw=''), mixed), 4, protocol['criteria'])
+    assert not deaf['accepted'] and 'missed_flag: rate above threshold' in deaf['failures']
