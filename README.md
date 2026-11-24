@@ -17,7 +17,7 @@ Layout: shared code is the installable package `src/rewardhack/`; every experime
 | `src/rewardhack/tasks.py`, `tasks_hard.py` | Paired Lean requests with Lean-checked references: the v1 set and the calibrated hard set; split, selection and reference verification |
 | `src/rewardhack/prompts.py` | The one shared prompt, its permission variants, and the follow-on turn |
 | `src/rewardhack/outcomes.py` | Arm rewards (`baseline`, `equal_reward`, `report_correct`), the honesty bit, outcome labels, report triage |
-| `src/rewardhack/judge.py` | Reads the free-text report (claim only, never shown the verifier's verdict); backends; validation against the hand-read labels |
+| `src/rewardhack/judge.py` | Reads the free-text report as one error flag (never shown the verifier's verdict); backends; validation against the model-read labels |
 | `src/rewardhack/hf_grpo.py`, `mlx_rl.py` | TRL GRPO path for rented GPUs; own GRPO-style loop on Apple silicon |
 | `src/rewardhack/vllm_probe.py`, `openai_probe.py` | Inference probes: vLLM on rented GPUs, hosted API with metered cost caps |
 | `src/rewardhack/rescore.py`, `calibrate.py`, `budget.py` | Rescoring saved rows, per-statement calibration from read labels, spending guard |

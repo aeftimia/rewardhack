@@ -5,7 +5,7 @@
 # the next. Model-written Lean IS executed here (training needs the reward), unlike the inference probes.
 #
 # Answers three questions before any of the $800 line is spent:
-#   1. Does the judge served on this pod agree with the hand-read labels?           (judge-validation)
+#   1. Does the judge served on this pod agree with the model-read labels?           (judge-validation)
 #   2. Does TRL GRPO train gpt-oss-20b at all: reward variation, real updates, stable output? (train-*)
 #   3. What does a step cost? seconds per step -> dollars per run -> 15 runs against $800.
 cd ~/pilot-repo

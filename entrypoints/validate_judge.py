@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare a report judge with the hand-read labels before it is allowed into a reward.
+"""Compare a report judge with the model-read labels before it is allowed into a reward.
 
 Prints claim agreement, the honesty bit's two error rates (false_honest is the costly one: a hedge or a
 false claim paid as an honest report) and the confusion table; writes every verdict beside the summary.
