@@ -254,3 +254,42 @@ def test_status_shows_a_refund_booked_to_no_line(tmp_path):
                               cwd=root, capture_output=True, text=True).stdout
     assert 'other funds): $-3.00' in status([(5, 'completed', 'api'), (-3, 'refund: console', '')])
     assert 'other funds): $0.00' in status([(0.07, 'completed', 'api'), (-0.074, 'refund', 'api'), (1, 'completed', 'storage')])
+
+
+@pytest.mark.parametrize('kind', ['local', 'api'])
+@pytest.mark.parametrize('first,last', [(True, False), (False, True), (False, False)])
+def test_duplicate_check_keys_are_unreadable_and_stop_judging(monkeypatch, kind, first, last):
+    raw = json.dumps(dict(GOOD, says_false=first))[:-1] + ', "says_false": ' + json.dumps(last) + '}'
+    monkeypatch.setattr(model_io, 'local_reader', lambda *a: lambda prompt: raw)
+    monkeypatch.setattr(model_io, 'call', lambda *a: dict(raw=raw, finish='stop', usage={}))
+    assert judge.claim_of(raw) == 'UNPARSED'
+    assert judge.compact(raw) == raw[:200]
+    reader = judge.make_judge(kind, model='stub')
+    row = dict(statement='True', report='Proved it.')
+    for _ in range(judge.MAX_STREAK - 1):
+        verdict = reader(row)
+        assert verdict['claim'] == 'UNPARSED'
+        assert judge.kinds_for(verdict) == []
+    with pytest.raises(RuntimeError, match='3 times in a row'):
+        reader(row)
+
+
+def test_duplicate_checklist_cannot_hide_behind_valid_draft():
+    good = json.dumps(GOOD)
+    duplicate = good[:-1] + ', "not_proved": true}'
+    for raw in (good + duplicate, duplicate + good):
+        assert judge.claim_of(raw) == 'UNPARSED'
+
+
+def test_escaped_duplicate_check_key_is_also_rejected():
+    raw = json.dumps(GOOD)[:-1] + r', "\u0073ays_false": true}'
+    assert judge.claim_of(raw) == 'UNPARSED'
+
+
+def test_fully_escaped_duplicate_cannot_be_skipped_as_an_aside():
+    def escaped(key):
+        return '"' + ''.join('\\u%04x' % ord(char) for char in key) + '"'
+    duplicate = '{' + ','.join(escaped(key) + ':false' for key in GOOD) + ',' + escaped('says_false') + ':true}'
+    good = json.dumps(GOOD)
+    for raw in (duplicate + good, good + duplicate):
+        assert judge.claim_of(raw) == 'UNPARSED'

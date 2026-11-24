@@ -96,6 +96,20 @@ def closing_brace(text, start):
     return None
 
 
+class DuplicateReplyKey(ValueError):
+    """A decoded object repeated a key; it must never be skipped as a prose aside."""
+
+
+def unique_object(pairs):
+    """Reject duplicate keys instead of silently replacing an earlier judge answer."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateReplyKey(f'duplicate judge reply key: {key}')
+        result[key] = value
+    return result
+
+
 def reply_objects(text):
     """The top-level JSON objects in a judge's reply, in order, or None when the reply holds a broken answer.
 
@@ -104,12 +118,14 @@ def reply_objects(text):
     closes (a cut-off answer), holds a check's quoted key, or starts like a JSON object after a checklist (that span is the
     answer, broken, and the checklist before it a draft): a draft beside a broken answer is not the answer.
     """
-    decoder, found, start = json.JSONDecoder(), [], 0
+    decoder, found, start = json.JSONDecoder(object_pairs_hook=unique_object), [], 0
     text = text if isinstance(text, str) else ''
     while (start := text.find('{', start)) != -1:
         try:
             value, start = decoder.raw_decode(text, start)
             found.append(value)
+        except DuplicateReplyKey:
+            return None
         except ValueError:
             end = closing_brace(text, start)
             after_checklist = any(name in reply for reply in found for name in CHECKS)
