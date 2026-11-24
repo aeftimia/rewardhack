@@ -137,7 +137,7 @@ def test_completed_horizon_has_no_fictitious_plateau_forecast():
     result = pilot_model.analyze(specification(), evidence((1., 2., 4., 8.), (0., .1, .2, .2)))
     for variant in result['variants']:
         assert variant['future'] == []
-        assert variant['future_success_upper'] == 0
+        assert variant['future_success_upper'] is None  # no remaining checkpoint is not certain futility
         assert variant['plateau_lower'] is None
 
 

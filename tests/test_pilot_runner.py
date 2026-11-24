@@ -273,7 +273,7 @@ def test_remaining_wall_time_bounds_spawn_after_reservation_overhead(tmp_path, c
         return result
     monkeypatch.setattr(runner, '_reserve', slow_reservation)
     observed = []
-    def execute(stage, log, timeout=None):
+    def execute(stage, log, timeout=None, **options):
         observed.append(timeout)
         return dict(exit_code=1, timed_out=False, elapsed_seconds=0)
     monkeypatch.setattr(runner, '_execute', execute)
@@ -296,8 +296,8 @@ def test_child_cannot_change_frozen_inputs_before_scientific_decision(tmp_path, 
     real_execute = runner._execute
     source_hashes = runner._sources()
     calls = []
-    def mutate_after_child(stage, log, timeout=None):
-        result = real_execute(stage, log, timeout)
+    def mutate_after_child(stage, log, timeout=None, **options):
+        result = real_execute(stage, log, timeout, **options)
         calls.append(stage['id'])
         if changed == 'spec':
             altered = dict(spec, question='changed while running')
@@ -324,3 +324,50 @@ def test_reservation_registry_cannot_hide_cost_on_untracked_line(tmp_path, cheap
         dict(key='old', line=line, total_usd=99, status='pilot worst-case reservation')]))
     with pytest.raises(ValueError, match='invalid pilot reservation'):
         runner.run(path, tmp_path/'out', execute=True)
+
+
+@pytest.mark.parametrize('number', [signal.SIGHUP, signal.SIGTERM, signal.SIGQUIT])
+def test_catchable_signal_to_runner_kills_the_detached_stage(tmp_path, number):
+    marker = tmp_path/'stage-outlived-the-runner'
+    stage = dict(argv=[sys.executable, '-c', f'import time; from pathlib import Path; time.sleep(1); Path({str(marker)!r}).touch()'],
+                 max_seconds=10)
+    code = ('import sys; from pathlib import Path; from rewardhack import pilot_runner as r; '
+            f'print("ready", flush=True); r._execute({stage!r}, Path({str(tmp_path/"log")!r}))')
+    env = dict(os.environ, PYTHONPATH=str(Path(runner.__file__).parents[1]))
+    process = subprocess.Popen([sys.executable, '-c', code], env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    assert process.stdout.readline().strip() == b'ready'
+    time.sleep(.4)
+    process.send_signal(number)
+    process.wait(timeout=5)
+    time.sleep(1)
+    assert not marker.exists()
+
+
+def test_stages_that_exactly_fill_the_pilot_cap_all_run(tmp_path, cheap_decision):
+    path, spec = fixture_spec(tmp_path, cost=.1, cap=.3)  # 0.1+0.1+0.1 > 0.3 in binary floating point
+    assert runner.plan(path)['planned_worst_usd'] == .3
+    result = runner.run(path, tmp_path/'out', execute=True)
+    assert result['reason'] == 'compute_cap' and result['reserved_usd'] == .3
+    assert runner.run(path, tmp_path/'out', execute=True) == result
+
+
+def test_stage_running_the_ledger_guard_is_not_charged_twice(tmp_path, cheap_decision):
+    """A stage's own reservation covers its launch; anything above it, or on another line, is still refused."""
+    path, spec = fixture_spec(tmp_path, cost=60, cap=60)
+    guard = Path(__file__).resolve().parents[1]/'entrypoints'/'budget.py'
+    report = tmp_path/'guard.json'
+    code = ('import json,os,subprocess,sys; from pathlib import Path\n'
+            f'run=lambda line,usd: subprocess.run([sys.executable,{str(guard)!r},"--ledger",{spec["budget"]["ledger"]!r},"check",'
+            '"--line",line,"--hourly","0","--max-hours","0","--other-usd",usd]).returncode\n'
+            f'Path({str(report)!r}).write_text(json.dumps([run("storage","60"),run("storage","61"),run("api","300")]))')
+    spec['stages'][0]['argv'] = [sys.executable, '-c', code]
+    path.write_text(json.dumps(spec))
+    env = dict(os.environ, PYTHONPATH=str(Path(runner.__file__).parents[1]))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(os, 'environ', env)
+        runner.run(path, tmp_path/'out', execute=True)
+    assert json.loads(report.read_text()) == [0, 1, 0]
+    # Outside the stage the reservation counts in full again.
+    outside = subprocess.run([sys.executable, str(guard), '--ledger', spec['budget']['ledger'], 'check', '--line', 'storage',
+                              '--hourly', '0', '--max-hours', '0', '--other-usd', '60'], env=env, capture_output=True, text=True)
+    assert outside.returncode == 1 and 'REFUSED' in outside.stdout

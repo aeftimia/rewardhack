@@ -228,7 +228,10 @@ def decide(spec, rows):
     mature = len(points) >= spec['stop']['min_checkpoints'] and points[-1] / spec['checkpoints'][-1] >= spec['stop']['min_compute_fraction']
     reason = None
     # A pilot's posterior is conditional on its curve model/cohort, not confirmation.
-    if any(v.get('model_misfit', False) for v in variants):
+    # Before maturity nothing is decided from the posterior, so a misfit there is reported and the pilot
+    # goes on: one seed improving late is the delayed learning the maturity rule exists to wait for.
+    misfit = any(v.get('model_misfit', False) for v in variants)
+    if mature and misfit:
         reason = 'model_misfit'
     elif mature and all(v['success_lower'] is not None and v['success_lower'] > confidence for v in variants):
         reason = 'evidence_for_at_tested_compute'
@@ -240,5 +243,5 @@ def decide(spec, rows):
         reason = 'compute_cap'
     return dict(stop=reason is not None, reason=reason or 'continue', posterior=posterior,
                 next_checkpoint=None if reason else spec['checkpoints'][len(points)],
-                mature=mature, hypothesis_defined=all(e['target'] is not None for e in spec['endpoints']),
+                mature=mature, model_misfit=misfit, hypothesis_defined=all(e['target'] is not None for e in spec['endpoints']),
                 recommendation=None if reason else 'Complete the next matched checkpoint; keep seed and evaluation protocol fixed.')

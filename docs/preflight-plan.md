@@ -258,6 +258,10 @@ stage costs, and suppresses queued stages after a stop. Dollar and wall-time cap
 and existing child-run deadline, budget, no-variation, cutoff and verifier guards remain active.
 The generic scheduler accepts bounded training/evaluation commands; legacy launch scripts do not
 silently opt into it. It does not terminate a paid pod or optimize the next allocation automatically.
+It has no harm boundary either: an endpoint has a target and a plateau margin, so proof loss beyond an
+acceptable bound does not stop a pilot by itself. Until a per-endpoint harm bound is specified and
+tested, the harm stop in item 3 is a manual check at each checkpoint. The paired-evidence adapter
+treats any cut-off or undecided outcome, not an excessive share, as a measurement failure.
 
 The exploratory example leaves useful-effect targets unset, so success and futility are disabled.
 Its explicit plateau margin is a planning choice, not an agreed scientific threshold. The curve model

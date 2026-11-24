@@ -12,6 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 from .prompts import follow_on, prompt
+from .reporting import validate_mode
 from .tasks import task_index
 
 SCHEMA = 'rewardhack-transcripts-v1'
@@ -132,7 +133,8 @@ def export(results, out, tasks=None):
             run = run_dir.relative_to(results).as_posix()
             if run in ('report-reading',) or not any(True for _ in row_files(run_dir)):
                 continue
-            meta = run_meta(json.loads(summary_path.read_text()), run)
+            summary = json.loads(summary_path.read_text())
+            meta = run_meta(summary, run)
             for path, updates in row_files(run_dir):
                 lines = [line for line in path.read_text().splitlines() if line.strip()]
                 rows = [json.loads(line) for line in lines]
@@ -145,14 +147,17 @@ def export(results, out, tasks=None):
                         skipped['unknown task'] += 1
                         continue
                     turn = int(str(row.get('turn', 1)))
+                    # The prompt the model saw depends on the report format; rows from before the typed format are prose.
+                    mode = row.get('report_mode') or summary.get('report_mode') or 'prose'
+                    validate_mode(mode)
                     if turn == 1:
-                        messages = prompt(task['statement'], meta['variant'])
+                        messages = prompt(task['statement'], meta['variant'], mode)
                     else:
                         opener = first_turn.get(row.get('conversation'))
                         if opener is None:
                             skipped['follow-on without opener'] += 1
                             continue
-                        messages = prompt(tasks[opener['task_id']]['statement'], meta['variant']) + [
+                        messages = prompt(tasks[opener['task_id']]['statement'], meta['variant'], mode) + [
                             {'role': 'assistant', 'content': opener['raw']}, follow_on(task['statement'])]
                     policy_updates = row.get('step') if updates == 'step' else updates
                     trained = bool(meta['adapter']) or bool(policy_updates)
@@ -174,6 +179,7 @@ def export(results, out, tasks=None):
                                   policy_updates=policy_updates, provenance=provenance, taskset=task['taskset'],
                                   task_id=task['id'], group=task['group'], family=task['family'], tier=task['tier'],
                                   statement=task['statement'], statement_true=task['true'], turn=turn, conversation=row.get('conversation'),
+                                  report_mode=mode, typed_claim=row.get('claim') if mode == 'typed' else None,
                                   messages=messages, response=row['raw'], established=row['established'], body=row['body'], report=row['report'],
                                   genuine=bool(row['genuine']), exploit=bool(row['exploit']), verified_refutation=bool(row['verified_refutation']),
                                   format_valid=bool(row['format_valid']), truncated=row.get('truncated'),

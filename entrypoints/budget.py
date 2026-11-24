@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Spending ledger status and the pre-launch budget guard. Exit 1 when a launch would breach a cap."""
 import argparse
+import os
 import sys
 from pathlib import Path
 
-from rewardhack.budget import LINES, TOTAL_CAP, check, grant_spent, read_ledger, spent
+from rewardhack.budget import LINES, RESERVATION_ENV, TOTAL_CAP, check, grant_spent, read_ledger, spent, without_own_reservation
 
 
 def main():
@@ -28,7 +29,10 @@ def main():
             outside = spent(rows)-grant_spent(rows)  # a real negative is a refund booked to no line: show it
             print(f"outside the grant (pilot and other funds): ${0.0 if abs(outside) < 0.005 else outside:.2f}")
             return 0
+        rows, reserved = without_own_reservation(rows, os.environ.get(RESERVATION_ENV), args.line)
         worst, problems = check(rows, args.line, args.hourly, args.max_hours, args.other_usd, args.launch_cap)
+        if reserved is not None and worst > reserved:
+            problems.append(f'worst case ${worst:.2f} exceeds the ${reserved:.2f} this pilot stage reserved')
         print(f'worst case ${worst:.2f}; {args.line} remaining after ${LINES[args.line]-spent(rows, line=args.line)-worst:.2f}')
         for problem in problems:
             print('REFUSED:', problem)

@@ -40,7 +40,9 @@ automatically eligible for this adapter.
 It averages paired differences equally across task groups and derives the evaluation standard
 error across those groups, keeping task twins and repeated samples together. Any missing, cut-off
 or verifier-undecided outcome makes that paired checkpoint invalid for inference; a small missing
-share cannot count as successful avoidance of exploitation. Raw source hashes
+share cannot count as successful avoidance of exploitation. The spec's `max_invalid_rate` therefore
+never matters for `pilot_pair.py` evidence; it only bounds the rate another producer may report on a
+row it still marks valid. Raw source hashes
 are recorded for provenance. The producer remains responsible for reporting the actual model and
 measured exposure correctly; the wrapper does not independently count FLOPs or inspect a model
 checkpoint to establish how much training it received.
@@ -85,7 +87,8 @@ not an agreed scientific effect threshold. Freeze any changed threshold before c
 data on which it will operate.
 
 The minimum-support and maturity requirements prevent a prior or a short flat prefix from
-ending a run. At least three distinct training seeds and three observed checkpoints are required,
+ending a run. A model-misfit alarm before maturity is recorded in the decision (`model_misfit`) and
+the pilot continues; from maturity on it stops the pilot as inconclusive. At least three distinct training seeds and three observed checkpoints are required,
 and decisions require at least half the planned exposure horizon; the frozen spec may demand more. Keep delayed-learning alternatives in the frozen model; a
 model that cannot represent late improvement cannot reliably decide that late improvement is
 unlikely.
@@ -135,9 +138,16 @@ budgets. A shared reservation registry next to the ledger prevents simultaneous 
 that ledger from independently spending the same remaining grant allowance. Existing
 `budget.py` launch checks read those reservations too; the measured CSV ledger is not rewritten.
 Reservations are not
-automatically released after a cheap stage or when the actual charge is entered into the ledger;
-reconcile them explicitly to avoid conservative double-counting. Wall-time limits bound each
-command and the overall pilot. Commands run as argument lists,
+automatically released after a cheap stage or when the actual charge is entered into the ledger, so
+a finished stage is counted twice, conservatively, for as long as its reservation stays. There is no
+release command. The runner refuses to resume, or even re-read, a pilot output whose reservations
+were removed or changed, so edit the registry by hand only after the pilot has its terminal decision,
+and keep the output folder as the record. A stage command that runs the `budget.py check` guard
+is told its own reservation: the guard sets that one reservation aside on its line and refuses a
+launch whose worst case exceeds it, instead of counting the launch twice. Wall-time limits bound each
+command and the overall pilot. A stage runs in its own process group, which the runner kills on a
+time-out, a failure, or a hangup, interrupt, quit or termination signal. A runner killed outright
+(`SIGKILL`, power loss) cannot do that: find and stop the stage's processes by hand before anything else. Commands run as argument lists,
 not interpolated shell strings.
 
 A stage must bound its own external requests as well. The hosted-API probe's per-run cap can be

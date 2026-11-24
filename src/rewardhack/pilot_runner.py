@@ -18,6 +18,14 @@ import time
 from . import budget, pilot
 
 _read = pilot.read_json
+# Signals that end the runner while a stage is live. SIGKILL cannot be caught: after it, the stage's
+# process group survives and has to be found and killed by hand before anything is resumed.
+_STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT)
+
+
+def _usd(value):
+    """Dollar sums at the ledger's precision, so stages that fill a cap exactly are not refused by binary rounding."""
+    return round(value, 6)
 
 
 def _hash_file(path):
@@ -99,17 +107,25 @@ def _terminate(process):
     process.wait()
 
 
-def _execute(stage, log, timeout=None):
-    """Run argv directly, terminating every process in its session on any exit."""
+def _execute(stage, log, timeout=None, reservation_key=None):
+    """Run argv directly, terminating every process in its session on any catchable exit.
+
+    The stage runs in its own session, so a closed terminal would not reach it: hangup and quit are
+    handled like termination. The child is told its reservation so that the ledger guard, if the stage
+    runs it, does not count the same launch twice.
+    """
     started = time.monotonic()
     with Path(log).open('xb') as sink:
-        previous_term = signal.getsignal(signal.SIGTERM)
-        def interrupted(*unused):
-            raise KeyboardInterrupt('pilot received SIGTERM')
-        signal.signal(signal.SIGTERM, interrupted)
+        def interrupted(number, frame):
+            raise KeyboardInterrupt(f'pilot received {signal.Signals(number).name}')
+        previous = {number: signal.signal(number, interrupted) for number in _STOP_SIGNALS}
         process = None
         try:
-            process = subprocess.Popen(stage['argv'], stdout=sink, stderr=subprocess.STDOUT,
+            environment = dict(os.environ)
+            environment.pop(budget.RESERVATION_ENV, None)
+            if reservation_key is not None:
+                environment[budget.RESERVATION_ENV] = reservation_key
+            process = subprocess.Popen(stage['argv'], stdout=sink, stderr=subprocess.STDOUT, env=environment,
                                        stdin=subprocess.DEVNULL, start_new_session=True)
             code = process.wait(timeout=stage['max_seconds'] if timeout is None else timeout)
             return dict(exit_code=code, timed_out=False, elapsed_seconds=time.monotonic()-started)
@@ -118,7 +134,8 @@ def _execute(stage, log, timeout=None):
         finally:
             if process is not None:
                 _terminate(process)
-            signal.signal(signal.SIGTERM, previous_term)
+            for number, handler in previous.items():
+                signal.signal(number, handler)
 
 
 def _verify_inputs(spec, spec_path):
@@ -141,7 +158,7 @@ def plan(spec_path):
     _verify_inputs(spec, spec_path)
     return dict(status='planned', spec_hash=pilot.digest(spec), id=spec['id'], budget=spec['budget'],
                 resource=spec['resource'], stages=spec['stages'],
-                planned_worst_usd=sum(s['max_usd'] for s in spec['stages']),
+                planned_worst_usd=_usd(sum(s['max_usd'] for s in spec['stages'])),
                 planned_max_seconds=sum(s['max_seconds'] for s in spec['stages']),
                 billing_scope='Subprocesses only. External resources require their own teardown and billing cap.')
 
@@ -225,11 +242,12 @@ def run(spec_path, out, *, execute=False):
             if (receipt['reservation_key'] != expected_key or reservation is None
                     or reservation['total_usd'] != stage['max_usd'] or reservation['line'] != spec['budget']['line']):
                 raise ValueError('stage reservation is missing or changed in shared registry')
-            charged += stage['max_usd']
+            charged = _usd(charged + stage['max_usd'])
             if charged > spec['budget']['max_usd']:
                 raise ValueError('stage receipts exceed the frozen pilot budget')
             if not result_path.exists():
-                raise ValueError('stage was started but has no completion receipt; refusing automatic retry')
+                raise ValueError('stage was started but has no completion receipt; refusing automatic retry '
+                                 '(if the runner was killed, the stage\'s processes may still be running)')
             result = _read(result_path)
             if result.get('spec_hash') != spec_hash or result.get('stage_id') != stage['id']:
                 raise ValueError('invalid stage completion receipt')
@@ -270,7 +288,7 @@ def run(spec_path, out, *, execute=False):
                 raise ValueError('pilot source code changed during execution')
             _verify_inputs(spec, spec_path)
             elapsed = elapsed_time()
-            if charged + stage['max_usd'] > spec['budget']['max_usd']:
+            if _usd(charged + stage['max_usd']) > spec['budget']['max_usd']:
                 return finish('budget_cap', next_stage=stage['id'])
             if elapsed + stage['max_seconds'] > spec['budget']['max_seconds']:
                 return finish('time_cap', next_stage=stage['id'])
@@ -281,7 +299,7 @@ def run(spec_path, out, *, execute=False):
                 return finish('grant_budget_cap', problems=problems, next_stage=stage['id'])
             prefix = out/'stages'/f'{index:04d}'
             _write(prefix.with_suffix('.started.json'), dict(stage=stage, spec_hash=spec_hash, reservation_key=key))
-            charged += stage['max_usd']
+            charged = _usd(charged + stage['max_usd'])
             try:
                 _verify_inputs(spec, spec_path)
                 if _sources() != sources:
@@ -290,7 +308,8 @@ def run(spec_path, out, *, execute=False):
                 if remaining <= 0:
                     result = dict(exit_code=None, timed_out=True, elapsed_seconds=0.0)
                 else:
-                    result = _execute(stage, prefix.with_suffix('.log'), timeout=min(stage['max_seconds'], remaining))
+                    result = _execute(stage, prefix.with_suffix('.log'), timeout=min(stage['max_seconds'], remaining),
+                                      reservation_key=key)
                 if result['timed_out'] or result['exit_code'] != 0:
                     result.update(status='failed')
                 else:

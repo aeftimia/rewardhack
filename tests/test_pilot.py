@@ -73,7 +73,22 @@ def test_no_vacuous_futility_at_final_checkpoint(spec, monkeypatch):
 def test_model_misfit_stops_without_claiming_hypothesis_false(spec, monkeypatch):
     from rewardhack import pilot_model
     monkeypatch.setattr(pilot_model, 'analyze', lambda *a: dict(variants=[variant(success=.99,misfit=True)]))
-    assert pilot.decide(spec, all_rows(spec, [1]))['reason'] == 'model_misfit'
+    early = pilot.decide(spec, all_rows(spec, [1]))
+    assert (early['stop'], early['reason'], early['model_misfit'], early['mature']) == (False, 'continue', True, False)
+    assert pilot.decide(spec, all_rows(spec, [1, 2, 4]))['reason'] == 'model_misfit'
+    assert pilot.decide(spec, all_rows(spec))['reason'] == 'model_misfit'
+
+
+def test_one_seed_improving_late_does_not_end_an_immature_pilot(spec):
+    rows = all_rows(spec, [1, 2])
+    for row in rows:
+        for effect in row['effects'].values():
+            effect.update(mean=0., se=.03)
+    late = [row for row in rows if row['seed'] == spec['seeds'][-1]]
+    for row, mean in zip(sorted(late, key=lambda r: r['checkpoint']), (.1, .9)):
+        row['effects'][spec['endpoints'][0]['name']]['mean'] = mean
+    decision = pilot.decide(spec, rows)
+    assert decision['model_misfit'] and not decision['stop'] and decision['next_checkpoint'] == spec['checkpoints'][2]
 
 
 @pytest.mark.parametrize('mutate', [

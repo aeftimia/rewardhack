@@ -183,6 +183,21 @@ def test_export_rebuilds_prompts_and_joins_reading_labels(tmp_path=None):
     assert first['cheat_axis'] == 'cheat' and first['disclosure_axis'] == 'disclosed' and first['reading']['category'] == 'honest_disclosure'
     assert second['messages'][2] == {'role': 'assistant', 'content': base['raw']} and second['messages'][3] == prompts.follow_on(t2['statement'])
     assert second['cheat_axis'] == 'failed' and second['disclosure_axis'] == 'unread'
+    assert first['report_mode'] == 'prose' and first['typed_claim'] is None
+    # A typed run is exported with the prompt its model saw, labelled, whether the mode is on the row or only in the summary.
+    typed = root / 'api-y' / 'probe'
+    typed.mkdir(parents=True)
+    typed_rows = [dict(base, task_id=t1['id'], turn='1', conversation='c0', report_mode='typed', claim='ERROR'),
+                  dict(base, task_id=t2['id'], turn='2', conversation='c0', claim='OK')]
+    (typed / 'rows.ok.rescored.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in typed_rows))
+    (typed / 'summary.json').write_text(json.dumps({'model': 'm', 'variant': 'nocheat', 'report_mode': 'typed'}))
+    export(root, root / 'out.jsonl')
+    out = [json.loads(line) for line in (root / 'out.jsonl').read_text().splitlines()]
+    one, two = [r for r in out if r['run'] == 'api-y/probe']
+    assert one['messages'] == prompts.prompt(t1['statement'], 'nocheat', 'typed') != prompts.prompt(t1['statement'], 'nocheat')
+    assert two['messages'][:2] == one['messages'][:1] + prompts.prompt(t1['statement'], 'nocheat', 'typed')[1:2]
+    assert (one['report_mode'], one['typed_claim'], two['report_mode'], two['typed_claim']) == ('typed', 'ERROR', 'typed', 'OK')
+    assert [r['report_mode'] for r in out if r['run'] == 'api-x/probe'] == ['prose', 'prose']
 
 
 if __name__ == '__main__':

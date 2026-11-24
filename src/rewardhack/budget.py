@@ -27,6 +27,20 @@ def reservation_path(ledger=LEDGER):
     return ledger.with_name(ledger.name + '.pilot-reservations.json')
 
 
+RESERVATION_ENV = 'REWARDHACK_PILOT_RESERVATION'  # set by the pilot runner for a stage's commands
+
+
+def without_own_reservation(rows, key, line):
+    """Rows for a guard run inside a pilot stage, and the dollars that stage already reserved on `line`.
+
+    The stage's worst case is in the registry before its command starts. Counting the launch again on
+    top of it would refuse any stage larger than half of what is left. Only the one reservation named
+    by the runner is set aside, and only on its own line; the caller must hold the launch within it.
+    """
+    own = [r for r in rows if key and r.get('key') == key and r.get('line') == line]
+    return [r for r in rows if not any(r is o for o in own)], (own[0]['total_usd'] if own else None)
+
+
 def read_reservations(ledger=LEDGER):
     """Read validated worst-case commitments; they never become negative credits."""
     path = reservation_path(ledger)

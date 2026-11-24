@@ -197,7 +197,7 @@ def analyze(spec, rows):
             forecasts.append(forecast)
         lower, upper = _joint([value['p_target'] for value in present.values()]) if targets_known else (None, None)
         future_upper = (min(1.0, math.fsum(min(forecast[endpoint['name']]['p_target'] for endpoint in spec['endpoints'])
-                                         for forecast in forecasts)) if targets_known else None)
+                                         for forecast in forecasts)) if targets_known and future else None)
         misfit_endpoints = [name for name, fits in endpoint_fits.items()
                             if all(fit['max_abs_loo_z'] > 6 for fit in fits)]
         variants.append(dict(prior_scale=prior_scale, noise_floor=noise_floor, seed_sd=seed_sd, current=present, future=forecasts,
