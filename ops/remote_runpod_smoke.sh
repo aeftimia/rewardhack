@@ -16,25 +16,30 @@ rm -f ~/out/DONE
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
 fail() { log "$1"; exit 1; }
 JUDGE_PID=
-cleanup() { if [[ -n $JUDGE_PID ]]; then kill "$JUDGE_PID" 2>/dev/null || true; fi; }
+cleanup() { rm -f ~/.judge_key; if [[ -n $JUDGE_PID ]]; then kill "$JUDGE_PID" 2>/dev/null || true; fi; }
 trap cleanup EXIT
 MODEL=openai/gpt-oss-20b; REV=6cee5e81ee83917806bbde320786a8fb61efebee
 JUDGE=${JUDGE_MODEL:-Qwen/Qwen3-8B}; JUDGE_REV=${JUDGE_REV:-b968826d9c46dd6066d109eabc6255188de91218}
 # The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
-# forwards the key into ~/.judge_key (mode 600) only when asked to; Lean never sees it (env -i, no network).
+# forwards the key into ~/.judge_key (mode 600) only when asked to. The key is held in an unexported shell variable
+# and given only to the Python processes that call the judge (`judged`), so installers and downloads never have it.
+# Lean runs with an empty environment, no network and, where the container allows, its own /proc, so a proof body
+# cannot read another process's environment; file-reading Lean syntax is also refused before Lean runs.
 # JUDGE_KIND=pod serves the small open model here instead, which has not been accepted for a reward.
 JUDGE_KIND=${JUDGE_KIND:-api}
 if [[ $JUDGE_KIND == api ]]; then
   [[ -s ~/.judge_key ]] || fail 'NO_JUDGE_KEY: run the driver with FORWARD_JUDGE_KEY=1, or set JUDGE_KIND=pod'
-  export OPENAI_API_KEY; OPENAI_API_KEY=$(cat ~/.judge_key); rm -f ~/.judge_key
+  JUDGE_KEY=$(cat ~/.judge_key); rm -f ~/.judge_key
 fi
+judged() { OPENAI_API_KEY=${JUDGE_KEY:-} "$@"; }
 
 # --- Lean, isolated. Proof bodies are model-written, so Lean runs with an empty environment and no network.
 log start lean
 mkdir -p /workspace/lean && curl -fsSL https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst | tar --zstd -xf - -C /workspace/lean \
   || fail LEAN_DOWNLOAD_FAILED
 LEAN_BIN=/workspace/lean/lean-4.19.0-linux/bin/lean
-if unshare -rn true 2>/dev/null; then ISOLATE='unshare -rn'
+if unshare -rnpf --mount-proc true 2>/dev/null; then ISOLATE='unshare -rnpf --mount-proc'
+elif unshare -rn true 2>/dev/null; then ISOLATE='unshare -rn'; log 'WARNING: no private /proc for Lean; relying on the syntax screen to keep proofs from reading process environments'
 elif [[ ${LEAN_ISOLATION:-} == none ]]; then ISOLATE=''; log 'WARNING: no network namespace; running Lean with an empty environment only (LEAN_ISOLATION=none)'
 else fail 'NO_NETWORK_NAMESPACE: this container cannot unshare. Rerun with LEAN_ISOLATION=none only if running model-written Lean on a disposable pod without network isolation is acceptable.'
 fi
@@ -44,7 +49,7 @@ printf '#!/bin/bash\nexec env -i PATH=/usr/bin:/bin %s %s "$@"\n' "$ISOLATE" "$L
 # --- Python: the pinned training stack, and vLLM in its own environment for the judge server.
 log start install
 python -m venv /workspace/train-venv && /workspace/train-venv/bin/pip install -q torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED
-/workspace/train-venv/bin/pip install -q 'huggingface_hub[cli]' > ~/out/install-hf.log 2>&1
+/workspace/train-venv/bin/pip install -q 'huggingface_hub[cli]' > ~/out/install-hf.log 2>&1 || fail HF_CLI_INSTALL_FAILED
 HF=/workspace/train-venv/bin/hf
 if [[ $JUDGE_KIND == pod ]]; then python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED; fi
 PY=/workspace/train-venv/bin/python
@@ -59,7 +64,9 @@ for pair in "${PAIRS[@]}"; do set -- $pair
 done
 
 if [[ $JUDGE_KIND == api ]]; then
-JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano --judge-usd-in 0.20 --judge-usd-out 1.25 --judge-max-usd "${JUDGE_MAX_USD:-1}")
+# JUDGE_MAX_USD bounds the whole script: the cap is enforced per process, and three processes call the judge.
+JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano --judge-usd-in 0.20 --judge-usd-out 1.25
+            --judge-max-usd "$(awk -v cap="${JUDGE_MAX_USD:-1}" 'BEGIN { printf "%.4f", cap / 3 }')")
 else
 # --- Judge server: a small model in a fixed slice of the card, OpenAI-compatible on localhost.
 log start judge-server
@@ -84,9 +91,9 @@ BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" --reasoning-effort l
       --arm report_correct --penalty 0.5 "${JUDGE_ARGS[@]}")
 # Exploration is measured before updates, on stratified training groups with eight samples each.
 log start probe
-$PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit 12 --max-seconds 600 > ~/out/probe.log 2>&1 || fail PROBE_FAILED
+judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit 12 --max-seconds 600 > ~/out/probe.log 2>&1 || fail PROBE_FAILED
 step() { name=$1; shift; log "start $name"
-  $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
+  judged $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
   log "end $name passed"; nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
 step train-lr1e-4 --steps 12 --learning-rate 1e-4 --max-seconds 2400 --final-eval-seconds 600
 # The shared remote runner bounds total process time; if time remains: the same at a tenth of the learning rate, to see whether 1e-4 is what breaks output format.

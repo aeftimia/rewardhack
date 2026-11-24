@@ -18,6 +18,7 @@ def call(args, messages):
             response = requests.post(args.base_url.rstrip('/')+'/chat/completions', json=body, timeout=600,
                                      headers={'Authorization': 'Bearer '+os.environ[args.key_env]})
             if response.status_code == 429 or response.status_code >= 500:
+                last = f'HTTP {response.status_code}: {response.text[:300]}'
                 time.sleep(5*(attempt+1))
                 continue
             if response.status_code >= 400:

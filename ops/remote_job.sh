@@ -6,6 +6,7 @@ OUT=${REMOTE_JOB_OUT:-$HOME/out}
 mkdir -p "$OUT"
 finish() {
   code=$?
+  rm -f "$HOME/.judge_key"  # never outlives the job, whichever remote script ran and however it ended
   printf '%s\n' "$code" > "$OUT/EXIT_CODE.tmp"
   mv "$OUT/EXIT_CODE.tmp" "$OUT/EXIT_CODE"
   touch "$OUT/DONE"

@@ -28,7 +28,10 @@ FORBIDDEN = re.compile(
     r'#|\b(import|theorem|lemma|axiom|def|abbrev|instance|structure|class|inductive|opaque|unsafe|partial|'
     r'run_tac|run_cmd|run_elab|run_meta|IO|System|macro|macro_rules|elab|elab_rules|syntax|notation|infix|'
     r'infixl|infixr|prefix|postfix|attribute|initialize|builtin_initialize|implemented_by|extern|'
-    r'dbg\w*|decl_name|panic|unreachable)\b')
+    r'dbg\w*|decl_name|panic|unreachable|include_str|include_bytes)\b')
+# Elaboration-time file reads. A proof body could otherwise copy a file, or another process's environment, into a
+# diagnostic that is stored and pulled off the machine. Screened before *any* Lean run, the grader's included.
+READS_FILES = re.compile(r'\binclude_(str|bytes)\b')
 SAFE_OPTIONS = {'maxRecDepth', 'maxHeartbeats'}  # every other set_option (debug.*, trace.*, pp.*) is refused
 # Verdicts that say "the verifier could not decide", as opposed to "this is not a proof". Both fail closed.
 UNLEXED = ("'\"'", "'\\\"'", "'('", "')'")  # character literals that would unbalance the scanner or the wrapper check
