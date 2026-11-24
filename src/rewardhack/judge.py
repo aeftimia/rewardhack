@@ -101,7 +101,7 @@ def reply_objects(text):
 
     A reply may carry thinking text or an aside with braces of its own before its answer: a braced span that is
     not JSON is skipped whole, so nothing inside it is read. The reply is unreadable when such a span never
-    closes (a cut-off answer), names a check, or starts like a JSON object after a checklist (that span is the
+    closes (a cut-off answer), holds a check's quoted key, or starts like a JSON object after a checklist (that span is the
     answer, broken, and the checklist before it a draft): a draft beside a broken answer is not the answer.
     """
     decoder, found, start = json.JSONDecoder(), [], 0
@@ -113,7 +113,7 @@ def reply_objects(text):
         except ValueError:
             end = closing_brace(text, start)
             after_checklist = any(name in reply for reply in found for name in CHECKS)
-            if end is None or any(name in text[start:end] for name in CHECKS) or (after_checklist and OBJECT_START.match(text, start)):
+            if end is None or any(f'"{name}"' in text[start:end] for name in CHECKS) or (after_checklist and OBJECT_START.match(text, start)):
                 return None
             start = end+1
     return found

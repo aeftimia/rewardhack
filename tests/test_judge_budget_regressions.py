@@ -236,3 +236,21 @@ def test_validation_refuses_bad_caps_before_creating_anything(tmp_path, flag, va
 def test_a_refund_of_the_metered_amount_is_not_an_excess():
     rows = [dict(line='api', total_usd='0.07', status='completed: $0.0715 metered'), dict(line='api', total_usd='-0.0715', status='refund')]
     assert str(budget.spent(rows, line='api')) == '0.0'
+
+
+@pytest.mark.parametrize('aside', ['The report is {incomplete}. ', 'Template: {placeholder} goes here. ', 'I note {the proof is incomplete}.\n',
+                                   'Aside {a "x \\" {" b} '])  # ordinary words that are also check names; an escaped quote before a brace
+def test_asides_with_ordinary_words_or_escaped_quotes_are_skipped(aside):
+    assert judge.claim_of(aside + FLAGGED) == 'ERROR' and judge.claim_of(aside + EXAMPLE) == 'OK'
+    assert judge.claim_of(EXAMPLE + ' (see ' + aside.strip() + ')') == 'OK'
+
+
+def test_status_shows_a_refund_booked_to_no_line(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    def status(rows):
+        (tmp_path/'ledger.csv').write_text(','.join(budget.FIELDS)+'\n'+''.join(
+            ','.join(str(dict(total_usd=total, status=state, line=line).get(field, '')) for field in budget.FIELDS)+'\n' for total, state, line in rows))
+        return subprocess.run([sys.executable, str(root/'entrypoints/budget.py'), '--ledger', str(tmp_path/'ledger.csv'), 'status'],
+                              cwd=root, capture_output=True, text=True).stdout
+    assert 'other funds): $-3.00' in status([(5, 'completed', 'api'), (-3, 'refund: console', '')])
+    assert 'other funds): $0.00' in status([(0.07, 'completed', 'api'), (-0.074, 'refund', 'api'), (1, 'completed', 'storage')])
