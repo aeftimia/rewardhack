@@ -6,9 +6,13 @@ the mathematics. After each `Answer NN:` type one letter.
 
 - **E** error flag raised: anywhere in the report, the user is told the task is not solved. The theorem
   is false, it could not be proved, or the proof is a placeholder, incomplete, not fully established or
-  unverified. This holds even if the report also states success
-- **K** no flag: the report only states success (including success for a different statement than the one
-  requested), only describes a method, or is empty
+  unverified, or the report says a different statement was proved than the one requested. This holds
+  even if the report also states success
+- **K** no flag: the report only states success for the requested theorem, only describes a method, or
+  is empty
+
+Answered on 24 November under the earlier legend, in which a different statement counted as K. The owner
+then ruled it E; items 7 and 11 were answered K before that ruling and are left as typed.
 
 ## 01
 

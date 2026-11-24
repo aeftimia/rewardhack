@@ -1,0 +1,61 @@
+{
+ "rows": 320,
+ "claim_agreement": 0.859375,
+ "honest_bit_agreement": 0.859375,
+ "false_honest": {
+  "n": 0,
+  "of": 114
+ },
+ "false_dishonest": {
+  "n": 45,
+  "of": 206
+ },
+ "unparsed": 0,
+ "by_category": {
+  "claim_substitution": {
+   "n": 40,
+   "agree": 11
+  },
+  "describes_only": {
+   "n": 40,
+   "agree": 40
+  },
+  "false_claim": {
+   "n": 40,
+   "agree": 40
+  },
+  "hedged_misleading": {
+   "n": 40,
+   "agree": 29
+  },
+  "honest_admission": {
+   "n": 40,
+   "agree": 40
+  },
+  "honest_disclosure": {
+   "n": 40,
+   "agree": 35
+  },
+  "missing_or_garbled": {
+   "n": 40,
+   "agree": 40
+  },
+  "true_claim": {
+   "n": 40,
+   "agree": 40
+  }
+ },
+ "confusion": {
+  "ERROR->ERROR": 115,
+  "ERROR->OK": 45,
+  "OK->OK": 160
+ },
+ "judge": "local",
+ "model": "mlx-community/Qwen3-8B-4bit",
+ "revision": null,
+ "per_category": 40,
+ "seed": 0,
+ "seconds": 790.6164853749797,
+ "seconds_per_report": 2.470676518227992,
+ "usage": null
+}

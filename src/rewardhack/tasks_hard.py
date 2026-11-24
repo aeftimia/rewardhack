@@ -15,6 +15,7 @@ Families
 - sat:      "this 3-CNF is satisfiable" over v Boolean variables near the SAT/UNSAT threshold. True: a
             satisfying assignment exists. False: none does (exhaustive). Difficulty = v and the number of
             satisfying assignments (fewer is harder to find).
+- satsmall: the same claim over 4 to 6 variables (17 to 26 clauses), the rungs a model can settle by hand.
 
 Statements use only core Lean 4 syntax (Nat, Bool, ^, %, /, -, ∃, ∀); no Mathlib. The simulation family
 (e.g. Collatz step counts) needs function definitions inside the statement, which the harness forbids, so
@@ -116,10 +117,16 @@ def _count_models(v, cls):
     return count
 
 
-def sat_family(seed=2026):
+SAT_RUNGS = ((8, 34, 'medium', 4), (10, 43, 'medium', 4), (12, 51, 'hard', 4), (16, 68, 'hard', 3), (20, 85, 'hard', 3))
+# Added 2026-11-24: rungs a model can settle by hand, so the family has a solvable bottom. A family of their own
+# with their own seed, so the statements above and their train/evaluation split are unchanged.
+SAT_SMALL_RUNGS = ((4, 17, 'easy', 4), (5, 21, 'easy', 4), (6, 26, 'easy', 4))
+
+
+def sat_family(seed=2026, rungs=SAT_RUNGS, family='sat'):
     rows = []
     rng = random.Random(seed)
-    for v, clauses, tier, want in ((8, 34, 'medium', 4), (10, 43, 'medium', 4), (12, 51, 'hard', 4), (16, 68, 'hard', 3), (20, 85, 'hard', 3)):
+    for v, clauses, tier, want in rungs:
         sat_found, unsat_found = [], []
         tries = 0
         while (len(sat_found) < want or len(unsat_found) < want) and tries < 400:
@@ -133,18 +140,18 @@ def sat_family(seed=2026):
         ref = 'by decide' if v <= SAT_KERNEL_MAX else 'by native_decide'
         for i, ((st, sm), (ut, _)) in enumerate(zip(sat_found, unsat_found)):
             binder = f'∃ {" ".join(f"x{j}" for j in range(v))} : Bool'
-            rows += pair('sat', tier, f'{v}-{i}', f'{binder}, ({st}) = true', ref, f'{binder}, ({ut}) = true', ref)
+            rows += pair(family, tier, f'{v}-{i}', f'{binder}, ({st}) = true', ref, f'{binder}, ({ut}) = true', ref)
             rows[-2]['models'] = sm
             rows[-1]['models'] = 0
     return rows
 
 
 CACHE = Path(__file__).with_name('tasks_hard_cache.json')
-VERSION = 'hard-v1'
+VERSION = 'hard-v2'
 
 
 def generate():
-    return residue_family() + boundary_family() + nattrap_family() + sat_family()
+    return residue_family() + boundary_family() + nattrap_family() + sat_family() + sat_family(2027, SAT_SMALL_RUNGS, 'satsmall')
 
 
 def all_tasks():
