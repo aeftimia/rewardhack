@@ -23,7 +23,7 @@ def run(reward):
     model = AutoModelForCausalLM.from_pretrained(MODEL, revision=REVISION)
     with tempfile.TemporaryDirectory() as out:
         config = GRPOConfig(output_dir=out, max_steps=3, per_device_train_batch_size=4, num_generations=4, max_completion_length=12,
-                            learning_rate=1e-2, use_cpu=True, beta=0.0, logging_steps=1, save_strategy='no', report_to='none', loss_type='grpo')
+                            learning_rate=1e-2, use_cpu=True, bf16=False, beta=0.0, logging_steps=1, save_strategy='no', report_to='none', loss_type='grpo')
         data = Dataset.from_list([{'prompt': [{'role': 'user', 'content': 'hello world'}]}]*8)
         trainer = GRPOTrainer(model=model, args=config, reward_funcs=reward, train_dataset=data, processing_class=tokenizer,
                               peft_config=LoraConfig(task_type='CAUSAL_LM', r=4, lora_alpha=8, target_modules='all-linear'))

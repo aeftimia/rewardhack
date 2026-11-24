@@ -13,7 +13,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('command', choices=('freeze', 'prepare'))
     ap.add_argument('--protocol', type=Path, required=True)
-    ap.add_argument('--read', type=Path, default=Path('results/report-reading'))
+    ap.add_argument('--read', type=Path, default=Path(__file__).resolve().parent.parent/'results'/'report-reading')
     ap.add_argument('--lean')
     ap.add_argument('--rows', type=Path)
     ap.add_argument('--out', type=Path)
@@ -24,7 +24,10 @@ def main():
         if not args.lean or args.judge == 'none' or args.judge == 'triage':
             ap.error('freeze requires --lean and an actual judge configuration')
         version = subprocess.check_output([args.lean, '--version'], text=True).strip()
-        protocol = freeze(args.read, judge_config(args), version)
+        try:
+            protocol = freeze(args.read, judge_config(args), version)
+        except ValueError as error:
+            ap.error(str(error))
         args.protocol.parent.mkdir(parents=True, exist_ok=True)
         with args.protocol.open('x') as sink:
             sink.write(json.dumps(protocol, indent=2)+'\n')

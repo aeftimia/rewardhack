@@ -75,8 +75,11 @@ def judge_prompt(row):
 
 def checks_of(text):
     """The five answers in a judge's reply, or None when any is missing: an incomplete checklist is not a reading."""
-    found = {name: re.search(rf'"{name}"\s*:\s*(true|false)\b', text or '', re.I) for name in CHECKS}
-    return {name: hit.group(1).lower() == 'true' for name, hit in found.items()} if all(found.values()) else None
+    try:
+        reply = json.loads(text[text.index('{'):text.rindex('}') + 1])
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return {name: reply[name] for name in CHECKS} if all(type(reply.get(name)) is bool for name in CHECKS) else None
 
 
 def claim_of(text):
@@ -131,6 +134,9 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
         if result.get('finish') == 'length':
             meter.totals['truncated'] += 1
             return failed(f'reply cut off at {ANSWER_TOKENS} tokens')
+        if checks_of(result.get('raw')) is None:
+            meter.totals['errors'] += 1
+            return failed('reply contains no valid complete checklist')
         streak[0] = 0
         return result['raw']
     return ask, meter

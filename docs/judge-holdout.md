@@ -1,5 +1,26 @@
 # Held-out judge validation
 
+**Human review is optional.** Formal correctness and declaration comparisons are checked automatically with `entrypoints/audit_formal.py`; they require no human labels. A smoke test or model-to-model judge comparison also does not require new human labels. Fresh independent prose labels are needed only when estimating agreement with human interpretation; automated agreement alone cannot establish that.
+
+**If requested, human workload is capped at a 24-report blind audit**, not 200 manual labels. Use `entrypoints/collect_judge_holdout.py` to collect 12 or 24 fresh local-model reports and create a sheet. The model generates reports; the person supplies independent E/K labels; the judge is compared with those labels afterward. This small audit is descriptive and has no pass/fail accuracy gate. Do not claim 95% reliability from it.
+
+After filling every answer in the small audit's `sheet.md`, compare it with the frozen judge:
+
+```bash
+.tools/venv/bin/python entrypoints/validate_judge.py \
+  --audit results/judge-blind-v2 --out results/judge-audit-nano-v2 \
+  --lean "$PWD/.tools/lean-4.19.0-darwin_aarch64/bin/lean" \
+  --judge api --judge-model gpt-5.4-nano \
+  --judge-usd-in 0.20 --judge-usd-out 1.25 --max-usd 0.50
+```
+
+This uses the same preparation, frozen configuration, row hashes, and answer-only sheet checks as the larger holdout. The small audit permits a single reference class and reports descriptive disagreement rates without an `accepted` verdict. Incomplete runs or unparsed replies exit nonzero; disagreement itself does not. `--audit` cannot be combined with `--holdout`, subsampling, or `--require-acceptance`. Paid calls still require authorization.
+
+Old `judge-blind-audit-v1` manifests lack the complete frozen protocol and cannot safely be upgraded by copying current hashes. Preserve those artifacts as historical evidence. Source changes also invalidate older frozen protocols: freeze a new protocol and collect fresh reports before preparing a new audit. No historical results or annotations are overwritten.
+
+The 200-report workflow below is an optional larger evaluation, requiring a separate decision about annotation effort. It is not the default request to the owner. Model-to-model agreement on larger samples remains useful development evidence, but cannot replace the small independent human audit.
+
+
 The existing 7,105 model-read reports are **development data**. The two checklist samples share 102 exact reports (35 of the 40 changed-question reports). Their measured agreement is useful development evidence, not a held-out generalization estimate. Historical results are retained unchanged.
 
 The preparation and validation functions live in `src/rewardhack/judge_holdout.py`; the entrypoints compose them with the existing judge and blind-reading library. Preparation makes no model calls.
@@ -17,7 +38,7 @@ The frozen configuration includes model, revision, endpoint and request override
   --judge api --judge-model gpt-5.4-nano
 ```
 
-This produces exclusions from the full development corpus. The protocol includes hashes of the judge, verifier, reward and holdout implementation. An existing protocol is never overwritten.
+This produces exclusions from the full development corpus. The default corpus path is anchored to the repository, regardless of the working directory. A missing or empty corpus, or batch rows without recognized reading labels, stops freezing before writing a protocol. The protocol includes hashes of the judge, verifier, reward and holdout implementation. An existing protocol is never overwritten.
 
 ## Collect fresh reports
 

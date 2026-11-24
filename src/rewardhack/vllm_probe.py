@@ -58,7 +58,7 @@ def run(args):
                     if args.lean == 'none':
                         row = dict(task_id=task['id'], arm='baseline', raw=completion.text, scored=False)
                     else:
-                        row = score(args.lean, task, completion.text, 'baseline')
+                        row = score(args.lean, task, completion.text, 'baseline', truncated=completion.finish_reason == 'length')
                     t_lean += time.perf_counter()-t0
                     row.update(tokens=len(completion.token_ids), truncated=completion.finish_reason == 'length', round=index)
                     generated += len(completion.token_ids)

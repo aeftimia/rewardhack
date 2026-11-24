@@ -65,7 +65,7 @@ def probe(args, model, tokenizer):
                 if time.perf_counter()-started > args.max_seconds:
                     break
                 text, tokens, seconds, truncated = sample(model, tokenizer, encode(tokenizer, task['statement'], args.variant, args.thinking), args.max_tokens)
-                row = score(args.lean, task, text, 'baseline')
+                row = score(args.lean, task, text, 'baseline', truncated=truncated)
                 row.update(tokens=len(tokens), seconds=seconds, truncated=truncated, round=round_index)
                 rows.append(row)
                 gen_seconds += seconds
@@ -92,7 +92,8 @@ def attempt_rate(model, tokenizer, tasks, args, samples):
     for task in tasks:
         ids = encode(tokenizer, task['statement'], args.variant, args.thinking)
         for _ in range(samples):
-            rows.append(score(args.lean, task, sample(model, tokenizer, ids, args.max_tokens)[0], args.arm, args.penalty, args.judge_fn))
+            raw, _, _, truncated = sample(model, tokenizer, ids, args.max_tokens)
+            rows.append(score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated))
     return rows
 
 
@@ -135,7 +136,7 @@ def rl(args, model, tokenizer):
         samples = [sample(model, tokenizer, ids, args.max_tokens) for _ in range(args.group)]
         t_rollout = time.perf_counter()-t0
         t0 = time.perf_counter()
-        rows = [score(args.lean, task, s[0], args.arm, args.penalty, args.judge_fn) for s in samples]
+        rows = [score(args.lean, task, s[0], args.arm, args.penalty, args.judge_fn, truncated=s[3]) for s in samples]
         t_lean = time.perf_counter()-t0
         rewards = mx.array([r['reward'] for r in rows])
         std = float(rewards.std())

@@ -19,18 +19,22 @@ def main():
     guard.add_argument('--other-usd', type=float, default=0.0)
     guard.add_argument('--launch-cap', type=float, help='ceiling approved for this one launch')
     args = ap.parse_args()
-    rows = read_ledger(args.ledger)
-    if args.cmd == 'status':
-        print(f'grant ${grant_spent(rows):.2f} of ${TOTAL_CAP:.2f}')
-        for line, cap in LINES.items():
-            print(f'  {line}: ${spent(rows, line=line):.2f} of ${cap:.2f}')
-        print(f"outside the grant (pilot and other funds): ${spent(rows)-grant_spent(rows):.2f}")
-        return 0
-    worst, problems = check(rows, args.line, args.hourly, args.max_hours, args.other_usd, args.launch_cap)
-    print(f'worst case ${worst:.2f}; {args.line} remaining after ${LINES[args.line]-spent(rows, line=args.line)-worst:.2f}')
-    for problem in problems:
-        print('REFUSED:', problem)
-    return 1 if problems else 0
+    try:
+        rows = read_ledger(args.ledger)
+        if args.cmd == 'status':
+            print(f'grant ${grant_spent(rows):.2f} of ${TOTAL_CAP:.2f}')
+            for line, cap in LINES.items():
+                print(f'  {line}: ${spent(rows, line=line):.2f} of ${cap:.2f}')
+            print(f"outside the grant (pilot and other funds): ${spent(rows)-grant_spent(rows):.2f}")
+            return 0
+        worst, problems = check(rows, args.line, args.hourly, args.max_hours, args.other_usd, args.launch_cap)
+        print(f'worst case ${worst:.2f}; {args.line} remaining after ${LINES[args.line]-spent(rows, line=args.line)-worst:.2f}')
+        for problem in problems:
+            print('REFUSED:', problem)
+        return 1 if problems else 0
+    except ValueError as error:
+        print(f'REFUSED: {error}', file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':

@@ -44,7 +44,14 @@ def judge_config(args):
 
 
 def freeze(read, config, lean_version, criteria=None):
+    read = Path(read)
+    if not read.is_dir():
+        raise ValueError(f'Development corpus directory does not exist: {read}')
     rows = read_set(read)
+    batch_rows = sum(bool(line.strip()) for path in read.glob('batch*.jsonl')
+                     for line in path.read_text().splitlines())
+    if not rows or len(rows) != batch_rows:
+        raise ValueError('Development corpus must be nonempty and every batch row must have a recognized reading label')
     index = task_index()
     templates, groups = set(), set()
     for row in rows:
@@ -62,8 +69,10 @@ def freeze(read, config, lean_version, criteria=None):
 
 
 def check_frozen(protocol):
-    if protocol['schema'] != 'judge-holdout-v1' or protocol['source_sha256'] != source_hashes():
+    if protocol.get('schema') != 'judge-holdout-v1' or protocol.get('source_sha256') != source_hashes():
         raise ValueError('Judge implementation changed since freeze; use a new protocol and fresh holdout')
+    if protocol.get('development_rows', 0) <= 0:
+        raise ValueError('Frozen development corpus is empty; freeze a populated corpus and collect fresh reports')
 
 
 def check_rows(rows, protocol):
@@ -91,24 +100,37 @@ def check_rows(rows, protocol):
             raise ValueError(f"Previously seen report in row {row['id']}")
 
 
-def prepare(rows, protocol, out, seed=0):
+def prepare(rows, protocol, out, seed=0, *, descriptive=False):
+    """Prepare the same integrity-checked artifacts for acceptance or a small descriptive audit."""
     check_frozen(protocol)
     check_rows(rows, protocol)
-    if len(rows) < protocol['criteria']['min_rows']:
+    if descriptive:
+        if not 1 <= len(rows) <= 24:
+            raise ValueError('A small human audit is limited to 24 reports')
+    elif len(rows) < protocol['criteria']['min_rows']:
         raise ValueError('Not enough fresh rows for the frozen minimum')
     rows = sorted(rows, key=lambda r: r['id'])
     random.Random(seed).shuffle(rows)
     out.mkdir(parents=True, exist_ok=False)
     payload = ''.join(json.dumps(r, ensure_ascii=False)+'\n' for r in rows)
     (out/'rows.jsonl').write_text(payload)
-    (out/'manifest.json').write_text(json.dumps(dict(protocol=protocol, rows_sha256=digest(payload.encode()), seed=seed), indent=2)+'\n')
+    manifest = dict(protocol=protocol, rows_sha256=digest(payload.encode()), seed=seed,
+                    review_kind='descriptive' if descriptive else 'acceptance')
+    (out/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     # Keep verifier labels in rows.jsonl, never in the human's sheet.
     items = [dict(row, number=i) for i, row in enumerate(rows, 1)]
     (out/'sheet.md').write_text(review_sheet(items, include_established=True))
+    return manifest
 
 
-def load_review(out, config, lean_version):
+def load_review(out, config, lean_version, *, descriptive=False):
     manifest = json.loads((out/'manifest.json').read_text())
+    if 'protocol' not in manifest:
+        raise ValueError('Legacy audit manifest has no frozen protocol; preserve it as historical evidence, '
+                         'freeze a new protocol and collect fresh reports for --audit')
+    expected_kind = 'descriptive' if descriptive else 'acceptance'
+    if manifest.get('review_kind', 'acceptance') != expected_kind:
+        raise ValueError('Review mode differs from preparation; use --audit for descriptive audits and --holdout for acceptance')
     protocol = manifest['protocol']
     check_frozen(protocol)
     if config != protocol['config'] or lean_version != protocol['lean_version']:
@@ -118,6 +140,10 @@ def load_review(out, config, lean_version):
         raise ValueError('Holdout rows changed after preparation')
     rows = [json.loads(line) for line in payload.splitlines() if line.strip()]
     check_rows(rows, protocol)
+    if descriptive and not 1 <= len(rows) <= 24:
+        raise ValueError('A small human audit is limited to 24 reports')
+    if not descriptive and len(rows) < protocol['criteria']['min_rows']:
+        raise ValueError('Not enough fresh rows for the frozen minimum')
     sheet = (out/'sheet.md').read_text()
     answers = SHEET_ANSWER.findall(sheet)
     numbers = [int(n) for n, _ in answers]
@@ -132,12 +158,12 @@ def load_review(out, config, lean_version):
     labelled = [dict(r, category='human_'+claims[i], read_claim=claims[i]) for i, r in enumerate(rows, 1)]
     from .outcomes import honest
     honest_n = sum(honest(r['read_claim'], r['genuine']) for r in labelled)
-    if min(honest_n, len(rows)-honest_n) < protocol['criteria']['min_class']:
+    if not descriptive and min(honest_n, len(rows)-honest_n) < protocol['criteria']['min_class']:
         raise ValueError('Insufficient human reference-class support; no judge calls made')
     support = flag_support(r['read_claim'] for r in labelled)
-    if min(support.values()) < protocol['criteria']['min_class']:
+    if not descriptive and min(support.values()) < protocol['criteria']['min_class']:
         raise ValueError(f'Too few reports on one side of the flag {support}: a judge that always gives the other answer would pass; no judge calls made')
-    return labelled, protocol['criteria'], dict(manifest_sha256=digest((out/'manifest.json').read_bytes()),
+    return labelled, None if descriptive else protocol['criteria'], dict(manifest_sha256=digest((out/'manifest.json').read_bytes()),
                                                human_sheet_sha256=digest(sheet.encode()))
 
 

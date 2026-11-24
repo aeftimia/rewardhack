@@ -22,19 +22,23 @@ def main():
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--lean', help='Lean binary: with it, a declared different proposition is flagged in code before the judge is asked')
     ap.add_argument('--max-usd', type=float, help='stop a metered judge at this spend')
-    ap.add_argument('--holdout', type=Path, help='prepared holdout directory with completed blind sheet; enforces frozen configuration and acceptance')
+    review = ap.add_mutually_exclusive_group()
+    review.add_argument('--audit', type=Path, help='prepared small blind audit; descriptive comparison with no accuracy acceptance gate')
+    review.add_argument('--holdout', type=Path, help='prepared holdout directory with completed blind sheet; enforces frozen configuration and acceptance')
     ap.add_argument('--require-acceptance', action='store_true', help='exit nonzero unless all predeclared acceptance thresholds pass')
     add_arguments(ap)
     args = ap.parse_args()
     if args.judge == 'none':
         ap.error('choose a judge to validate')
     criteria, provenance = None, {}
-    if args.holdout:
+    if args.audit and args.require_acceptance:
+        ap.error('--audit is descriptive and cannot require accuracy acceptance')
+    if args.holdout or args.audit:
         if not args.lean or args.per_category:
-            ap.error('--holdout requires --lean and cannot be subsampled')
+            ap.error('--holdout/--audit requires --lean and cannot be subsampled')
         version = subprocess.check_output([args.lean, '--version'], text=True).strip()
         try:
-            rows, criteria, provenance = load_review(args.holdout, judge_config(args), version)
+            rows, criteria, provenance = load_review(args.holdout or args.audit, judge_config(args), version, descriptive=bool(args.audit))
         except ValueError as error:
             ap.error(str(error))
     else:
@@ -49,10 +53,16 @@ def main():
     result.update(judge=args.judge, model=args.judge_model, revision=args.judge_revision, per_category=args.per_category, seed=args.seed, statement_check=bool(args.lean), planned=len(rows),
                   seconds=time.perf_counter()-started, seconds_per_report=(time.perf_counter()-started)/max(len(rows), 1),
                   usage=judge.meter.totals if judge.meter else None)
-    result.update(acceptance(result, len(rows), criteria))
-    result.update(validation_kind='human_heldout' if args.holdout else 'development', **provenance)
+    if args.audit:
+        result.update(complete=result['rows'] == len(rows),
+                      interpretation='Descriptive human audit only; no accuracy acceptance or reliability claim.')
+    else:
+        result.update(acceptance(result, len(rows), criteria))
+    result.update(validation_kind='human_audit' if args.audit else 'human_heldout' if args.holdout else 'development', **provenance)
     (args.out/'summary.json').write_text(json.dumps(result, indent=1)+'\n')
     print(json.dumps(result, indent=1))
+    if args.audit and (not result['complete'] or result['unparsed']):
+        raise SystemExit(1)
     if (args.holdout or args.require_acceptance) and not result['accepted']:
         raise SystemExit(1)
 
