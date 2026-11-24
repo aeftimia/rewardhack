@@ -20,7 +20,7 @@ from . import budget, pilot
 _read = pilot.read_json
 # Signals that end the runner while a stage is live. SIGKILL cannot be caught: after it, the stage's
 # process group survives and has to be found and killed by hand before anything is resumed.
-_STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT)
+_STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT)
 
 
 def _usd(value):
@@ -123,12 +123,19 @@ def _execute(stage, log, timeout=None, reservation_key=None):
     """
     started = time.monotonic()
     with Path(log).open('xb') as sink:
-        stopping = []
+        # A stop raises only while the child is known and not yet being cleaned up. While it is being
+        # started (forked, `process` still unset) or killed, the signal is recorded and raised afterwards:
+        # raising there would leave the stage running with nobody holding its process group.
+        stopping, armed, raised = [], [], []
+        def stop():
+            raised.append(True)
+            return KeyboardInterrupt(f'pilot received {signal.Signals(stopping[0]).name}')
         def interrupted(number, frame):
             if stopping:  # one stop is enough: a second signal must not interrupt the cleanup
                 return
             stopping.append(number)
-            raise KeyboardInterrupt(f'pilot received {signal.Signals(number).name}')
+            if armed:
+                raise stop()
         # A signal the caller chose to ignore (nohup) stays ignored: the run was meant to outlive its terminal.
         previous = {number: signal.signal(number, interrupted) for number in _STOP_SIGNALS
                     if signal.getsignal(number) not in (signal.SIG_IGN, None)}  # None: installed outside Python, not restorable
@@ -140,15 +147,23 @@ def _execute(stage, log, timeout=None, reservation_key=None):
                 environment[budget.RESERVATION_ENV] = reservation_key
             process = subprocess.Popen(stage['argv'], stdout=sink, stderr=subprocess.STDOUT, env=environment,
                                        stdin=subprocess.DEVNULL, start_new_session=True)
+            armed.append(True)
+            if stopping and not raised:
+                raise stop()
             code = process.wait(timeout=stage['max_seconds'] if timeout is None else timeout)
             return dict(exit_code=code, timed_out=False, elapsed_seconds=time.monotonic()-started)
         except subprocess.TimeoutExpired:
             return dict(exit_code=None, timed_out=True, elapsed_seconds=time.monotonic()-started)
         finally:
-            if process is not None:
-                _terminate(process)
-            for number, handler in previous.items():
-                signal.signal(number, handler)
+            try:
+                armed.clear()
+            finally:
+                if process is not None:
+                    _terminate(process)
+                for number, handler in previous.items():
+                    signal.signal(number, handler)
+            if stopping and not raised:  # arrived during the cleanup: the pilot was still told to stop
+                raise stop()
 
 
 def _verify_inputs(spec, spec_path):

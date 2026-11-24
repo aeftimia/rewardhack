@@ -326,7 +326,7 @@ def test_reservation_registry_cannot_hide_cost_on_untracked_line(tmp_path, cheap
         runner.run(path, tmp_path/'out', execute=True)
 
 
-@pytest.mark.parametrize('number', [signal.SIGHUP, signal.SIGTERM, signal.SIGQUIT])
+@pytest.mark.parametrize('number', [signal.SIGHUP, signal.SIGTERM, signal.SIGQUIT, signal.SIGINT])
 def test_catchable_signal_to_runner_kills_the_detached_stage(tmp_path, number):
     marker = tmp_path/'stage-outlived-the-runner'
     stage = dict(argv=[sys.executable, '-c', f'import time; from pathlib import Path; time.sleep(1); Path({str(marker)!r}).touch()'],
@@ -398,6 +398,35 @@ def test_second_stop_signal_does_not_interrupt_the_cleanup(tmp_path):
     time.sleep(.001)
     process.send_signal(signal.SIGHUP)
     output, errors = process.communicate(timeout=15)  # a hang here is the defect
-    assert output.strip() == 'pilot received SIGTERM' and not errors
+    # Pending handlers run in signal-number order, so either signal may be the one reported.
+    assert output.strip() in ('pilot received SIGTERM', 'pilot received SIGHUP') and not errors
     time.sleep(1)
     assert not marker.exists()
+
+
+@pytest.mark.parametrize('moment', ['starting', 'cleaning'])
+def test_stop_signal_while_the_stage_is_started_or_cleaned_up_still_kills_it(tmp_path, monkeypatch, moment):
+    """A handler that raised here would skip the kill: mid-start `process` is unset, mid-cleanup the kill is the next statement."""
+    marker = tmp_path/'stage-outlived-the-runner'
+    hold = '2' if moment == 'starting' else '0'
+    stage = dict(argv=[sys.executable, '-c', f'import time; from pathlib import Path; time.sleep({hold}); Path({str(marker)!r}).touch()'],
+                 max_seconds=10)
+    if moment == 'starting':
+        real = subprocess._fork_exec
+        def fork_then_signal(*args, **kwargs):
+            result = real(*args, **kwargs)
+            os.kill(os.getpid(), signal.SIGTERM)  # handled before Popen returns
+            return result
+        monkeypatch.setattr(subprocess, '_fork_exec', fork_then_signal)
+    else:
+        real = runner._terminate
+        def signal_then_terminate(process):
+            os.kill(os.getpid(), signal.SIGTERM)
+            real(process)
+        monkeypatch.setattr(runner, '_terminate', signal_then_terminate)
+    before = signal.getsignal(signal.SIGTERM)
+    with pytest.raises(KeyboardInterrupt, match='pilot received SIGTERM'):
+        runner._execute(stage, tmp_path/'log')
+    assert signal.getsignal(signal.SIGTERM) is before
+    time.sleep(2.3 if moment == 'starting' else 0)
+    assert marker.exists() == (moment == 'cleaning')  # mid-start: killed before it wrote; mid-cleanup: it had finished
