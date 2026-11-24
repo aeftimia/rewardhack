@@ -7,9 +7,12 @@ costs. Moving money between lines is a budget change and is not something this m
 Money a provider returns is its own row with a negative total and a `status` that starts with `refund`, on the line it was charged to.
 """
 import csv
+import json
 import math
 import re
 from pathlib import Path
+
+from .json_objects import unique_object
 
 LEDGER = Path('spending/ledger.csv')  # relative to the project root; entrypoints pass an explicit path
 FIELDS = ['date', 'provider', 'model', 'purpose', 'resource', 'hours', 'hourly_usd', 'other_usd', 'total_usd', 'status', 'evidence', 'line']
@@ -18,11 +21,48 @@ LINES = {'gpt-oss-20b-gpu': 800.0, 'qwen3-32b-gpu': 900.0, 'api': 300.0, 'storag
 TOTAL_CAP = sum(LINES.values())
 
 
-def read_ledger(path=LEDGER):
+def reservation_path(ledger=LEDGER):
+    """Canonical adjacent registry shared by every grant-budget consumer."""
+    ledger = Path(ledger).resolve()
+    return ledger.with_name(ledger.name + '.pilot-reservations.json')
+
+
+def read_reservations(ledger=LEDGER):
+    """Read validated worst-case commitments; they never become negative credits."""
+    path = reservation_path(ledger)
     if not path.exists():
         return []
-    with path.open() as handle:
-        return list(csv.DictReader(handle))
+    records = json.loads(path.read_text(), object_pairs_hook=unique_object,
+                         parse_constant=lambda value: (_ for _ in ()).throw(ValueError(f'invalid JSON number {value}')))
+    if not isinstance(records, list):
+        raise ValueError('invalid pilot reservation registry')
+    keys = set()
+    for record in records:
+        if (not isinstance(record, dict) or set(record) != {'key', 'line', 'total_usd', 'status'}
+                or not isinstance(record['key'], str) or record['key'] in keys
+                or record['status'] != 'pilot worst-case reservation'
+                or not isinstance(record['line'], str) or record['line'] not in LINES
+                or type(record['total_usd']) not in (int, float)):
+            raise ValueError('invalid pilot reservation registry record')
+        keys.add(record['key'])
+    grant_spent(records)  # validates finite, nonnegative prices and totals
+    return records
+
+
+def read_ledger(path=LEDGER, *, include_reservations=True):
+    """Actual ledger rows plus conservative pilot commitments, without writing CSV.
+
+    Callers performing a reservation under its registry lock may explicitly read
+    CSV alone and append their already-validated registry snapshot. Existing
+    launch guards automatically see commitments from every pilot output folder.
+    """
+    path = Path(path).resolve()
+    rows = []
+    if path.exists():
+        with path.open() as handle:
+            rows = list(csv.DictReader(handle))
+    grant_spent(rows)  # refunds must be justified by actual charges, never by reservations
+    return rows + (read_reservations(path) if include_reservations else [])
 
 
 def nonnegative_finite(value, name):

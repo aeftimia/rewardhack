@@ -159,15 +159,21 @@ still receive zero reward under the existing rule.
 Generated and scored rows identify `report_mode`; rescoring and formal audit use that mode, with
 missing metadata interpreted as historical prose. The typed flag supplies the recorded claim;
 justification remains audit evidence rather than a second implicit success/failure signal. Do not
-pool typed and prose outcomes. Adding this switch neither launches a stage 2 run nor implements
-the Bayesian decision controller below, and grants no new spending authorization.
+pool typed and prose outcomes. Adding this switch does not launch a stage 2 run or grant new spending
+authorization. The separate bounded pilot controller is described below.
 
-### Sequential spending and Bayesian stopping — owner policy, 2026-11-24
+### Sequential spending and compute-aware stopping — owner policy, 2026-11-24
 
 The five settings and three seeds are a maximum design envelope, not a spending target. Train in short,
 checkpointed increments and evaluate at prespecified boundaries. Stop purchasing further training or
 evaluation for a question as soon as the evidence is sufficient, or continuing has little decision value.
 The same policy applies to later model families; replication has its own explicit generalization question.
+
+The owner clarified that early weak effects may strengthen with training. The implemented
+[bounded pilot](pilot-study.md) therefore measures an effect-versus-exposure curve and forecasts only
+over the remaining planned checkpoints. It does not stop for a broad negative conclusion merely
+because the current checkpoint has a weak result. A finite pilot can help choose useful-effect
+thresholds for a later, separately frozen confirmatory study.
 
 Before hypothesis-testing runs, freeze a small decision specification:
 
@@ -191,8 +197,11 @@ At each decision boundary, use the saved valid evaluation evidence once:
 
 1. **Evidence for:** stop the current question when `P(H | evidence) > 0.95`, with adequate support. For a compound success
    claim, use its joint posterior, not several separate 95% marginal probabilities.
-2. **Evidence against:** stop when `P(not H | evidence) > 0.95`. Report what was ruled out at the tested
-   exposure. This is not proof of an exactly zero effect or universal failure.
+2. **Evidence against at a fixed exposure:** `P(not H | evidence) > 0.95` concerns that exposure only.
+   It must not automatically terminate training at later exposures. The bounded pilot instead uses
+   **predicted futility**: an upper bound below 0.05 on reaching the defined target at any remaining
+   planned checkpoint, under every declared model sensitivity. This is a conditional forecast, not
+   proof of an exactly zero effect or universal failure.
 3. **Harm or measurement failure:** stop immediately at the prespecified harm boundary or on broken
    verification, excessive cutoffs/undecided rows, unstable generation, or corrupt judging. A broken
    experiment is inconclusive, not Bayesian evidence against the intervention.
@@ -214,13 +223,24 @@ merely to collect more evaluation samples from an already-saved checkpoint. Sequ
 untuned evaluation stream; retain a separate final check if claims require it, and never tune prompts
 or rewards on the decision stream.
 
-**Implementation status:** these are the new run requirements, not an already-implemented posterior
-controller. Existing deadline, budget, no-variation, cutoff, and verifier guards remain active. Before
-launching hypothesis-testing training, specify the numerical margins/model and implement and test the
-checkpoint decision controller, queued-stage cancellation, and stopping record (posterior, prior,
-evidence IDs, checkpoint, cost, reason). The short feasibility smoke test answers plumbing/throughput
-questions and must not be presented as 95% evidence for the intervention. No paid run is authorized by
-this planning change.
+**Implementation status:** `entrypoints/pilot.py` now composes the shared bounded-pilot libraries.
+The controller freezes the design, records paired evidence and posterior sensitivity results, reserves
+stage costs, and suppresses queued stages after a stop. Dollar and wall-time caps remain mandatory,
+and existing child-run deadline, budget, no-variation, cutoff and verifier guards remain active.
+The generic scheduler accepts bounded training/evaluation commands; legacy launch scripts do not
+silently opt into it. It does not terminate a paid pod or optimize the next allocation automatically.
+
+The exploratory example leaves useful-effect targets unset, so success and futility are disabled.
+Its explicit plateau margin is a planning choice, not an agreed scientific threshold. The curve model
+allows flat, delayed, saturating and declining trajectories, retains repeated-seed dependence, and
+uses conservative joint probability bounds. These are conditional approximate posteriors, not a
+universal RL scaling law or a calibrated 5% repeated-use error guarantee. Full operating details,
+model assumptions and local synthetic workflow are in [pilot-study.md](pilot-study.md).
+
+Before a paid study, freeze its numerical model, quality criteria, exposure axis, evaluation protocol,
+resource plan and caps, and inspect simulations appropriate to that design. The short feasibility
+smoke test remains a plumbing/throughput question and must not be presented as 95% evidence for the
+intervention. No paid run has been started or newly authorized by this implementation.
 
 ## Step 1 (free): verifier trust boundary, written down and attacked
 

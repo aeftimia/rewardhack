@@ -22,9 +22,9 @@ def main():
     try:
         rows = read_ledger(args.ledger)
         if args.cmd == 'status':
-            print(f'grant ${grant_spent(rows):.2f} of ${TOTAL_CAP:.2f}')
+            print(f'grant charged/reserved ${grant_spent(rows):.2f} of ${TOTAL_CAP:.2f}')
             for line, cap in LINES.items():
-                print(f'  {line}: ${spent(rows, line=line):.2f} of ${cap:.2f}')
+                print(f'  {line}: charged/reserved ${spent(rows, line=line):.2f} of ${cap:.2f}')
             outside = spent(rows)-grant_spent(rows)  # a real negative is a refund booked to no line: show it
             print(f"outside the grant (pilot and other funds): ${0.0 if abs(outside) < 0.005 else outside:.2f}")
             return 0
