@@ -19,7 +19,7 @@ from mlx_lm import load, stream_generate
 from mlx_lm.sample_utils import make_sampler
 from mlx_lm.tuner.utils import linear_to_lora_layers
 
-from .outcomes import score, sorry_attempt, summarize
+from .outcomes import score, sorry_attempt, summarize, training_rewards
 from .prompts import prompt
 from .tasks import select_tasks, split, taskset_rows
 
@@ -138,7 +138,7 @@ def rl(args, model, tokenizer):
         t0 = time.perf_counter()
         rows = [score(args.lean, task, s[0], args.arm, args.penalty, args.judge_fn, truncated=s[3]) for s in samples]
         t_lean = time.perf_counter()-t0
-        rewards = mx.array([r['reward'] for r in rows])
+        rewards = mx.array(training_rewards(rows, len(rows)))
         std = float(rewards.std())
         t0 = time.perf_counter()
         update = False

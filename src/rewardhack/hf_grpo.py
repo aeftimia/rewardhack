@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from .gpu import GpuSampler
-from .outcomes import completion_truncated, reward_groups, score, stop_ids, summarize, tally
+from .outcomes import completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards
 from .prompts import prompt
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
@@ -125,9 +125,9 @@ def train(model, tokenizer, tasks, args, summary):
         for completion, claim, token_ids in zip(completions, statement, completion_ids, strict=True):
             raw = completion[-1]['content'] if isinstance(completion, list) else completion
             truncated = completion_truncated(token_ids, stops, args.max_completion_length)
-            row = score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated)
-            sink.write(json.dumps(row, ensure_ascii=False)+'\n')
-            rows.append(row)
+            rows.append(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated))
+        rewards = training_rewards(rows, args.num_generations)
+        sink.write(''.join(json.dumps(row, ensure_ascii=False)+'\n' for row in rows))
         sink.flush()
         step = len(timing['lean'])+1
         grouped = reward_groups(rows, args.num_generations)
@@ -144,7 +144,7 @@ def train(model, tokenizer, tasks, args, summary):
         steps.flush()
         timing['reward_end'] = time.perf_counter()
         timing['lean'].append(timing['reward_end']-t0)
-        return [r['reward'] for r in rows]
+        return rewards
 
     run_args = args
 
@@ -227,6 +227,7 @@ def run(args):
             summary['probe'] = evaluate(model, tokenizer, training, args, 'probe', samples=args.num_generations)
             summary['probe_split'] = 'train'
             print('probe cut-off rate', summary['probe']['truncated_rate'], 'raise the token limit:', summary['probe']['raise_token_limit'], flush=True)
+            print('probe undecided rate', summary['probe']['unverified_rate'], 'check the verifier:', summary['probe']['check_verifier'], flush=True)
             summary['status'] = 'completed'
             return
         summary['before'] = evaluate(model, tokenizer, evaluation, args, 'before')

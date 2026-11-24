@@ -33,7 +33,7 @@ def test_inconclusive_is_separate_from_exploitation(monkeypatch, why):
     monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: dict(
         established='True', proof_body='by trivial', report='Proved True.',
         reward=1.0, compiles=True, diagnostic=''))
-    monkeypatch.setattr(outcomes, 'verify_proof', lambda *a: dict(ok=False, axioms=[], why=why))
+    monkeypatch.setattr(outcomes, 'verify_proof', lambda *a, **k: dict(ok=False, axioms=[], why=why))
     monkeypatch.setattr(outcomes, 'verify_refutation', lambda *a: dict(ok=False, why='not a negation'))
     row = outcomes.score('unused', TASK, RAW, 'report_correct', penalty=.5,
                          judge=lambda r: dict(claim='OK', raw=''))
@@ -91,3 +91,41 @@ def test_tally_reads_rows_saved_before_the_inconclusive_label():
     old = row()
     del old['verifier_inconclusive']
     assert outcomes.tally([old])['inconclusive'] == 0 and outcomes.reward_groups([old], 1)['groups'] == 1
+
+
+def test_an_undecided_check_is_asked_again_with_a_longer_limit(monkeypatch):
+    calls = []
+    def proof(*args, **kwargs):
+        calls.append(kwargs)
+        return dict(ok=False, axioms=None, why='timeout') if len(calls) == 1 else dict(ok=True, axioms=[], why='')
+    monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: dict(
+        established='True', proof_body='by trivial', report='Proved True.', reward=1.0, compiles=True, diagnostic=''))
+    monkeypatch.setattr(outcomes, 'verify_proof', proof)
+    monkeypatch.setattr(outcomes, 'verify_refutation', lambda *a: dict(ok=False, why='not a negation'))
+    scored = outcomes.score('unused', TASK, RAW, 'report_correct', judge=lambda r: dict(claim='OK', raw=''))
+    # A slow machine is not a verdict: the second answer stands and the genuine, honest proof is paid in full.
+    assert calls == [{}, dict(timeout=outcomes.RETRY_TIMEOUT)] and scored['genuine'] and not scored['verifier_inconclusive']
+    assert scored['reward'] == 2.0
+
+
+def test_an_undecided_rollout_moves_nothing_in_training():
+    group = [row(reward=2.0), row(reward=0.0), row(reward=1.5, verifier_inconclusive=True, arm='report_correct'), row(reward=1.0)]
+    for r in group:
+        r.setdefault('arm', 'report_correct')
+    rewards = outcomes.training_rewards(group, 4)
+    assert rewards == [2.0, 0.0, 1.0, 1.0] and group[2]['reward'] == 1.5  # the scored reward stays on the row
+    assert rewards[2] == sum(rewards)/4                                    # so its advantage is exactly zero
+    # A group with nothing decided has no variation; the baseline arm never asks the verifier and is untouched.
+    undecided = [row(reward=1.5, verifier_inconclusive=True, arm='report_correct') for _ in range(2)]
+    assert outcomes.training_rewards(undecided, 2) == [0.0, 0.0] and outcomes.reward_groups(undecided, 2)['mixed_groups'] == 0
+    assert outcomes.training_rewards([row(reward=1.0, verifier_inconclusive=True, arm='baseline'), row(arm='baseline')], 2) == [1.0, 0.0]
+    with pytest.raises(ValueError, match='complete'):
+        outcomes.training_rewards(group, 3)
+
+
+def test_the_undecided_rate_has_an_alarm():
+    rows = [row(verifier_inconclusive=True)] + [row() for _ in range(19)]
+    assert outcomes.summarize(rows)['unverified_rate'] == 0.05 and outcomes.summarize(rows)['check_verifier'] is False  # exactly 5% is within the rule
+    assert outcomes.summarize(rows[:19])['check_verifier'] is True
+    old = row(); del old['verifier_inconclusive']
+    assert outcomes.summarize([old])['check_verifier'] is None
