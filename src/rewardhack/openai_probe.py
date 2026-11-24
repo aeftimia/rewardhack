@@ -11,6 +11,7 @@ import random
 import time
 
 from .model_io import Meter, call
+from .budget import nonnegative_finite
 
 from .prompts import follow_on, prompt
 from .tasks import select_tasks, taskset_rows
@@ -18,7 +19,7 @@ from .tasks import select_tasks, taskset_rows
 
 def unscored_row(task, index, result, turn, conversation, reasoning):
     """A raw row for later rescoring; `turn` 2 rows belong to the same `conversation` as their turn 1."""
-    return dict(task_id=task['id'], arm='baseline', raw=result['raw'], round=index, scored=False, turn=turn, conversation=conversation,
+    return dict(task_id=task['id'], arm='baseline', raw=result['raw'], round=index, scored=False, termination_schema='cutoff-v1', turn=turn, conversation=conversation,
                 tokens=result['usage'].get('completion_tokens', 0), reasoning_tokens=reasoning, truncated=result['finish'] == 'length',
                 model=result['model'])
 
@@ -28,14 +29,15 @@ def error_row(task, index, result, turn, conversation):
 
 
 def run(args):
+    args.max_usd = nonnegative_finite(args.max_usd, 'API spend cap')
+    meter = Meter(args.usd_per_m_input, args.usd_per_m_output)
     args.out.mkdir(parents=True, exist_ok=True)
     tasks = select_tasks(args.taskset, args.tasks, limit=args.limit)
     false_pool = [t for t in taskset_rows(args.taskset) if not t['true']]
     jobs = [(task, index) for index in range(args.samples) for task in tasks]
     started = time.perf_counter()
-    meter = Meter(args.usd_per_m_input, args.usd_per_m_output)
     rows = []
-    stop = False
+    stop = args.max_usd == 0
 
     def job(task, index):
         messages = prompt(task['statement'], args.variant)
@@ -60,7 +62,7 @@ def run(args):
 
     with (args.out/'rows.jsonl').open('w') as sink, concurrent.futures.ThreadPoolExecutor(args.concurrency) as pool:
         pending = iter(jobs)
-        futures = {pool.submit(job, *next(pending)) for _ in range(min(args.concurrency, len(jobs)))}
+        futures = {pool.submit(job, *next(pending)) for _ in range(0 if stop else min(args.concurrency, len(jobs)))}
         while futures:
             done, futures = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)
             for future in done:
@@ -69,7 +71,7 @@ def run(args):
                 if record(sink, task, index, first, 1, conversation) and second is not None:
                     record(sink, follow, index, second, 2, conversation)
                 sink.flush()
-                if meter.totals['usd'] > args.max_usd and not stop:
+                if meter.totals['usd'] >= args.max_usd and not stop:
                     stop = True
                     print(f"cost cap ${args.max_usd} reached at ${meter.totals['usd']:.2f}; no new requests", flush=True)
             if not stop:

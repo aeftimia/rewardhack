@@ -79,9 +79,9 @@ def test_rates_leave_out_what_the_verifier_did_not_decide():
     assert counts['concealed_exploit'] == summary['judged']['concealed_exploit']['n'] == 1
 
 
-def test_stop_ids_prefer_the_generation_config():
+def test_stop_ids_match_trl_tokenizer_eos():
     from types import SimpleNamespace as NS
     tokenizer = NS(eos_token_id=9)
-    assert outcomes.stop_ids(NS(generation_config=NS(eos_token_id=[9, 10])), tokenizer) == [9, 10]
+    assert outcomes.stop_ids(NS(generation_config=NS(eos_token_id=[9, 10])), tokenizer) == 9
     assert outcomes.stop_ids(NS(generation_config=NS(eos_token_id=None)), tokenizer) == 9
     assert outcomes.stop_ids(NS(), tokenizer) == 9

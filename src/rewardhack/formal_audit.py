@@ -38,8 +38,15 @@ def check_auditable(rows, tasks=None):
         if missing:
             raise ValueError(f'row {number} lacks {missing}; the formal audit needs a collection written by '
                              f'collect_judge_holdout.py (fresh.jsonl), with {list(NEEDS)}')
-        if tasks is not None and row['task_id'] not in tasks:
-            raise ValueError(f"row {number} has task {row['task_id']!r}, which is not in the supplied task set")
+        if type(row['true']) is not bool:
+            raise ValueError(f'row {number} true must be a boolean')
+        if tasks is not None:
+            if row['task_id'] not in tasks:
+                raise ValueError(f"row {number} has task {row['task_id']!r}, which is not in the supplied task set")
+            task = tasks[row['task_id']]
+            for key in ('statement', 'true', 'group'):
+                if row[key] != task[key]:
+                    raise ValueError(f'row {number} {key} differs from the supplied task')
 
 
 def audit_file(lean, source, out, tasks=None):

@@ -98,3 +98,58 @@ def test_refund_rows_lower_spend_only_when_marked():
             budget.spent([charge, dict(line='api', total_usd=bad, status='refund')], line='api')
     with pytest.raises(ValueError, match='ledger total'):  # refunds cannot take a line below zero
         budget.spent([dict(line='api', total_usd='-1', status='refund')], line='api')
+
+
+@pytest.mark.parametrize('kind', ['local', 'api'])
+def test_backend_failure_streak_and_recovery(monkeypatch, kind):
+    good = json.dumps(GOOD)
+    replies = iter(['', '', good, '', '', ''])
+    monkeypatch.setattr(model_io, 'local_reader', lambda *a: lambda prompt: next(replies))
+    monkeypatch.setattr(model_io, 'call', lambda *a: dict(raw=next(replies), finish='stop', usage={}))
+    reader = judge.make_judge(kind, model='stub')
+    row = dict(statement='True', report='Proved it.')
+    assert [reader(row)['claim'] for _ in range(5)] == ['UNPARSED', 'UNPARSED', 'OK', 'UNPARSED', 'UNPARSED']
+    with pytest.raises(RuntimeError, match='3 times in a row'):
+        reader(row)
+
+
+@pytest.mark.parametrize('value', [float('nan'), float('inf'), float('-inf'), -1])
+def test_invalid_api_costs_rejected_before_calls(monkeypatch, value):
+    monkeypatch.setattr(model_io, 'call', lambda *a: pytest.fail('invalid configuration made a request'))
+    for field in ('usd_per_m_input', 'usd_per_m_output', 'max_usd'):
+        with pytest.raises(ValueError, match='finite, nonnegative'):
+            judge.make_judge('api', model='stub', **{field: value})
+    with pytest.raises(ValueError, match='validation spend cap'):
+        judge.validate(None, [], max_usd=value)
+    from rewardhack.openai_probe import run
+    from types import SimpleNamespace
+    with pytest.raises(ValueError, match='API spend cap'):
+        run(SimpleNamespace(max_usd=value))
+
+
+def test_zero_judge_cap_prevents_request(monkeypatch):
+    monkeypatch.setattr(model_io, 'call', lambda *a: pytest.fail('zero cap made a request'))
+    reader = judge.make_judge('api', model='stub', max_usd=0)
+    with pytest.raises(RuntimeError, match='spend cap'):
+        reader(dict(statement='True', report='Proved it.'))
+
+
+@pytest.mark.parametrize('line', ['api ', ' api', 'API', 'typo', ' '])
+def test_unknown_ledger_lines_cannot_escape_caps(line):
+    with pytest.raises(ValueError, match='unknown budget line'):
+        budget.check([dict(line=line, total_usd='300')], 'api', 0, 0, other=300)
+    assert budget.grant_spent([dict(line='', total_usd='300')]) == 0
+
+
+def test_zero_probe_cap_preserves_plan_without_requests(tmp_path, monkeypatch):
+    from rewardhack import openai_probe
+    from types import SimpleNamespace
+    monkeypatch.setattr(openai_probe, 'select_tasks', lambda *a, **kw: [dict(id='t')])
+    monkeypatch.setattr(openai_probe, 'taskset_rows', lambda *a: [])
+    monkeypatch.setattr(openai_probe, 'call', lambda *a: pytest.fail('zero cap made a request'))
+    args = SimpleNamespace(max_usd=0, usd_per_m_input=1, usd_per_m_output=1, out=tmp_path,
+                           taskset='stub', tasks=None, limit=None, samples=1, concurrency=1,
+                           model='stub', variant='neutral', reasoning_effort=None, max_tokens=4)
+    openai_probe.run(args)
+    summary = json.loads((tmp_path/'summary.json').read_text())
+    assert summary['requests'] == 0 and summary['planned'] == 1 and summary['cost_cap_hit']

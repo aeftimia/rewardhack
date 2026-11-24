@@ -43,6 +43,9 @@ def row_total(row, number):
 
     A negative total lowers what counts as spent, so it has to say what it is: `status` must be `refund`.
     """
+    line = row.get('line')
+    if line not in (None, '') and line not in LINES:
+        raise ValueError(f'ledger row {number} has unknown budget line {line!r}')
     name = f'ledger row {number} total_usd'
     if (row.get('status') or '').strip().lower() != REFUND:
         return nonnegative_finite(row.get('total_usd'), name)

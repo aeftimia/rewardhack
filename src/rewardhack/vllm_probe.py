@@ -56,7 +56,7 @@ def run(args):
                 for index, completion in enumerate(output.outputs):
                     t0 = time.perf_counter()
                     if args.lean == 'none':
-                        row = dict(task_id=task['id'], arm='baseline', raw=completion.text, scored=False)
+                        row = dict(task_id=task['id'], arm='baseline', raw=completion.text, scored=False, termination_schema='cutoff-v1')
                     else:
                         row = score(args.lean, task, completion.text, 'baseline', truncated=completion.finish_reason == 'length')
                     t_lean += time.perf_counter()-t0

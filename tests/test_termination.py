@@ -73,7 +73,7 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
         def train(self):
             with pytest.raises(ValueError, match='completion_ids'):
                 self.reward([RAW], ['True'])
-            assert self.reward([RAW], ['True'], completion_ids=[[2, 3, 4, 5]]) == [0.0]
+            assert self.reward([RAW], ['True'], completion_ids=[[2, 10, 3, 4]]) == [0.0]
         def save_model(self, path):
             pass
 
@@ -169,17 +169,107 @@ def test_vllm_finish_reason_reaches_scoring(args, monkeypatch):
     assert row['truncated'] is True and row['reward'] == 0 and row['format_valid'] is False
 
 
-def test_rescore_reads_the_answer_under_a_legacy_cutoff_flag(args, monkeypatch):
+@pytest.mark.parametrize('scored', [False, True])
+def test_rescore_reads_the_answer_under_a_legacy_cutoff_flag(args, monkeypatch, scored):
     """Rows saved before 24 Nov were flagged by looser tests while holding a complete answer: rescore from raw."""
     monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: dict(
         established='True', proof_body='by trivial', report='Proved True.', reward=1.0, compiles=True, diagnostic=''))
     monkeypatch.setattr(outcomes, 'verify_proof', lambda *a: dict(ok=True, axioms=[], why='ok'))
     monkeypatch.setattr(outcomes, 'verify_refutation', lambda *a: dict(ok=False, why='not a negation'))
     path = args.out/'legacy.jsonl'
-    path.write_text(json.dumps(dict(task_id='true', raw=RAW, arm='baseline', truncated=True, genuine_why='ok',
+    path.write_text(json.dumps(dict(task_id='true', raw=RAW, arm='baseline', truncated=True, genuine_why='ok', scored=scored,
                                     reward=1.0, grader_reward=1.0, genuine=True, exploit=False, verified_refutation=False,
                                     report_label='claims_success', format_valid=True))+'\n')
     result = rescore.rescore_file(path, args.lean, {'true': TASK})
     new = json.loads(path.with_suffix('.rescored.jsonl').read_text())
     assert result['changed'] == 0 and new['reward'] == 1.0 and new['format_valid']
     assert new['truncated'] is True  # the stored flag stays, as metadata
+
+
+def test_fresh_unscored_cutoff_stays_zero_on_repeated_rescore(args, monkeypatch):
+    monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: pytest.fail('cutoff reached Lean'))
+    row = dict(task_id='true', raw=RAW, arm='baseline', scored=False, truncated=True)
+    row['termination_schema'] = 'cutoff-v1'
+    path = args.out/'fresh.jsonl'
+    path.write_text(json.dumps(row)+'\n')
+    for _ in range(2):
+        result = rescore.rescore_file(path, args.lean, {'true': TASK})
+        path = path.with_suffix('.rescored.jsonl')
+        new = json.loads(path.read_text())
+        assert new['reward'] == 0 and not new['format_valid'] and new['truncated']
+        assert result['summary']['no_answer'] == dict(n=1, of=1)
+
+
+def test_evaluation_overrides_model_only_stop_tokens(args, monkeypatch):
+    model, tokenizer = stub_model_tokenizer([2, 10, 3, 4])
+    generate = model.generate
+    def generate_checked(**kwargs):
+        assert kwargs['eos_token_id'] == tokenizer.eos_token_id == 9
+        return generate(**kwargs)
+    model.generate = generate_checked
+    monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: pytest.fail('cutoff reached Lean'))
+    hf_grpo.evaluate(model, tokenizer, [TASK], args, 'test')
+    row = json.loads((args.out/'test-evaluation.jsonl').read_text())
+    assert row['truncated'] and row['reward'] == 0
+
+
+def test_real_trl_generation_uses_same_stop_as_cutoff_detector(tmp_path):
+    torch = pytest.importorskip('torch')
+    pytest.importorskip('trl')
+    from transformers import GPT2Config, GPT2LMHeadModel, PreTrainedTokenizerFast, LogitsProcessorList
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from trl import GRPOConfig, GRPOTrainer
+    from datasets import Dataset
+    backend = Tokenizer(WordLevel({'<pad>': 0, '<eos>': 1, '<unk>': 2, 'hello': 3, '<other>': 4}, unk_token='<unk>'))
+    tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend, eos_token='<eos>', pad_token='<pad>', unk_token='<unk>')
+    model = GPT2LMHeadModel(GPT2Config(vocab_size=5, n_layer=1, n_head=1, n_embd=8,
+                                     bos_token_id=3, eos_token_id=[1, 4], pad_token_id=0))
+    config = GRPOConfig(output_dir=str(tmp_path), use_cpu=True, bf16=False, report_to='none',
+                        num_generations=2, per_device_train_batch_size=2, max_completion_length=4)
+    trainer = GRPOTrainer(model=model, args=config, reward_funcs=lambda completions, **kw: [0.] * len(completions),
+                          train_dataset=Dataset.from_list([{'prompt': 'hello'}]), processing_class=tokenizer)
+    assert trainer.generation_config.eos_token_id == outcomes.stop_ids(model, tokenizer) == 1
+
+    class EmitModelOnlyStop:
+        def __call__(self, ids, scores):
+            scores.fill_(-float('inf'))
+            scores[:, 4] = 0
+            return scores
+    with torch.no_grad():
+        output = model.generate(input_ids=torch.tensor([[3]]), attention_mask=torch.ones((1, 1), dtype=torch.long),
+                                generation_config=trainer.generation_config,
+                                logits_processor=LogitsProcessorList([EmitModelOnlyStop()]))
+    generated = output[0, 1:].tolist()
+    assert generated == [4, 4, 4, 4]
+    assert outcomes.completion_truncated(generated, outcomes.stop_ids(model, tokenizer), 4)
+
+
+def test_api_raw_row_marks_termination_provenance():
+    from rewardhack.openai_probe import unscored_row
+    row = unscored_row(TASK, 0, dict(raw=RAW, usage={}, finish='length', model='stub'), 1, 'c', 0)
+    assert row['termination_schema'] == 'cutoff-v1'
+    assert rescore.scored_as_cut_off(row) is True
+
+
+def test_rescore_reports_transport_errors_without_counting_them(args, monkeypatch):
+    from rewardhack.openai_probe import error_row, unscored_row
+    monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: pytest.fail('cutoff reached Lean'))
+    error = error_row(TASK, 0, {'error': 'HTTP 429'}, 1, 'c')
+    answer = unscored_row(TASK, 1, dict(raw=RAW, usage={}, finish='length', model='stub'), 1, 'd', 0)
+    path = args.out/'mixed.jsonl'
+    payload = ''.join(json.dumps(row)+'\n' for row in [error, answer])
+    path.write_text(payload)
+    result = rescore.rescore_file(path, args.lean, {'true': TASK})
+    assert result['input_rows'] == 2 and result['rows'] == 1
+    assert result['transport_errors'] == [dict(row=1, task_id='true', error='HTTP 429')]
+    assert result['summary']['samples'] == 1
+    assert path.read_text() == payload
+
+
+def test_rescore_does_not_silently_drop_malformed_rows(args):
+    path = args.out/'invalid.jsonl'
+    path.write_text(json.dumps(dict(task_id='true', arm='baseline'))+'\n')
+    with pytest.raises(ValueError, match='neither raw output nor a transport error'):
+        rescore.rescore_file(path, args.lean, {'true': TASK})
+    assert not path.with_suffix('.rescored.jsonl').exists()

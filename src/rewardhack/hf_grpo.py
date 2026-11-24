@@ -78,7 +78,8 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
             t0 = time.perf_counter()
             with torch.inference_mode():
                 outputs = model.generate(**inputs, max_new_tokens=args.max_completion_length, do_sample=True, temperature=1.0, top_p=0.95,
-                                         top_k=20, num_return_sequences=samples, pad_token_id=tokenizer.pad_token_id)
+                                         top_k=20, num_return_sequences=samples, pad_token_id=tokenizer.pad_token_id,
+                                         eos_token_id=stop_ids(model, tokenizer))
             t_gen += time.perf_counter()-t0
             start = inputs['input_ids'].shape[1]
             for output in outputs:

@@ -139,3 +139,16 @@ def test_formal_audit_refuses_before_writing(tmp_path, change, message):
     with pytest.raises(ValueError, match=message):
         audit_file('no-lean', tmp_path/'rows.jsonl', tmp_path/'out', {'known': {}})
     assert not (tmp_path/'out').exists()  # a retry is not blocked by a half-written directory
+
+
+@pytest.mark.parametrize('field,value', [('statement', 'False'), ('true', False), ('true', 1), ('group', 'other')])
+def test_formal_audit_rejects_misjoined_task_before_writing(tmp_path, field, value):
+    task = dict(id='known', group='g', statement='True', true=True, reference='by trivial')
+    row = dict(id='r', task_id='known', group='g', statement='True', raw='{}', true=True,
+               genuine=False, exploit=False, verified_refutation=False)
+    row[field] = value
+    source = tmp_path/'rows.jsonl'
+    source.write_text(json.dumps(row)+'\n')
+    with pytest.raises(ValueError, match=field):
+        audit_file('must-not-run', source, tmp_path/'out', {'known': task})
+    assert not (tmp_path/'out').exists()

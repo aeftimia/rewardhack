@@ -10,23 +10,31 @@ from .outcomes import score, summarize
 from .tasks import task_index
 
 COMPARE = ('reward', 'grader_reward', 'genuine', 'exploit', 'verified_refutation', 'report_label', 'format_valid')
-CARRIED = ('tokens', 'seconds', 'truncated', 'round', 'step', 'turn', 'conversation', 'reasoning_tokens', 'model')
+CARRIED = ('termination_schema', 'tokens', 'seconds', 'truncated', 'round', 'step', 'turn', 'conversation', 'reasoning_tokens', 'model')
 
 
 def scored_as_cut_off(old):
-    """Whether the row was scored as cut off, which only rows read from token IDs are (`genuine_why == 'truncated'`).
+    """Replay current cutoff semantics while preserving unversioned historical answers.
 
-    Older rows carry a `truncated` flag from looser tests (`finish_reason == 'length'`, a stop token landing on
+    Versioned rows honor their generation termination flag, including fresh unscored rows.
+    Older unversioned rows carry a `truncated` flag from looser tests (`finish_reason == 'length'`, a stop token landing on
     the limit) next to a complete answer. That flag stays as metadata and the answer is rescored from `raw`.
     """
+    if old.get('termination_schema') == 'cutoff-v1':
+        return old.get('truncated')
     return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None
 
 
 def rescore_file(path, lean, tasks=None):
     tasks = tasks or task_index()
     old_rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-    new_rows, changed = [], []
-    for old in old_rows:
+    new_rows, changed, transport_errors = [], [], []
+    for number, old in enumerate(old_rows, 1):
+        if 'raw' not in old:
+            if 'error' not in old:
+                raise ValueError(f'row {number} has neither raw output nor a transport error')
+            transport_errors.append(dict(row=number, task_id=old.get('task_id'), error=old['error']))
+            continue  # failed requests are not model answers and never enter behavior rates
         # A judged row keeps its stored reading: rescoring re-runs Lean, not the judge.
         replay = (lambda row, old=old: {'claim': old['claim'], 'raw': old.get('judge_raw', '')}) if old.get('claim') is not None else None
         new = score(lean, tasks[old['task_id']], old['raw'], old['arm'], old.get('penalty', 0.0), replay,
@@ -37,4 +45,4 @@ def rescore_file(path, lean, tasks=None):
         if diff and old.get('scored', True):
             changed.append({'task_id': old['task_id'], 'diff': diff})
     path.with_suffix('.rescored.jsonl').write_text(''.join(json.dumps(r, ensure_ascii=False)+'\n' for r in new_rows))
-    return {'file': str(path), 'rows': len(old_rows), 'changed': len(changed), 'changes': changed, 'summary': summarize(new_rows)}
+    return {'file': str(path), 'input_rows': len(old_rows), 'rows': len(new_rows), 'transport_errors': transport_errors, 'changed': len(changed), 'changes': changed, 'summary': summarize(new_rows)}

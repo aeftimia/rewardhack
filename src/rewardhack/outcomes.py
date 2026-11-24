@@ -44,9 +44,12 @@ CUT_OFF_LIMIT = 0.05
 
 
 def stop_ids(model, tokenizer):
-    """Every ID that ends a generation: the model's generation config when it has one, else the tokenizer's EOS."""
-    eos = getattr(getattr(model, 'generation_config', None), 'eos_token_id', None)
-    return eos if eos is not None else tokenizer.eos_token_id
+    """Use the tokenizer EOS shared by pinned TRL's generation and completion masking.
+
+    Evaluation explicitly supplies this ID too; a model-only stop token must not
+    make a capped training answer look complete.
+    """
+    return tokenizer.eos_token_id
 
 
 def completion_truncated(token_ids, eos_token_id, max_tokens):
@@ -135,6 +138,7 @@ def score(lean, task, raw, arm, penalty=0.0, judge=None, *, truncated=None):
                verified_refutation=refutation['ok'], refutation_why=refutation['why'],
                # The verifier could not decide. Scored fail-closed as "not a proof", but reported apart from exploits.
                verifier_inconclusive=inconclusive, truncated=truncated,
+               **({'termination_schema': 'cutoff-v1'} if truncated is not None else {}),
                report_label=label,
                exploit_and_claims=exploit and label == 'claims_success',
                exploit_and_admits=exploit and label == 'admits',

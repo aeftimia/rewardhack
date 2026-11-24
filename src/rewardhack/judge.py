@@ -24,6 +24,8 @@ import re
 from collections import Counter
 from types import SimpleNamespace
 
+from .budget import nonnegative_finite
+
 CLAIMS = ('OK', 'ERROR')
 # The judge fills in a checklist and the flag is built from it in code: ERROR when any check is true.
 CHECKS = {
@@ -128,17 +130,6 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
                            extra_body={'response_format': SCHEMA, **extra})
 
     meter.totals.update(truncated=0, unreadable=0, last_error=None)
-    streak = [0]
-
-    def failed(why):
-        # One bad call is scored UNPARSED (never honest). A run of them means the judge is down, the key is bad or
-        # the replies do not fit: stop, because every reward would silently lose its honesty term.
-        streak[0] += 1
-        meter.totals['last_error'] = why
-        if streak[0] >= MAX_STREAK:
-            raise RuntimeError(f'judge failed {streak[0]} times in a row; last: {why}')
-        return ''
-
     def ask(prompt):
         if max_usd is not None and meter.totals['usd'] >= max_usd:
             raise RuntimeError(f"judge spend cap ${max_usd} reached at ${meter.totals['usd']:.2f}")  # stop the run: an unjudged reward is not a reward
@@ -146,22 +137,20 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
         meter.totals['requests'] += 1
         if 'error' in result:
             meter.totals['errors'] += 1
-            return failed(result['error'])
+            return '', result['error']
         meter.add(result['usage'])
         if result.get('finish') == 'length':
             meter.totals['truncated'] += 1
-            return failed(f'reply cut off at {ANSWER_TOKENS} tokens')
-        if checks_of(result.get('raw')) is None:
-            meter.totals['unreadable'] += 1  # the judge answered; `errors` stays the count of calls that did not
-            return failed('reply contains no valid complete checklist')
-        streak[0] = 0
-        return result['raw']
+            return '', f'reply cut off at {ANSWER_TOKENS} tokens'
+        return result['raw'], None
     return ask, meter
 
 
 def make_judge(kind, model=None, revision=None, base_url='https://api.openai.com/v1', key_env='OPENAI_API_KEY',
                usd_per_m_input=0.0, usd_per_m_output=0.0, extra=None, max_usd=None):
     """A judge callable, or None for kind 'none'. `judge.meter` carries token and dollar totals for `api`."""
+    if max_usd is not None:
+        max_usd = nonnegative_finite(max_usd, 'judge spend cap')
     if kind == 'none':
         return None
     if kind == 'triage':
@@ -175,11 +164,28 @@ def make_judge(kind, model=None, revision=None, base_url='https://api.openai.com
     from .model_io import local_reader
     ask, meter = (local_reader(model, revision, ANSWER_TOKENS), None) if kind == 'local' else _api(model, base_url, key_env, usd_per_m_input, usd_per_m_output, extra or {}, max_usd)
 
+    streak = 0
+
     def judge(row):
+        nonlocal streak
         if not (row.get('report') or '').strip():
             return {'claim': 'OK', 'raw': ''}  # nothing to read, so no flag: not a question for a model
-        raw = ask(judge_prompt(row))
-        return {'claim': claim_of(raw), 'raw': compact(raw)}
+        result = ask(judge_prompt(row))
+        raw, error = (result, None) if kind == 'local' else result
+        claim = claim_of(raw)
+        if error is None and claim == 'UNPARSED':
+            error = 'reply contains no valid complete checklist'
+            if meter:
+                meter.totals['unreadable'] += 1
+        if error is not None:
+            streak += 1
+            if meter:
+                meter.totals['last_error'] = error
+            if streak >= MAX_STREAK:
+                raise RuntimeError(f'judge failed {streak} times in a row; last: {error}')
+            return {'claim': 'UNPARSED', 'raw': compact(raw)}
+        streak = 0
+        return {'claim': claim, 'raw': compact(raw)}
     judge.meter = meter
     return judge
 
@@ -288,6 +294,8 @@ def agreement(judged):
 
 def validate(judge, rows, sink=None, max_usd=None):
     """Judge every row and compare with the read labels. Stops asking once a metered judge has spent `max_usd`."""
+    if max_usd is not None:
+        max_usd = nonnegative_finite(max_usd, 'validation spend cap')
     judged = []
     for row in rows:
         if max_usd is not None and judge.meter and judge.meter.totals['usd'] >= max_usd:

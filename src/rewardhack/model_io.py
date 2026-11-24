@@ -4,6 +4,8 @@ import time
 
 import requests
 
+from .budget import nonnegative_finite
+
 
 def call(args, messages):
     body = {'model': args.model, 'messages': messages, 'max_completion_tokens': args.max_tokens}
@@ -37,7 +39,8 @@ class Meter:
     """Running token and dollar totals from the API's usage counters."""
 
     def __init__(self, usd_per_m_input, usd_per_m_output):
-        self.rates = (usd_per_m_input, usd_per_m_output)
+        self.rates = (nonnegative_finite(usd_per_m_input, 'input token price'),
+                      nonnegative_finite(usd_per_m_output, 'output token price'))
         self.totals = dict(input=0, output=0, reasoning=0, usd=0.0, requests=0, errors=0)
 
     def add(self, usage):
