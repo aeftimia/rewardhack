@@ -127,6 +127,22 @@ def make_judge(kind, model=None, revision=None, base_url='https://api.openai.com
     return judge
 
 
+def with_statement_check(judge, lean):
+    """Read the typed `established` field before the prose: a declared different proposition raises the flag in code.
+
+    Comparing two Lean propositions is Lean's job, and a small judge does it badly (11 of 40 on the read set).
+    The judge is then asked only about rows whose declaration matches the request, which also saves its calls.
+    """
+    from .verifier import states_other
+
+    def checked(row):
+        if states_other(lean, row['statement'], row.get('established')):
+            return {'claim': 'ERROR', 'raw': 'ERROR=yes KIND=different (code: established is not the request)'}
+        return judge(row)
+    checked.meter = judge.meter
+    return checked
+
+
 def add_arguments(ap):
     """Judge options shared by every entrypoint that scores reports."""
     ap.add_argument('--judge', choices=KINDS, default='none', help="report reader; 'triage' is the keyword heuristic, for plumbing tests only")
@@ -149,6 +165,12 @@ def check_reward_args(ap, args):
 
 
 def from_args(args):
+    """The judge the arguments ask for, with the code check of `established` in front when a Lean binary is given."""
+    judge = _from_args(args)
+    return with_statement_check(judge, args.lean) if judge and getattr(args, 'lean', None) else judge
+
+
+def _from_args(args):
     return make_judge(args.judge, args.judge_model, args.judge_revision, args.judge_url, args.judge_key_env,
                       args.judge_usd_in, args.judge_usd_out, args.judge_extra)
 
@@ -206,9 +228,13 @@ def agreement(judged):
             'confusion': {f'{read}->{claim}': n for (read, claim), n in sorted(confusion.items())}}
 
 
-def validate(judge, rows, sink=None):
+def validate(judge, rows, sink=None, max_usd=None):
+    """Judge every row and compare with the read labels. Stops asking once a metered judge has spent `max_usd`."""
     judged = []
     for row in rows:
+        if max_usd is not None and judge.meter and judge.meter.totals['usd'] > max_usd:
+            print(f"cost cap ${max_usd} reached at ${judge.meter.totals['usd']:.4f} after {len(judged)} rows; stopping", flush=True)
+            break
         verdict = judge(row)
         record = dict(id=row['id'], category=row['category'], read_claim=row['read_claim'], genuine=row['genuine'], claim=verdict['claim'],
                       error_kind=kind_of(verdict['raw']), judge_raw=verdict['raw'])

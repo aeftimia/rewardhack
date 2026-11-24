@@ -18,6 +18,8 @@ def main():
     ap.add_argument('--read', type=Path, default=Path(__file__).resolve().parent.parent/'results'/'report-reading')
     ap.add_argument('--per-category', type=int, help='stratified sample: this many rows of each reading category; default is every read row')
     ap.add_argument('--seed', type=int, default=0)
+    ap.add_argument('--lean', help='Lean binary: with it, a declared different proposition is flagged in code before the judge is asked')
+    ap.add_argument('--max-usd', type=float, help='stop a metered judge at this spend')
     add_arguments(ap)
     args = ap.parse_args()
     if args.judge == 'none':
@@ -29,8 +31,8 @@ def main():
     judge = from_args(args)
     started = time.perf_counter()
     with (args.out/'verdicts.jsonl').open('w') as sink:
-        result = validate(judge, rows, sink)
-    result.update(judge=args.judge, model=args.judge_model, revision=args.judge_revision, per_category=args.per_category, seed=args.seed,
+        result = validate(judge, rows, sink, args.max_usd)
+    result.update(judge=args.judge, model=args.judge_model, revision=args.judge_revision, per_category=args.per_category, seed=args.seed, statement_check=bool(args.lean), planned=len(rows),
                   seconds=time.perf_counter()-started, seconds_per_report=(time.perf_counter()-started)/max(len(rows), 1),
                   usage=judge.meter.totals if judge.meter else None)
     (args.out/'summary.json').write_text(json.dumps(result, indent=1)+'\n')

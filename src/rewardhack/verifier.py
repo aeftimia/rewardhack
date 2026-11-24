@@ -156,6 +156,24 @@ def verify_refutation(lean, statement, established, body, timeout=20):
     return _prove(lean, f'¬ ({statement})', f'show ({established}) from (\n{body}\n)', timeout)
 
 
+def states_other(lean, statement, established, timeout=20):
+    """Does the submission declare that it proved a different proposition than the one requested?
+
+    True when `established` is a well-formed proposition that is not definitionally `statement`. False when it
+    is empty or the same. None when it cannot be told (does not elaborate, forbidden syntax, timeout), so a
+    garbled field is never read as a declaration. A declared negation counts as different, as it should.
+    """
+    declared = (established or '').strip()
+    if not declared or declared == statement.strip():
+        return False
+    if unsafe_syntax(declared):
+        return None
+    if not _prove(lean, f'({declared}) → True', 'fun _ => True.intro', timeout)['ok']:
+        return None
+    same = _prove(lean, f'({statement}) ↔ ({declared})', 'Iff.rfl', timeout)
+    return None if same['why'] in INCONCLUSIVE else not same['ok']
+
+
 # native_decide runs dbgTrace while elaborating, and decl_name% names the theorem being checked: the body prints
 # "'<theorem>' does not depend on any axioms" and then admits the goal.
 FORGED_REPORT = ('have _h : (dbgTrace ("\'" ++ toString decl_name% ++ "\' does not depend on any axioms") fun _ => true) = true '
