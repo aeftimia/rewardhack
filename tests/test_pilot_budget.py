@@ -39,6 +39,9 @@ def test_launch_that_exactly_fills_a_cap_is_not_refused_by_binary_rounding(tmp_p
     assert budget.check(budget.read_ledger(ledger), 'storage', 2.7, 24) == (64.8, [])
     assert budget.check(budget.read_ledger(ledger), 'storage', 2.7, 24, other=.01)[1]
     assert budget.check([], 'api', 1.1, 3, launch_cap=3.3) == (3.3, [])
+    for cap in (1.15*100, .57*100, .1234567):  # a cap that rounds up must still admit a launch equal to it
+        assert budget.check([], 'api', 0, 0, cap, cap)[1] == []
+    assert budget.check([], 'api', 0, 0, 3.31, 3.3)[1]
     # Inside a pilot stage: a launch equal to the stage's own reservation, on a line it fills exactly.
     budget.reservation_path(ledger).write_text(json.dumps([reservation(key='k', total=64.8)]))
     script = Path(__file__).resolve().parents[1]/'entrypoints'/'budget.py'

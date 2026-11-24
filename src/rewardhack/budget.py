@@ -143,7 +143,7 @@ def check(rows, line, hourly, hours, other=0.0, launch_cap=None):
     hours = nonnegative_finite(hours, 'maximum hours')
     other = nonnegative_finite(other, 'other costs')
     if launch_cap is not None:
-        launch_cap = nonnegative_finite(launch_cap, 'launch cap')
+        launch_cap = round(nonnegative_finite(launch_cap, 'launch cap'), 6)  # same precision as the worst case it bounds
     # Dollars at the ledger's precision, as in `spent`: 2.7*24 is not 64.8 in binary, and a launch that exactly fills a cap is allowed.
     worst = round(nonnegative_finite(hourly*hours+other, 'worst-case cost'), 6)
     problems = []
