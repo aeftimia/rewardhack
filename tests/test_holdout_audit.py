@@ -184,3 +184,14 @@ def test_collector_refuses_overlapping_directories_before_generating(tmp_path, m
     with pytest.raises(SystemExit):
         runpy.run_path(str(ROOT/'entrypoints/collect_judge_holdout.py'), run_name='__main__')
     assert 'separate directories' in capsys.readouterr().err
+
+
+def test_formal_audit_refuses_a_cut_off_file_and_a_mistyped_flag(tmp_path):
+    from rewardhack.formal_audit import Unauditable
+    good = dict(id='r', task_id='known', group='g', statement='True', raw='{}', true=True, genuine=False, exploit=False,
+                verified_refutation=False)
+    for text, message in ((json.dumps(good)+'\n{"id": ', 'line 2 .* is not JSON'), (json.dumps(dict(good, truncated='false')), 'truncated')):
+        (tmp_path/'rows.jsonl').write_text(text)
+        with pytest.raises(Unauditable, match=message):
+            audit_file('no-lean', tmp_path/'rows.jsonl', tmp_path/'out')
+        assert not (tmp_path/'out').exists()

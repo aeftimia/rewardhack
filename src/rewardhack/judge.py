@@ -75,28 +75,35 @@ def judge_prompt(row):
                          checks='\n'.join(f'- "{name}": {meaning}' for name, meaning in CHECKS.items()), keys=', '.join(f'"{name}"' for name in CHECKS))
 
 
-BROKEN_OBJECT = re.compile(r'\{\s*"')  # how a JSON object starts; an aside like {note} does not
+def closing_brace(text, start):
+    """Index of the brace that closes the one at `start`, counted without regard to strings, or None when nothing does."""
+    depth = 0
+    for index in range(start, len(text)):
+        depth += (text[index] == '{') - (text[index] == '}')
+        if depth == 0:
+            return index
+    return None
 
 
 def reply_objects(text):
-    """The top-level JSON objects in a judge's reply, in order, or None when one of them is malformed.
+    """The top-level JSON objects in a judge's reply, in order, or None when a brace is left open.
 
-    A reply may carry thinking text or an aside with braces of its own. But an object that starts like JSON and
-    does not parse (cut off, or broken) is never searched for a checklist inside it: a draft quoted in a broken
-    answer is not the answer.
+    A reply may carry thinking text or an aside with braces of its own: a braced span that is not JSON is
+    skipped whole, so nothing inside it is read. A brace that never closes (a cut-off answer), or a span that
+    is not JSON and names a check (a broken answer), makes the reply unreadable: a draft or an example beside
+    a broken answer is not the answer.
     """
     decoder, found, start = json.JSONDecoder(), [], 0
     text = text if isinstance(text, str) else ''
     while (start := text.find('{', start)) != -1:
         try:
-            value, end = decoder.raw_decode(text, start)
+            value, start = decoder.raw_decode(text, start)
+            found.append(value)
         except ValueError:
-            if BROKEN_OBJECT.match(text, start):
+            end = closing_brace(text, start)
+            if end is None or any(f'"{name}"' in text[start:end] for name in CHECKS):
                 return None
-            start += 1
-            continue
-        found.append(value)
-        start = end
+            start = end+1
     return found
 
 
@@ -124,8 +131,17 @@ def kinds_of(text):
     return [name for name, value in (checks_of(text) or {}).items() if value]
 
 
+def kinds_for(verdict):
+    """The kinds recorded with a verdict. An unreadable reply has none, whatever its stored first characters contain."""
+    return [] if verdict['claim'] == 'UNPARSED' else kinds_of(verdict['raw'])
+
+
 def compact(text):
-    """What is stored per row: the notes and the five answers when the reply parsed, else its first characters."""
+    """What is stored per row: the notes and the five answers when the reply parsed, else its first characters.
+
+    Those first characters are evidence, not a reading: they may hold a clean checklist whose contradiction came
+    later. The row's `claim` is the verdict; `kinds_for` never derives kinds from an unreadable reply.
+    """
     if checks_of(text) is None:
         return (text or '').strip()[:200]  # unreadable: keep what was said, never one object picked out of it
     reply = next(r for r in reply_objects(text) if any(k in r for k in CHECKS))
@@ -239,6 +255,17 @@ def check_reward_args(ap, args):
         ap.error("--judge triage is the keyword heuristic: it may only read reports in a plumbing run marked --dry-run")
 
 
+def check_arguments(ap, args, **caps):
+    """Refuse bad prices and caps as a usage error, before an entrypoint creates anything. `caps` are its own spend caps."""
+    values = {'--judge-usd-in': args.judge_usd_in, '--judge-usd-out': args.judge_usd_out, '--judge-max-usd': args.judge_max_usd, **caps}
+    for name, value in values.items():
+        try:
+            if value is not None:
+                nonnegative_finite(value, name)
+        except ValueError as error:
+            ap.error(str(error))
+
+
 def from_args(args):
     """The judge the arguments ask for, with the code check of `established` in front when a Lean binary is given."""
     judge = _from_args(args)
@@ -314,7 +341,7 @@ def validate(judge, rows, sink=None, max_usd=None):
             break
         verdict = judge(row)
         record = dict(id=row['id'], category=row['category'], read_claim=row['read_claim'], genuine=row['genuine'], claim=verdict['claim'],
-                      error_kinds=kinds_of(verdict['raw']), judge_raw=verdict['raw'])
+                      error_kinds=kinds_for(verdict), judge_raw=verdict['raw'])
         judged.append(record)
         if sink:
             sink.write(json.dumps(record, ensure_ascii=False)+'\n')

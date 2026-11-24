@@ -11,20 +11,21 @@ def audit_row(lean, row):
     task = dict(id=row['task_id'], group=row['group'], tier=row.get('tier', 'audit'),
                 true=row['true'], statement=row['statement'])
     checked = score(lean, task, row['raw'], 'baseline', truncated=row.get('truncated'))
+    no_report = not (checked['report'] or '').strip()
     declared = checked['established']
     other = states_other(lean, task['statement'], declared)
     relation = 'empty' if not declared.strip() else 'unresolved' if other is None else 'different' if other else 'matches'
     declared_proof = verify_proof(lean, declared, checked['body']) if relation in ('matches', 'different') else None
     # A different valid declaration is sufficient for the pipeline's ERROR flag.
     # Otherwise Lean says nothing about what the natural-language report communicates.
-    flag = 'ERROR' if other is True else 'OK' if not (checked['report'] or '').strip() else None
+    flag = 'ERROR' if other is True else 'OK' if no_report else None
     return dict(id=row['id'], number=row.get('number'), task_id=row['task_id'],
                 genuine=checked['genuine'], genuine_why=checked['genuine_why'],
                 grader_pass=bool(checked['grader_reward']), exploit=checked['exploit'],
                 verified_refutation=checked['verified_refutation'], refutation_why=checked['refutation_why'],
                 declaration_relation=relation, declared_proof=declared_proof,
                 machine_determined_flag=flag, needs_prose_reading=flag is None,
-                inconclusive=checked['verifier_inconclusive'],
+                inconclusive=checked['verifier_inconclusive'], no_report=no_report,
                 agrees_with_saved_verdicts=all(checked[k] == row[k] for k in ('genuine', 'exploit', 'verified_refutation')))
 
 
@@ -48,6 +49,7 @@ def check_auditable(rows, tasks=None):
             raise Unauditable(f'row {number} lacks {missing}; the formal audit needs a collection written by '
                               f'collect_judge_holdout.py (fresh.jsonl or attempts.jsonl), with {list(NEEDS)}')
         wrong = [key for key, kind in TYPES.items() if type(row[key]) is not kind]
+        wrong += ['truncated'] if type(row.get('truncated')) not in (bool, type(None)) else []
         if wrong:
             raise Unauditable(f'row {number} has the wrong type in {wrong}')
         if tasks is not None:
@@ -62,7 +64,12 @@ def check_auditable(rows, tasks=None):
 def audit_file(lean, source, out, tasks=None):
     """Write per-row Lean findings and aggregate counts; never assign prose or human labels."""
     source, out = Path(source), Path(out)
-    rows = [json.loads(line) for line in source.read_text().splitlines() if line.strip()]
+    rows = []
+    for number, line in enumerate(source.read_text().splitlines(), 1):
+        try:
+            rows += [json.loads(line)] if line.strip() else []
+        except ValueError:
+            raise Unauditable(f'line {number} of {source} is not JSON') from None
     check_auditable(rows, tasks)
     if out.exists():
         raise Unauditable(f'{out} already exists; choose a new directory')
@@ -78,9 +85,9 @@ def audit_file(lean, source, out, tasks=None):
                 result['reference_verified'] = reference['ok']
             checked.append(result)
             sink.write(json.dumps(result)+'\n'); sink.flush()
-    summary = dict(reports=len(checked), no_report=sum(not (r.get('report') or '').strip() for r in rows),
+    summary = dict(reports=len(checked),
                    counts={key: sum(bool(r[key]) for r in checked) for key in
-                           ('genuine', 'grader_pass', 'exploit', 'verified_refutation', 'needs_prose_reading', 'inconclusive', 'agrees_with_saved_verdicts')},
+                           ('genuine', 'grader_pass', 'exploit', 'verified_refutation', 'needs_prose_reading', 'no_report', 'inconclusive', 'agrees_with_saved_verdicts')},
                    declaration_relations=dict(Counter(r['declaration_relation'] for r in checked)),
                    machine_determined_flags=dict(Counter(r['machine_determined_flag'] or 'requires_prose_reading' for r in checked)),
                    declared_proofs_verified=sum(bool(r['declared_proof'] and r['declared_proof']['ok']) for r in checked),

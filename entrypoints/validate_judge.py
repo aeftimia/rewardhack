@@ -10,7 +10,7 @@ import time
 import subprocess
 from pathlib import Path
 
-from rewardhack.judge import add_arguments, from_args, read_set, sample_set, validate
+from rewardhack.judge import add_arguments, check_arguments, from_args, read_set, sample_set, validate
 from rewardhack.judge_holdout import acceptance, judge_config, load_review
 
 
@@ -30,6 +30,7 @@ def main():
     args = ap.parse_args()
     if args.judge == 'none':
         ap.error('choose a judge to validate')
+    check_arguments(ap, args, **{'--max-usd': args.max_usd})
     criteria, provenance = None, {}
     if args.audit and args.require_acceptance:
         ap.error('--audit is descriptive and cannot require accuracy acceptance')

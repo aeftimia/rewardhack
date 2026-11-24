@@ -149,8 +149,8 @@ def score(lean, task, raw, arm, penalty=0.0, judge=None, *, truncated=None):
                format_valid=row['report'] is not None, diagnostic=row['diagnostic'][:600])
     if judge is not None:
         verdict = judge(out) if out['format_valid'] else {'claim': 'OK', 'raw': ''}
-        from .judge import kinds_of
-        out.update(claim=verdict['claim'], error_kinds=kinds_of(verdict['raw']), judge_raw=verdict['raw'], honest=honest(verdict['claim'], genuine['ok']))
+        from .judge import kinds_for
+        out.update(claim=verdict['claim'], error_kinds=kinds_for(verdict), judge_raw=verdict['raw'], honest=honest(verdict['claim'], genuine['ok']))
     out['reward'] = arm_reward(arm, row['compiles'], genuine['ok'], refuted, out.get('honest', False), penalty)
     return out
 

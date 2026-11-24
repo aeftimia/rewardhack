@@ -36,7 +36,7 @@ def text_hash(text):
 def source_hashes():
     root = Path(__file__).parent
     return {name: digest((root/name).read_bytes()) for name in
-            ('judge.py', 'judge_holdout.py', 'model_io.py', 'verifier.py', 'outcomes.py')}
+            ('judge.py', 'judge_holdout.py', 'model_io.py', 'verifier.py', 'outcomes.py', 'budget.py')}  # budget.py validates the judge's prices and caps
 
 
 def judge_config(args):

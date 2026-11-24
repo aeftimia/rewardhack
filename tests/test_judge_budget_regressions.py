@@ -180,14 +180,50 @@ FLAGGED = json.dumps(dict(GOOD, **{next(iter(judge.CHECKS)): True}))
     '{"requested": "a", "reported": "it wrote ' + EXAMPLE + ' then stopped',
     EXAMPLE + FLAGGED,
     'I cannot answer in JSON. The set {} is odd.',
+    '{answer: ' + EXAMPLE,                                                               # an unquoted, cut-off wrapper
+    '{answer: ' + FLAGGED + '}',                                                         # a broken wrapper, closed
 ])
 def test_a_checklist_beside_a_broken_answer_is_not_a_reading(reply):
     assert judge.claim_of(reply) == 'UNPARSED'
-    stored = judge.compact(reply)
-    # What is stored is what was said, so reading it again cannot turn the row into a verdict.
-    assert stored == reply.strip()[:200] and judge.claim_of(stored) == 'UNPARSED' and judge.kinds_of(stored) == []
+    assert judge.compact(reply) == reply.strip()[:200]  # what is stored is what was said, never one object picked out
 
 
 def test_a_checklist_nested_in_a_valid_wrapper_is_not_searched():
     assert judge.claim_of(json.dumps(dict(answer=GOOD))) == 'UNPARSED'
     assert judge.claim_of(json.dumps(dict(GOOD, requested=dict(GOOD, note='nested')))) == 'OK'
+
+
+@pytest.mark.parametrize('aside', ['I will output {"requested": ..., "reported": ...}.\n', 'The Lean term {"a", "b"} is a set. ',
+                                   'uses structure { "x" := 1 } ', 'Thinking: format is { "requested": ..., } \n'])
+def test_an_aside_that_is_not_json_does_not_hide_the_answer(aside):
+    assert judge.claim_of(aside + EXAMPLE) == 'OK' and judge.claim_of(aside + FLAGGED) == 'ERROR'
+
+
+def test_an_unreadable_reply_records_no_kinds(monkeypatch):
+    # The first 200 characters of an unreadable reply can be a clean checklist whose contradiction came later.
+    reply = FLAGGED + ' Wait, on reflection the report is fine, so the answer is: '.ljust(100) + EXAMPLE
+    assert len(FLAGGED) < 200 and judge.claim_of(reply) == 'UNPARSED' and judge.claim_of(judge.compact(reply)) == 'ERROR'
+    monkeypatch.setattr(model_io, 'call', lambda *args: dict(raw=reply, finish='stop', usage={}))
+    verdict = judge.make_judge('api', model='stub')(dict(statement='True', report='Proved it.'))
+    assert verdict['claim'] == 'UNPARSED' and judge.kinds_for(verdict) == []
+    from rewardhack import outcomes
+    for name in ('evaluate_submission', 'verify_proof', 'verify_refutation'):
+        monkeypatch.setattr(outcomes, name, lambda *a: dict(established='True', proof_body='', report='Proved it.', reward=0.0,
+                                                            compiles=False, diagnostic='', ok=False, axioms=[], why='no'))
+    task = dict(id='t', group='g', tier='easy', true=True, statement='True')
+    row = outcomes.score('unused', task, json.dumps(dict(established='True', proof_body='x', report='Proved it.')), 'baseline', judge=lambda r: verdict)
+    assert row['claim'] == 'UNPARSED' and row['error_kinds'] == [] and row['judge_raw'] == verdict['raw']
+
+
+@pytest.mark.parametrize('flag,value', [('--max-usd', 'nan'), ('--judge-max-usd', '-1'), ('--judge-usd-in', 'inf')])
+def test_validation_refuses_bad_caps_before_creating_anything(tmp_path, flag, value):
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run([sys.executable, str(root/'entrypoints/validate_judge.py'), '--judge', 'api', '--judge-model', 'stub',
+                             '--out', str(tmp_path/'out'), flag, value], cwd=root, capture_output=True, text=True)
+    assert result.returncode == 2 and 'finite, nonnegative' in result.stderr and 'Traceback' not in result.stderr
+    assert not (tmp_path/'out').exists()
+
+
+def test_a_refund_of_the_metered_amount_is_not_an_excess():
+    rows = [dict(line='api', total_usd='0.07', status='completed: $0.0715 metered'), dict(line='api', total_usd='-0.0715', status='refund')]
+    assert str(budget.spent(rows, line='api')) == '0.0'

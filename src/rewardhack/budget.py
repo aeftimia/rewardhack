@@ -4,7 +4,7 @@ The grant's budget lines are the caps. A ledger row is charged to a line through
 with an empty `line` (the pilot, and anything paid from other funds) are recorded but count against
 nothing here. The guard counts each launch at its worst case: hourly price x hard runtime cap + other
 costs. Moving money between lines is a budget change and is not something this module does quietly.
-Money a provider returns is its own row with `status` `refund` and a negative total, on the line it was charged to.
+Money a provider returns is its own row with a negative total and a `status` that starts with `refund`, on the line it was charged to.
 """
 import csv
 import math
@@ -45,7 +45,7 @@ def is_refund(row):
 
 
 def row_total(row, number):
-    """A row's cost in whole cents. Every row is validated, whichever line is asked for: a malformed ledger is not a basis for a launch.
+    """A row's cost in dollars. Every row is validated, whichever line is asked for: a malformed ledger is not a basis for a launch.
 
     A negative total lowers what counts as spent, so it has to say what it is: `status` must start with `refund`.
     """
@@ -71,10 +71,10 @@ def spent(rows, **match):
     if not math.isfinite(total):
         raise ValueError('ledger total must be a finite, nonnegative number')
     total = round(total, 6)  # ledger amounts are dollars with at most a few decimals; binary sums of them are not exact
-    if total < 0:
+    if total <= -0.005:
         where = ' on '+', '.join(f'{k} {v!r}' for k, v in match.items()) if match else ''
         raise ValueError(f'refunds exceed charges{where} by ${-total:.2f}; book each refund to the line of its charge')
-    return total + 0.0  # never -0.0
+    return total if total > 0 else 0.0  # a refund of the metered amount against a charge booked to the cent is not an excess
 
 
 def grant_spent(rows):
