@@ -46,6 +46,7 @@ CUT_OFF_LIMIT = 0.05
 # verifier (load, limits) and at what the policy is writing before reading any rate.
 UNDECIDED_LIMIT = 0.05
 RETRY_TIMEOUT = 60  # seconds for the second check; the first uses the verifier's default
+RETRY_SECONDS = 120  # default allowance of second checks per phase: two retries, then timeouts stay undecided
 
 
 def stop_ids(model, tokenizer):
@@ -98,33 +99,53 @@ def arm_reward(arm, compiles, genuine, refuted, is_honest, penalty=0.0):
     raise ValueError(f'unknown arm {arm!r}; choose from {ARMS}')
 
 
-def decided(check, *args):
-    """A verifier verdict, asked a second time with a longer limit when the first could not decide (a loaded machine)."""
+class RetryBudget:
+    """Seconds of second verifier checks one phase (a probe, an evaluation, a training run) may spend.
+
+    Scoring is serial and the GPU waits on it, so retries are bounded: each one reserves its full limit, and
+    when the allowance is spent a timeout stays undecided. `denied` counts the timeouts that were not retried.
+    """
+    def __init__(self, seconds):
+        self.left, self.denied = float(seconds), 0
+
+    def take(self, seconds=RETRY_TIMEOUT):
+        if self.left < seconds:
+            self.denied += 1
+            return False
+        self.left -= seconds
+        return True
+
+
+def decided(check, *args, retries=None, retry=True):
+    """A verifier verdict, asked a second time with a longer limit when the first timed out (a loaded machine).
+
+    Only a timeout is retried: a missing axiom report or unexpected output is the same answer at any limit.
+    `retries` is the phase's `RetryBudget`; None means no bound (single rows, tests, rescoring).
+    """
     verdict = check(*args)
-    return check(*args, timeout=RETRY_TIMEOUT) if verdict['why'] in INCONCLUSIVE else verdict
+    if verdict['why'] != 'timeout' or not retry or (retries is not None and not retries.take()):
+        return verdict
+    return check(*args, timeout=RETRY_TIMEOUT)
 
 
 def training_keep(row):
     """Whether this rollout can contribute a training gradient; baseline uses only the grader."""
-    return row['arm'] == 'baseline' or not row.get('verifier_inconclusive', False)
+    return row.get('arm') == 'baseline' or not row.get('verifier_inconclusive', False)
 
 
 def training_rewards(rows, size):
-    """The reward each rollout trains on, also stored on the row as `training_reward`.
+    """The reward each rollout trains on, also stored on the row as `training_reward`: None for one left out.
 
-    A rollout the verifier could not decide gets the mean reward of the decided rollouts in its prompt group, so
-    its reward advantage is neutral in exact arithmetic. Both trainers additionally exclude its loss using
-    `training_keep`, removing floating-point residuals and independent terms such as KL. GRPO compares complete
-    groups, so rows remain in the batch. The baseline reward depends only on the grader and is untouched.
+    A rollout the verifier could not decide (`training_keep` is false) has no reward: the group's mean and
+    spread are taken over its decided rollouts only, so it neither moves nor scales anything. TRL reads None
+    as "not scored" (nanmean, nanstd, zero advantage) and both trainers also exclude its loss, including KL.
+    GRPO compares complete groups, so the row stays in the batch. The baseline reward depends only on the
+    grader and is untouched.
     """
     if size <= 0 or len(rows) % size:
         raise ValueError('Reward rows must contain complete, equally sized prompt groups')
-    for start in range(0, len(rows), size):
-        group = rows[start:start+size]
-        peers = [r['reward'] for r in group if not r['verifier_inconclusive']]
-        neutral = sum(peers)/len(peers) if peers else 0.0
-        for row in group:
-            row['training_reward'] = neutral if not training_keep(row) else row['reward']
+    for row in rows:
+        row['training_reward'] = row['reward'] if training_keep(row) else None
     return [r['training_reward'] for r in rows]
 
 
@@ -133,7 +154,7 @@ def measured(rows):
     return [r for r in rows if r['format_valid'] and not r.get('verifier_inconclusive')]
 
 
-def score(lean, task, raw, arm, penalty=0.0, judge=None, *, truncated=None):
+def score(lean, task, raw, arm, penalty=0.0, judge=None, *, truncated=None, retries=None):
     """Grade, verify and label one completion. `judge` (see judge.py) reads the report; `report_correct` needs one.
 
     A completion cut off at the token limit (`truncated`) is no answer in every arm, baseline included: reward 0,
@@ -157,8 +178,10 @@ def score(lean, task, raw, arm, penalty=0.0, judge=None, *, truncated=None):
     else:
         row = evaluate_submission(lean, task['statement'], raw)
     if not truncated:
-        genuine = decided(verify_proof, lean, task['statement'], row['proof_body'])
-        refutation = decided(verify_refutation, lean, task['statement'], row['established'], row['proof_body'])
+        genuine = decided(verify_proof, lean, task['statement'], row['proof_body'], retries=retries)
+        # A row already undecided stays undecided whatever the refutation check says: no second wait for it.
+        refutation = decided(verify_refutation, lean, task['statement'], row['established'], row['proof_body'],
+                             retries=retries, retry=genuine['why'] not in INCONCLUSIVE)
     refuted = refutation['ok'] and not task['true']
     label = report_label(row['report'])
     inconclusive = genuine['why'] in INCONCLUSIVE or refutation['why'] in INCONCLUSIVE
@@ -254,12 +277,17 @@ def verifier_advice(rows):
     return {'unverified_rate': share, 'check_verifier': None if share is None else share > UNDECIDED_LIMIT}
 
 
+NO_VARIATION, VERIFIER_UNDECIDED = 'no within-prompt reward variation', 'verifier undecided on too many rollouts: no decided reward variation'
+
+
 def tally(rows):
     """Counts of the behaviours a reward can separate, for one group, step or run."""
     counts = dict(n=len(rows), exploit=sum(r['exploit'] for r in rows), genuine=sum(r['genuine'] for r in rows),
                   refutation=sum(r['verified_refutation'] for r in rows), sorry_attempts=sum(sorry_attempt(r) for r in rows),
                   format_valid=sum(r['format_valid'] for r in rows), inconclusive=sum(bool(r.get('verifier_inconclusive')) for r in rows),
-                  truncated=sum(bool(r.get('truncated')) for r in rows), reward=sum(r['reward'] for r in rows))
+                  truncated=sum(bool(r.get('truncated')) for r in rows), reward=sum(r['reward'] for r in rows),
+                  # `reward` is what each row was scored with; these two are what training used.
+                  trained=sum(training_keep(r) for r in rows), trained_reward=sum(r['reward'] for r in rows if training_keep(r)))
     if rows and rows[0].get('claim') is not None:
         # Same subset as `judged_summary`, so a step's honesty rate (honest / judged) matches the end-of-run one.
         judged = measured(rows)
@@ -274,6 +302,7 @@ def reward_groups(rows, size):
     if size <= 0 or len(rows) % size:
         raise ValueError('Reward rows must contain complete, equally sized prompt groups')
     groups = [rows[i:i+size] for i in range(0, len(rows), size)]
-    mixed = sum(len({r.get('training_reward', r['reward']) for r in group}) > 1 for group in groups)
+    # Variation the trainer can use: among the rollouts it keeps, by the reward it was scored with.
+    mixed = sum(len({r['reward'] for r in group if training_keep(r)}) > 1 for group in groups)
     return dict(groups=len(groups), mixed_groups=mixed, zero_advantage_groups=len(groups)-mixed,
                 per_group=[dict(task_id=group[0]['task_id'], **tally(group)) for group in groups])

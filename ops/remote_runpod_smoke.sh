@@ -96,6 +96,9 @@ judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit
 LIMIT=2048
 if grep -q 'raise the token limit: True' ~/out/probe.log; then LIMIT=4096; fi
 log "$(grep 'probe cut-off rate' ~/out/probe.log | tail -1); training with --max-completion-length $LIMIT"
+# Owner's rule: more than 5% of answers the verifier could not decide means looking at the verifier before paying for training.
+log "$(grep 'probe undecided rate' ~/out/probe.log | tail -1)"
+if grep -q 'check the verifier: True' ~/out/probe.log; then fail PROBE_VERIFIER_UNDECIDED; fi
 step() { name=$1; shift; log "start $name"
   judged $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
   log "end $name passed"; nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }

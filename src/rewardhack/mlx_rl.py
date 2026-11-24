@@ -140,15 +140,19 @@ def rl(args, model, tokenizer):
         rows = [score(args.lean, task, s[0], args.arm, args.penalty, args.judge_fn, truncated=s[3]) for s in samples]
         t_lean = time.perf_counter()-t0
         verifier_rows.extend({'verifier_inconclusive': r['verifier_inconclusive']} for r in rows)
-        rewards = mx.array(training_rewards(rows, len(rows)))
+        kept = [reward for reward in training_rewards(rows, len(rows)) if reward is not None]
+        rewards = mx.array(kept or [0.0])  # mean and spread over the decided rollouts only
         std = float(rewards.std())
         t0 = time.perf_counter()
         update = False
         if std > 0:
-            advantages = ((rewards-rewards.mean())/(std+1e-4)).tolist()
+            advantages = iter(((rewards-rewards.mean())/(std+1e-4)).tolist())
             total = None
-            for row, (_, tokens, _, _), advantage in zip(rows, samples, advantages, strict=True):
-                if not training_keep(row) or len(tokens) < 2:
+            for row, (_, tokens, _, _) in zip(rows, samples, strict=True):
+                if not training_keep(row):
+                    continue
+                advantage = next(advantages)
+                if len(tokens) < 2:
                     continue
                 _, grads = loss_and_grad(model, ids, tokens, advantage/args.group)
                 total = grads if total is None else tree_map(lambda a, b: a+b, total, grads)

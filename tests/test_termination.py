@@ -345,6 +345,6 @@ def test_probe_reward_variation_matches_dropped_training_rows(args, monkeypatch)
     monkeypatch.setattr(hf_grpo, 'score', lambda *a, **kw: next(pending))
     summary = hf_grpo.evaluate(model, tokenizer, [TASK], args, 'probe')
     assert summary['mixed_reward_groups'] == 0 and summary['zero_advantage_groups'] == 1
-    assert outcomes.training_rewards(rows, 2) == [2., 2.]
+    assert outcomes.training_rewards(rows, 2) == [2., None]
     saved = [json.loads(line) for line in (args.out/'probe-evaluation.jsonl').read_text().splitlines()]
     assert [r['reward'] for r in saved] == [2., 1.]

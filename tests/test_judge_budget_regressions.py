@@ -299,4 +299,11 @@ def test_fully_escaped_duplicate_cannot_be_skipped_as_an_aside():
                                    '{says_false=false, incomplete=true}', "{'incomplete': true}"])
 def test_a_broken_answer_is_recognised_however_its_keys_are_quoted(final):
     assert judge.claim_of(EXAMPLE + '\nFinal: ' + final) == 'UNPARSED'  # the draft before it does not stand
-    assert judge.claim_of('The key {"incomplete"} is false. ' + EXAMPLE) == 'OK'  # a quoted word is not a key
+    # A check named in double quotes inside a braced span is a statement about the checklist: it cannot sit beside an answer.
+    assert judge.claim_of('True checks: {"incomplete", "not_proved"} ' + EXAMPLE) == 'UNPARSED'
+
+
+@pytest.mark.parametrize('aside', ['{note: the report is not incomplete: it claims success} ', '`exact { placeholder := 1 }` ',
+                                   '{x | incomplete = false} ', '{so placeholder == false} '])
+def test_a_check_word_in_prose_or_lean_is_not_a_key(aside):
+    assert judge.claim_of(aside + EXAMPLE) == 'OK' and judge.claim_of(aside + FLAGGED) == 'ERROR'

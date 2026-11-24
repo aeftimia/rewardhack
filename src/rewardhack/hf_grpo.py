@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from .gpu import GpuSampler
-from .outcomes import completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
+from .outcomes import NO_VARIATION, RETRY_SECONDS, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
@@ -88,6 +88,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
     import torch
     device = next(model.parameters()).device
     rows, generated, t_gen, t_lean = [], 0, 0.0, 0.0
+    retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))
     samples = args.eval_samples if samples is None else samples
     torch.manual_seed(31415)
     model.eval()
@@ -109,14 +110,14 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
                 raw = tokenizer.decode(new, skip_special_tokens=not reasons(args))
                 t0 = time.perf_counter()
                 truncated = completion_truncated(new.tolist(), stop_ids(model, tokenizer), args.max_completion_length)
-                row = score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated)
+                row = score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries)
                 t_lean += time.perf_counter()-t0
                 rows.append(row)
                 sink.write(json.dumps(row, ensure_ascii=False)+'\n')
                 sink.flush()
     training_rewards(rows, samples)  # probe variation must predict the signal the trainer will actually use
     grouped = reward_groups(rows, samples)
-    return dict(summarize(rows), generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
+    return dict(summarize(rows), verifier_retries_denied=retries.denied, generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
                 samples_per_prompt=samples, reward_groups=grouped['groups'], mixed_reward_groups=grouped['mixed_groups'],
                 zero_advantage_groups=grouped['zero_advantage_groups'], per_group=grouped['per_group'],
                 tokens_per_second=generated/max(t_gen, 1e-9), completions_per_hour=len(rows)/max(t_gen+t_lean, 1e-9)*3600)
@@ -132,7 +133,8 @@ def train(model, tokenizer, tasks, args, summary):
     stops = stop_ids(model, tokenizer)  # the same stop IDs as `evaluate`, so both paths agree on a finished answer
     timing = {'step_start': 0.0, 'rollout': [], 'lean': [], 'update': [], 'reward_end': 0.0}
     sink = (args.out/'training-rollouts.jsonl').open('w')
-    groups = []
+    groups, undecided = [], []
+    retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # for the whole training phase, so the deadline reserve holds
 
     steps = (args.out/'steps.jsonl').open('w')
     first_seen = summary.setdefault('first_seen_step', {})
@@ -147,9 +149,17 @@ def train(model, tokenizer, tasks, args, summary):
         for completion, claim, token_ids in zip(completions, statement, completion_ids, strict=True):
             raw = completion[-1]['content'] if isinstance(completion, list) else completion
             truncated = completion_truncated(token_ids, stops, args.max_completion_length)
-            rows.append(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated))
+            try:
+                rows.append(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries))
+            except BaseException:
+                # A stop mid-batch (deadline, judge streak, spend cap) keeps what was already scored and paid for.
+                sink.write(''.join(json.dumps(row, ensure_ascii=False)+'\n' for row in rows))
+                sink.flush()
+                raise
         rewards = training_rewards(rows, args.num_generations)
         trainer._verifier_keep = [training_keep(row) for row in rows]
+        undecided.extend({'verifier_inconclusive': row['verifier_inconclusive']} for row in rows)
+        summary['training_verifier'] = dict(verifier_advice(undecided), retries_denied=retries.denied)
         sink.write(''.join(json.dumps(row, ensure_ascii=False)+'\n' for row in rows))
         sink.flush()
         step = len(timing['lean'])+1
@@ -163,7 +173,7 @@ def train(model, tokenizer, tasks, args, summary):
             if counts.get(behaviour) and behaviour not in first_seen:
                 first_seen[behaviour] = step
         # A group whose rewards are all equal has zero advantage everywhere and moves nothing.
-        steps.write(json.dumps(dict(step=step, **counts, **grouped))+'\n')
+        steps.write(json.dumps(dict(step=step, **counts, **verifier_advice(rows), **grouped))+'\n')
         steps.flush()
         timing['reward_end'] = time.perf_counter()
         timing['lean'].append(timing['reward_end']-t0)
@@ -177,11 +187,12 @@ def train(model, tokenizer, tasks, args, summary):
 
         def on_step_end(self, args, state, control, **kwargs):
             timing['update'].append(time.perf_counter()-timing['reward_end'])
-            (run_args.out/'live.json').write_text(json.dumps({'step': state.global_step, **summary['rollouts'], 'mixed_groups': sum(groups)}))
+            (run_args.out/'live.json').write_text(json.dumps({'step': state.global_step, **summary['rollouts'], **summary.get('training_verifier', {}), 'mixed_groups': sum(groups)}))
             if state.global_step % run_args.save_every == 0:
                 kwargs['model'].save_pretrained(str(run_args.out/f'adapter-step{state.global_step}'))
             if state.global_step >= run_args.stop_no_variation and not any(groups):
-                summary['early_stop'] = 'no within-prompt reward variation'
+                # Undecided rollouts leave a group without variation too: say which it was.
+                summary['early_stop'] = VERIFIER_UNDECIDED if summary.get('training_verifier', {}).get('check_verifier') else NO_VARIATION
                 control.should_training_stop = True
             if time.monotonic() > run_args.train_deadline:
                 summary['early_stop'] = 'deadline'

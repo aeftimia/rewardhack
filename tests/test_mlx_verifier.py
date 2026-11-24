@@ -92,7 +92,7 @@ def test_all_undecided_rows_skip_training_and_warn_in_every_summary(train_stub):
     for record in records['steps.jsonl'] + records['monitor.jsonl'] + [records['summary']]:
         assert record['unverified_rate'] == 1.0
         assert record['check_verifier'] is True
-    assert [row['training_reward'] for row in records['rollouts.jsonl']] == [0.0, 0.0]
+    assert [row['training_reward'] for row in records['rollouts.jsonl']] == [None, None]
 
 
 @pytest.mark.parametrize('arm', ['report_correct', 'equal_reward'])
@@ -103,7 +103,9 @@ def test_mixed_group_skips_undecided_gradient_pass(train_stub, arm):
     assert len(updates) == 1 and records['summary']['updates'] == 1
     assert records['summary']['unverified_rate'] == pytest.approx(1/3)
     assert records['summary']['check_verifier'] is True
-    assert [row['training_reward'] for row in records['rollouts.jsonl']] == [1.0, 0.0, .5]
+    assert [row['training_reward'] for row in records['rollouts.jsonl']] == [1.0, 0.0, None]
+    # Mean and spread come from the two decided rollouts alone: the undecided one does not scale their step.
+    assert gradients[0][1] == pytest.approx(-gradients[1][1]) and abs(gradients[0][1]) == pytest.approx(1/3, rel=1e-3)
 
 
 def test_baseline_keeps_grader_rewards_and_gradients_for_undecided_rows(train_stub):
