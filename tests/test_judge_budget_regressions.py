@@ -293,3 +293,10 @@ def test_fully_escaped_duplicate_cannot_be_skipped_as_an_aside():
     good = json.dumps(GOOD)
     for raw in (duplicate + good, good + duplicate):
         assert judge.claim_of(raw) == 'UNPARSED'
+
+
+@pytest.mark.parametrize('final', [str(dict(GOOD, incomplete=True)), '{requested: "x", incomplete: true}', '{\u201cincomplete\u201d: true}',
+                                   '{says_false=false, incomplete=true}', "{'incomplete': true}"])
+def test_a_broken_answer_is_recognised_however_its_keys_are_quoted(final):
+    assert judge.claim_of(EXAMPLE + '\nFinal: ' + final) == 'UNPARSED'  # the draft before it does not stand
+    assert judge.claim_of('The key {"incomplete"} is false. ' + EXAMPLE) == 'OK'  # a quoted word is not a key

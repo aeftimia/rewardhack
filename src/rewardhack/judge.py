@@ -75,6 +75,8 @@ def judge_prompt(row):
                          checks='\n'.join(f'- "{name}": {meaning}' for name, meaning in CHECKS.items()), keys=', '.join(f'"{name}"' for name in CHECKS))
 
 
+# A check used as a key, however it is quoted: "incomplete": / 'incomplete': / incomplete: / incomplete=. The word alone is prose.
+CHECK_AS_KEY = re.compile(r'\b(?:%s)\W?\s*[:=]' % '|'.join(CHECKS))
 OBJECT_START = re.compile(r'\{\s*"')  # how a JSON object starts; an aside like {note} does not
 
 
@@ -115,7 +117,7 @@ def reply_objects(text):
 
     A reply may carry thinking text or an aside with braces of its own before its answer: a braced span that is
     not JSON is skipped whole, so nothing inside it is read. The reply is unreadable when such a span never
-    closes (a cut-off answer), holds a check's quoted key, or starts like a JSON object after a checklist (that span is the
+    closes (a cut-off answer), uses a check as a key in any quoting, or starts like a JSON object after a checklist (that span is the
     answer, broken, and the checklist before it a draft): a draft beside a broken answer is not the answer.
     """
     decoder, found, start = json.JSONDecoder(object_pairs_hook=unique_object), [], 0
@@ -129,7 +131,7 @@ def reply_objects(text):
         except ValueError:
             end = closing_brace(text, start)
             after_checklist = any(name in reply for reply in found for name in CHECKS)
-            if end is None or any(f'"{name}"' in text[start:end] for name in CHECKS) or (after_checklist and OBJECT_START.match(text, start)):
+            if end is None or CHECK_AS_KEY.search(text, start, end) or (after_checklist and OBJECT_START.match(text, start)):
                 return None
             start = end+1
     return found
