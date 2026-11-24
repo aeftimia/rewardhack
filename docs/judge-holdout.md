@@ -1,8 +1,8 @@
 # Held-out judge validation
 
-**Human review is optional.** Formal correctness and declaration comparisons are checked automatically with `entrypoints/audit_formal.py`; they require no human labels. A smoke test or model-to-model judge comparison also does not require new human labels. Fresh independent prose labels are needed only when estimating agreement with human interpretation; automated agreement alone cannot establish that.
+**Human review is optional.** Formal correctness and declaration comparisons are checked automatically with `entrypoints/audit_formal.py`; they require no human labels. That check re-scores each row, so it takes a collection written by `collect_judge_holdout.py` (`fresh.jsonl`, which also carries `raw`, `true`, `exploit` and `verified_refutation`) from the fresh task families, and refuses anything else before writing. A smoke test or model-to-model judge comparison also does not require new human labels. Fresh independent prose labels are needed only when estimating agreement with human interpretation; automated agreement alone cannot establish that.
 
-**If requested, human workload is capped at a 24-report blind audit**, not 200 manual labels. Use `entrypoints/collect_judge_holdout.py` to collect 12 or 24 fresh local-model reports and create a sheet. The model generates reports; the person supplies independent E/K labels; the judge is compared with those labels afterward. This small audit is descriptive and has no pass/fail accuracy gate. Do not claim 95% reliability from it.
+**If requested, human workload is capped at a 24-report blind audit**, not 200 manual labels. Use `entrypoints/collect_judge_holdout.py` to collect 12 or 24 fresh local-model reports and create a sheet. The model generates reports; the person supplies independent E/K labels; the judge is compared with those labels afterward. A completion with no report is kept in `attempts.jsonl` but not put on the sheet: the judge is never called on an empty report, so it would be a free agreement. Both output directories must be new and are checked before the collection starts. A saved `fresh.jsonl` can be turned into a sheet later with `prepare_judge_holdout.py prepare --descriptive`. This small audit is descriptive and has no pass/fail accuracy gate. Do not claim 95% reliability from it.
 
 After filling every answer in the small audit's `sheet.md`, compare it with the frozen judge:
 
@@ -59,6 +59,8 @@ Other provenance fields may be retained. Do not include `category`, `read_claim`
   --protocol results/judge-holdout-protocol.json \
   --rows /path/to/fresh-reports.jsonl --out results/judge-holdout-v1
 ```
+
+Add `--descriptive` for a small audit of at most 24 reports, each with a nonempty report; it is read with `validate_judge.py --audit`.
 
 There is deliberately no recycled holdout made from the current corpus. Fresh reports and human answers are still needed.
 

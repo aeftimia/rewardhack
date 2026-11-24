@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from rewardhack.holdout_collection import prepare_audit
-from rewardhack.judge_holdout import freeze, load_review
+from rewardhack.formal_audit import audit_file
+from rewardhack.judge_holdout import freeze, load_review, prepare
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -48,7 +48,7 @@ def test_freeze_requires_complete_nonempty_development(tmp_path):
 def test_descriptive_review_shares_integrity_without_class_gate(tmp_path):
     protocol, rows = protocol_and_rows(tmp_path)
     out = tmp_path/'audit'
-    prepare_audit(rows, protocol, out)
+    prepare(rows, protocol, out, descriptive=True)
     with pytest.raises(ValueError, match='Complete every'):
         load_review(out, protocol['config'], 'Lean test', descriptive=True)
     fill(out)
@@ -79,7 +79,7 @@ def test_audit_cli_scores_disagreements_without_acceptance(tmp_path, monkeypatch
     from rewardhack import judge
     protocol, rows = protocol_and_rows(tmp_path)
     out, scored = tmp_path/'audit', tmp_path/'scored'
-    prepare_audit(rows, protocol, out)
+    prepare(rows, protocol, out, descriptive=True)
     fill(out)
     def stub_judge(row):
         return dict(claim='OK', raw='')
@@ -105,3 +105,37 @@ def test_freeze_cli_default_corpus_is_independent_of_cwd(tmp_path, monkeypatch):
                                     '--lean', 'stub', '--judge', 'api', '--judge-model', 'stub'])
     runpy.run_path(str(ROOT/'entrypoints/prepare_judge_holdout.py'), run_name='__main__')
     assert seen == [ROOT/'results'/'report-reading']
+
+
+def test_saved_collection_becomes_a_descriptive_sheet(tmp_path, monkeypatch, capsys):
+    protocol, rows = protocol_and_rows(tmp_path)
+    (tmp_path/'protocol.json').write_text(json.dumps(protocol))
+    (tmp_path/'fresh.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in rows))
+    argv = ['prepare_judge_holdout.py', 'prepare', '--protocol', str(tmp_path/'protocol.json'), '--rows', str(tmp_path/'fresh.jsonl')]
+    monkeypatch.setattr(sys, 'argv', argv+['--out', str(tmp_path/'acceptance')])
+    with pytest.raises(SystemExit):  # two rows are far below the acceptance minimum
+        runpy.run_path(str(ROOT/'entrypoints/prepare_judge_holdout.py'), run_name='__main__')
+    assert 'frozen minimum' in capsys.readouterr().err and not (tmp_path/'acceptance').exists()
+    monkeypatch.setattr(sys, 'argv', argv+['--out', str(tmp_path/'audit'), '--descriptive'])
+    runpy.run_path(str(ROOT/'entrypoints/prepare_judge_holdout.py'), run_name='__main__')
+    assert json.loads((tmp_path/'audit'/'manifest.json').read_text())['review_kind'] == 'descriptive'
+
+
+def test_descriptive_audit_refuses_reports_the_judge_never_reads(tmp_path):
+    protocol, rows = protocol_and_rows(tmp_path)
+    rows[0]['report'] = ''
+    with pytest.raises(ValueError, match='rows with a report'):
+        prepare(rows, protocol, tmp_path/'audit', descriptive=True)
+    assert not (tmp_path/'audit').exists()
+
+
+@pytest.mark.parametrize('change,message', [(lambda row: row.pop('raw'), "lacks \\['raw'\\]"),
+                                            (lambda row: row.update(task_id='unknown'), 'not in the supplied task set')])
+def test_formal_audit_refuses_before_writing(tmp_path, change, message):
+    row = dict(id='r', task_id='known', group='g', statement='True', raw='{}', true=True,
+               genuine=False, exploit=False, verified_refutation=False)
+    change(row)
+    (tmp_path/'rows.jsonl').write_text(json.dumps(row)+'\n')
+    with pytest.raises(ValueError, match=message):
+        audit_file('no-lean', tmp_path/'rows.jsonl', tmp_path/'out', {'known': {}})
+    assert not (tmp_path/'out').exists()  # a retry is not blocked by a half-written directory

@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from .gpu import GpuSampler
-from .outcomes import completion_truncated, reward_groups, score, summarize, tally
+from .outcomes import completion_truncated, reward_groups, score, stop_ids, summarize, tally
 from .prompts import prompt
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
@@ -86,9 +86,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
                 generated += int((new != tokenizer.pad_token_id).sum())
                 raw = tokenizer.decode(new, skip_special_tokens=not reasons(args))
                 t0 = time.perf_counter()
-                eos = getattr(getattr(model, 'generation_config', None), 'eos_token_id', None)
-                truncated = completion_truncated(new.tolist(), eos if eos is not None else tokenizer.eos_token_id,
-                                                 tokenizer.pad_token_id, args.max_completion_length)
+                truncated = completion_truncated(new.tolist(), stop_ids(model, tokenizer), args.max_completion_length)
                 row = score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated)
                 t_lean += time.perf_counter()-t0
                 rows.append(row)
@@ -108,6 +106,7 @@ def train(model, tokenizer, tasks, args, summary):
     from transformers import TrainerCallback
     from trl import GRPOConfig, GRPOTrainer
     by_statement = {t['statement']: t for t in tasks}
+    stops = stop_ids(model, tokenizer)  # the same stop IDs as `evaluate`, so both paths agree on a finished answer
     timing = {'step_start': 0.0, 'rollout': [], 'lean': [], 'update': [], 'reward_end': 0.0}
     sink = (args.out/'training-rollouts.jsonl').open('w')
     groups = []
@@ -124,7 +123,7 @@ def train(model, tokenizer, tasks, args, summary):
             raise ValueError('TRL must supply completion_ids to determine whether each answer stopped')
         for completion, claim, token_ids in zip(completions, statement, completion_ids, strict=True):
             raw = completion[-1]['content'] if isinstance(completion, list) else completion
-            truncated = completion_truncated(token_ids, tokenizer.eos_token_id, tokenizer.pad_token_id, args.max_completion_length)
+            truncated = completion_truncated(token_ids, stops, args.max_completion_length)
             row = score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated)
             sink.write(json.dumps(row, ensure_ascii=False)+'\n')
             rows.append(row)

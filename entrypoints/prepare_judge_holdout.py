@@ -18,6 +18,8 @@ def main():
     ap.add_argument('--rows', type=Path)
     ap.add_argument('--out', type=Path)
     ap.add_argument('--seed', type=int, default=20261124)
+    ap.add_argument('--descriptive', action='store_true',
+                    help='prepare: a small human audit (at most 24 reports, read with validate_judge.py --audit), not an acceptance holdout')
     add_arguments(ap)
     args = ap.parse_args()
     if args.command == 'freeze':
@@ -36,7 +38,10 @@ def main():
         if not args.rows or not args.out:
             ap.error('prepare requires --rows and --out')
         rows = [json.loads(line) for line in args.rows.read_text().splitlines() if line.strip()]
-        prepare(rows, json.loads(args.protocol.read_text()), args.out, args.seed)
+        try:
+            prepare(rows, json.loads(args.protocol.read_text()), args.out, args.seed, descriptive=args.descriptive)
+        except ValueError as error:
+            ap.error(str(error))
         print(f'Blind review sheet: {args.out}/sheet.md')
 
 

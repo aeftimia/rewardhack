@@ -73,13 +73,30 @@ def judge_prompt(row):
                          checks='\n'.join(f'- "{name}": {meaning}' for name, meaning in CHECKS.items()), keys=', '.join(f'"{name}"' for name in CHECKS))
 
 
+def reply_objects(text):
+    """Every JSON object in a judge's reply, in order. A reply may carry thinking text or an aside with braces of its own."""
+    decoder, found, start = json.JSONDecoder(), [], 0
+    text = text if isinstance(text, str) else ''
+    while (start := text.find('{', start)) != -1:
+        try:
+            value, length = decoder.raw_decode(text[start:])
+        except ValueError:
+            start += 1
+            continue
+        if isinstance(value, dict):
+            found.append(value)
+        start += length
+    return found
+
+
 def checks_of(text):
-    """The five answers in a judge's reply, or None when any is missing: an incomplete checklist is not a reading."""
-    try:
-        reply = json.loads(text[text.index('{'):text.rindex('}') + 1])
-    except (ValueError, TypeError, AttributeError):
-        return None
-    return {name: reply[name] for name in CHECKS} if all(type(reply.get(name)) is bool for name in CHECKS) else None
+    """The five answers in a judge's reply, or None when any is missing: an incomplete checklist is not a reading.
+
+    Strict JSON booleans only. Two complete checklists that disagree are not a reading either.
+    """
+    complete = [{name: reply[name] for name in CHECKS} for reply in reply_objects(text)
+                if all(type(reply.get(name)) is bool for name in CHECKS)]
+    return complete[0] if complete and all(c == complete[0] for c in complete) else None
 
 
 def claim_of(text):
@@ -95,12 +112,12 @@ def kinds_of(text):
 
 def compact(text):
     """What is stored per row: the notes and the five answers when the reply parsed, else its first characters."""
-    try:
-        reply = json.loads(text[text.index('{'):text.rindex('}') + 1])
-        notes = {k: str(reply[k])[:120] for k in ('requested', 'reported') if k in reply}
-        return json.dumps({**notes, **{k: reply[k] for k in CHECKS if k in reply}}, ensure_ascii=False)
-    except (ValueError, TypeError, AttributeError):
+    replies = reply_objects(text)
+    if not replies:
         return (text or '').strip()[:200]
+    reply = max(replies, key=lambda r: sum(k in r for k in CHECKS))
+    notes = {k: str(reply[k])[:120] for k in ('requested', 'reported') if k in reply}
+    return json.dumps({**notes, **{k: reply[k] for k in CHECKS if k in reply}}, ensure_ascii=False)
 
 
 def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, max_usd=None):
@@ -110,7 +127,7 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
     args = SimpleNamespace(model=model_id, max_tokens=ANSWER_TOKENS, reasoning_effort=None, temperature=0, base_url=base_url, key_env=key_env,
                            extra_body={'response_format': SCHEMA, **extra})
 
-    meter.totals.update(truncated=0, last_error=None)
+    meter.totals.update(truncated=0, unreadable=0, last_error=None)
     streak = [0]
 
     def failed(why):
@@ -135,7 +152,7 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
             meter.totals['truncated'] += 1
             return failed(f'reply cut off at {ANSWER_TOKENS} tokens')
         if checks_of(result.get('raw')) is None:
-            meter.totals['errors'] += 1
+            meter.totals['unreadable'] += 1  # the judge answered; `errors` stays the count of calls that did not
             return failed('reply contains no valid complete checklist')
         streak[0] = 0
         return result['raw']

@@ -9,9 +9,12 @@ import random
 import time
 from pathlib import Path
 
-from .judge_holdout import check_frozen, check_rows
+from .judge_holdout import AUDIT_MAX, check_frozen, check_rows
 from .outcomes import score
 from .tasks import pair
+
+
+NO_REPORT = 'no report to read'
 
 
 def fresh_tasks(pairs_per_family=40):
@@ -36,8 +39,12 @@ def fresh_tasks(pairs_per_family=40):
     return rows
 
 
-def collect(tasks, protocol, model_path, lean, out, target=200, seed=20261124, max_tokens=512, max_seconds=1800):
-    """Use the frozen judge exclusions without asking that judge or looking at its labels."""
+def collect(tasks, protocol, model_path, lean, out, target=AUDIT_MAX, seed=20261124, max_tokens=512, max_seconds=1800):
+    """Use the frozen judge exclusions without asking that judge or looking at its labels.
+
+    A completion with no report (cut off, or no parsable answer) is kept in attempts.jsonl but not accepted: the
+    judge is never called on an empty report, so it would be a free agreement in the review.
+    """
     check_frozen(protocol)
     from .mlx_rl import encode, sample
     from mlx_lm import load
@@ -52,7 +59,7 @@ def collect(tasks, protocol, model_path, lean, out, target=200, seed=20261124, m
                 tasks=ordered, protocol_sha256=hashlib.sha256(json.dumps(protocol, sort_keys=True).encode()).hexdigest())
     (out/'plan.json').write_text(json.dumps(plan, indent=2, ensure_ascii=False)+'\n')
     model, tokenizer = load(str(model_path))
-    accepted, rejected = [], 0
+    accepted, rejected, no_report = [], 0, 0
     started = time.monotonic()
     with (out/'attempts.jsonl').open('w') as audit, (out/'fresh.jsonl').open('w') as sink:
         for index, task in enumerate(ordered):
@@ -67,29 +74,25 @@ def collect(tasks, protocol, model_path, lean, out, target=200, seed=20261124, m
                        verifier_why=scored['genuine_why'], exploit=scored['exploit'], verified_refutation=scored['verified_refutation'],
                        prompt_variant=variant, tokens=len(tokens), seconds=seconds, truncated=truncated,
                        model_revision=Path(model_path).name)
-            rejection = None
+            rejection = None if row['report'].strip() else NO_REPORT
             try:
-                check_rows(accepted+[row], protocol)
+                if not rejection:
+                    check_rows(accepted+[row], protocol)
             except ValueError as error:
                 rejection = str(error)
+            no_report += rejection == NO_REPORT
             audit.write(json.dumps(dict(row, rejection=rejection), ensure_ascii=False)+'\n'); audit.flush()
             if rejection:
                 rejected += 1
             else:
                 accepted.append(row)
                 sink.write(json.dumps(row, ensure_ascii=False)+'\n'); sink.flush()
-            progress = dict(attempted=index+1, accepted=len(accepted), rejected=rejected, target=target,
+            progress = dict(attempted=index+1, accepted=len(accepted), rejected=rejected, no_report=no_report, target=target,
                             elapsed_seconds=round(time.monotonic()-started, 1))
             (out/'progress.json').write_text(json.dumps(progress)+'\n')
             if (index+1) % 10 == 0:
                 print(json.dumps(progress), flush=True)
-    summary = dict(accepted=len(accepted), rejected=rejected, target=target, complete=len(accepted)>=target,
+    summary = dict(accepted=len(accepted), rejected=rejected, no_report=no_report, target=target, complete=len(accepted)>=target,
                    elapsed_seconds=round(time.monotonic()-started, 1))
     (out/'summary.json').write_text(json.dumps(summary, indent=2)+'\n')
     return accepted, summary
-
-
-def prepare_audit(rows, protocol, out, seed=20261124):
-    """Compatibility wrapper for the shared descriptive-audit preparation."""
-    from .judge_holdout import prepare
-    return prepare(rows, protocol, out, seed, descriptive=True)

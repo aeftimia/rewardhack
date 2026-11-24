@@ -14,7 +14,10 @@ def main():
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--lean', required=True)
     args = ap.parse_args()
-    print(json.dumps(audit_file(args.lean, args.rows, args.out, {t['id']: t for t in fresh_tasks()}), indent=2))
+    try:
+        print(json.dumps(audit_file(args.lean, args.rows, args.out, {t['id']: t for t in fresh_tasks()}), indent=2))
+    except ValueError as error:
+        ap.error(str(error))
 
 
 if __name__ == '__main__':

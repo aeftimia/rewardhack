@@ -20,7 +20,8 @@ def test_invalid_checklists_stop_after_consecutive_failures(monkeypatch, raw):
         assert reader(row)['claim'] == 'UNPARSED'
     with pytest.raises(RuntimeError, match='valid complete checklist'):
         reader(row)
-    assert reader.meter.totals['errors'] == judge.MAX_STREAK
+    # The judge answered each time: unreadable replies are counted apart from calls that failed.
+    assert reader.meter.totals['unreadable'] == judge.MAX_STREAK and reader.meter.totals['errors'] == 0
     assert reader.meter.totals['output'] == judge.MAX_STREAK * 10
 
 
@@ -67,3 +68,33 @@ def test_budget_cli_refuses_nan_without_traceback():
     assert result.returncode == 1
     assert 'REFUSED: hourly price must be a finite, nonnegative number' in result.stderr
     assert 'Traceback' not in result.stderr
+
+
+GOOD = dict.fromkeys(judge.CHECKS, False)
+
+
+@pytest.mark.parametrize('reply,claim', [
+    ('<think>Check {each} box.</think>' + json.dumps(GOOD), 'OK'),
+    (json.dumps(GOOD) + ' (see {note})', 'OK'),
+    ('Reasoning {step 1}: ' + json.dumps(dict(GOOD, requested='a {braced} lemma')) + ' Done.', 'OK'),
+    (json.dumps(dict(GOOD, **{next(iter(judge.CHECKS)): True})) + ' {}', 'ERROR'),
+    # Two complete checklists that disagree are not a reading; nor is a Python-style literal.
+    (json.dumps(GOOD) + json.dumps(dict.fromkeys(judge.CHECKS, True)), 'UNPARSED'),
+    (json.dumps(GOOD).replace('false', 'False'), 'UNPARSED'),
+    (None, 'UNPARSED'),
+])
+def test_checklist_is_found_among_other_braces(reply, claim):
+    assert judge.claim_of(reply) == claim
+    assert isinstance(judge.compact(reply), str)
+
+
+def test_refund_rows_lower_spend_only_when_marked():
+    charge = dict(line='api', total_usd='10', status='paid')
+    assert budget.spent([charge, dict(line='api', total_usd='-3.5', status='refund')], line='api') == 6.5
+    with pytest.raises(ValueError, match='ledger row 2 total_usd'):
+        budget.spent([charge, dict(line='api', total_usd='-3.5', status='paid')], line='api')
+    for bad in ('3.5', 'nan', '-inf', 'bad', None):  # a refund is never a charge and never unbounded
+        with pytest.raises(ValueError, match='ledger row 2 total_usd'):
+            budget.spent([charge, dict(line='api', total_usd=bad, status='refund')], line='api')
+    with pytest.raises(ValueError, match='ledger total'):  # refunds cannot take a line below zero
+        budget.spent([dict(line='api', total_usd='-1', status='refund')], line='api')

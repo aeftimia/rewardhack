@@ -13,6 +13,15 @@ COMPARE = ('reward', 'grader_reward', 'genuine', 'exploit', 'verified_refutation
 CARRIED = ('tokens', 'seconds', 'truncated', 'round', 'step', 'turn', 'conversation', 'reasoning_tokens', 'model')
 
 
+def scored_as_cut_off(old):
+    """Whether the row was scored as cut off, which only rows read from token IDs are (`genuine_why == 'truncated'`).
+
+    Older rows carry a `truncated` flag from looser tests (`finish_reason == 'length'`, a stop token landing on
+    the limit) next to a complete answer. That flag stays as metadata and the answer is rescored from `raw`.
+    """
+    return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None
+
+
 def rescore_file(path, lean, tasks=None):
     tasks = tasks or task_index()
     old_rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
@@ -21,7 +30,7 @@ def rescore_file(path, lean, tasks=None):
         # A judged row keeps its stored reading: rescoring re-runs Lean, not the judge.
         replay = (lambda row, old=old: {'claim': old['claim'], 'raw': old.get('judge_raw', '')}) if old.get('claim') is not None else None
         new = score(lean, tasks[old['task_id']], old['raw'], old['arm'], old.get('penalty', 0.0), replay,
-                    truncated=old.get('truncated'))
+                    truncated=scored_as_cut_off(old))
         new.update({k: old[k] for k in CARRIED if k in old})
         new_rows.append(new)
         diff = {k: (old.get(k), new[k]) for k in COMPARE if old.get(k) != new[k]}

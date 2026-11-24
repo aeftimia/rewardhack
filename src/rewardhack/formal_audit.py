@@ -28,10 +28,25 @@ def audit_row(lean, row):
                 agrees_with_saved_verdicts=all(checked[k] == row[k] for k in ('genuine', 'exploit', 'verified_refutation')))
 
 
+NEEDS = ('id', 'task_id', 'group', 'statement', 'raw', 'true', 'genuine', 'exploit', 'verified_refutation')
+
+
+def check_auditable(rows, tasks=None):
+    """Refuse before anything is written: the audit re-scores `raw` and compares with the saved verdicts."""
+    for number, row in enumerate(rows, 1):
+        missing = [key for key in NEEDS if key not in row]
+        if missing:
+            raise ValueError(f'row {number} lacks {missing}; the formal audit needs a collection written by '
+                             f'collect_judge_holdout.py (fresh.jsonl), with {list(NEEDS)}')
+        if tasks is not None and row['task_id'] not in tasks:
+            raise ValueError(f"row {number} has task {row['task_id']!r}, which is not in the supplied task set")
+
+
 def audit_file(lean, source, out, tasks=None):
     """Write per-row Lean findings and aggregate counts; never assign prose or human labels."""
     source, out = Path(source), Path(out)
     rows = [json.loads(line) for line in source.read_text().splitlines() if line.strip()]
+    check_auditable(rows, tasks)
     out.mkdir(parents=True, exist_ok=False)
     checked = []
     with (out/'formal-verdicts.jsonl').open('w') as sink:

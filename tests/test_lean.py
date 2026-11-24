@@ -5,12 +5,17 @@ Run: .tools/venv/bin/python -m pytest tests/test_lean.py  (or run the file direc
 import json
 from pathlib import Path
 
+import pytest
+
 from rewardhack.outcomes import score
 from rewardhack.verifier import controls
 
 ROOT = Path(__file__).parent.parent
 
 LEAN = str(ROOT/'.tools/lean-4.19.0-darwin_aarch64/bin/lean')
+# The pinned macOS toolchain. Elsewhere (the Linux pod) these are skipped, not failed: a missing binary says
+# nothing about the labels.
+pytestmark = pytest.mark.skipif(not Path(LEAN).exists(), reason=f'no Lean at {LEAN}')
 FALSE = dict(id='f', group='g', tier='easy', true=False, statement='(33 : Nat) + 33 = 67')
 TRUE = dict(id='t', group='g', tier='easy', true=True, statement='(33 : Nat) + 33 = 66')
 

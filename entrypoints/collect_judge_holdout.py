@@ -4,8 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
-from rewardhack.holdout_collection import collect, fresh_tasks, prepare_audit
-from rewardhack.judge_holdout import check_frozen
+from rewardhack.holdout_collection import collect, fresh_tasks
+from rewardhack.judge_holdout import check_frozen, prepare
 from rewardhack.tasks import verify_references
 
 
@@ -24,6 +24,10 @@ def main():
     args = ap.parse_args()
     protocol = json.loads(args.protocol.read_text())
     check_frozen(protocol)
+    # Before the long collection, not after it: both directories are created fresh.
+    for path in (args.out, args.review_out):
+        if path.exists() and not args.verify_only:
+            ap.error(f'{path} already exists; choose a new directory')
     tasks = fresh_tasks()
     failures = verify_references(args.lean, tasks, workers=4)
     if failures:
@@ -36,7 +40,11 @@ def main():
     print(json.dumps(summary), flush=True)
     if not summary['complete']:
         raise SystemExit('Collection incomplete; preserved attempts and accepted rows for inspection')
-    prepare_audit(rows, protocol, args.review_out, args.seed)
+    try:
+        prepare(rows, protocol, args.review_out, args.seed, descriptive=True)
+    except (ValueError, OSError) as error:
+        raise SystemExit(f'{error}\nThe collection is saved. Prepare the sheet from it with: prepare_judge_holdout.py prepare '
+                         f'--descriptive --protocol {args.protocol} --rows {args.out}/fresh.jsonl --out <new directory>')
     print(f'Blind review: {args.review_out}/sheet.md', flush=True)
 
 

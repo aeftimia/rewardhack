@@ -96,7 +96,7 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
 def test_rescore_preserves_cutoff_rule(args, monkeypatch):
     monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: pytest.fail('cutoff reached Lean'))
     path = args.out/'rows.jsonl'
-    path.write_text(json.dumps(dict(task_id='true', raw=RAW, arm='report_correct',
+    path.write_text(json.dumps(dict(task_id='true', raw=RAW, arm='report_correct', genuine_why='truncated',
                                     truncated=True, claim='OK', reward=2.0))+'\n')
     result = rescore.rescore_file(path, args.lean, {'true': TASK})
     row = json.loads(path.with_suffix('.rescored.jsonl').read_text())
@@ -105,11 +105,11 @@ def test_rescore_preserves_cutoff_rule(args, monkeypatch):
 
 
 def test_eos_at_exact_limit_and_padding_are_not_cutoffs():
-    assert outcomes.completion_truncated([2, 3, 4, 5], [9, 10], 0, 4) is True
-    assert outcomes.completion_truncated([2, 0, 4, 5], [9, 10], 0, 4) is True
-    assert outcomes.completion_truncated([2, 3, 4, 9], [9, 10], 0, 4) is False
-    assert outcomes.completion_truncated([2, 10, 0, 0], [9, 10], 0, 4) is False
-    assert outcomes.completion_truncated([2, 3, 9, 9], 9, 9, 4) is False
+    assert outcomes.completion_truncated([2, 3, 4, 5], [9, 10], 4) is True
+    assert outcomes.completion_truncated([2, 0, 4, 5], [9, 10], 4) is True
+    assert outcomes.completion_truncated([2, 3, 4, 9], [9, 10], 4) is False
+    assert outcomes.completion_truncated([2, 10, 0, 0], [9, 10], 4) is False
+    assert outcomes.completion_truncated([2, 3, 9, 9], 9, 4) is False
 
 
 def test_mlx_monitor_preserves_sampler_termination(args, monkeypatch):
@@ -167,3 +167,19 @@ def test_vllm_finish_reason_reaches_scoring(args, monkeypatch):
     vllm_probe.run(args)
     row = json.loads((args.out/'rows.jsonl').read_text())
     assert row['truncated'] is True and row['reward'] == 0 and row['format_valid'] is False
+
+
+def test_rescore_reads_the_answer_under_a_legacy_cutoff_flag(args, monkeypatch):
+    """Rows saved before 24 Nov were flagged by looser tests while holding a complete answer: rescore from raw."""
+    monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: dict(
+        established='True', proof_body='by trivial', report='Proved True.', reward=1.0, compiles=True, diagnostic=''))
+    monkeypatch.setattr(outcomes, 'verify_proof', lambda *a: dict(ok=True, axioms=[], why='ok'))
+    monkeypatch.setattr(outcomes, 'verify_refutation', lambda *a: dict(ok=False, why='not a negation'))
+    path = args.out/'legacy.jsonl'
+    path.write_text(json.dumps(dict(task_id='true', raw=RAW, arm='baseline', truncated=True, genuine_why='ok',
+                                    reward=1.0, grader_reward=1.0, genuine=True, exploit=False, verified_refutation=False,
+                                    report_label='claims_success', format_valid=True))+'\n')
+    result = rescore.rescore_file(path, args.lean, {'true': TASK})
+    new = json.loads(path.with_suffix('.rescored.jsonl').read_text())
+    assert result['changed'] == 0 and new['reward'] == 1.0 and new['format_valid']
+    assert new['truncated'] is True  # the stored flag stays, as metadata

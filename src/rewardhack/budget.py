@@ -4,6 +4,7 @@ The grant's budget lines are the caps. A ledger row is charged to a line through
 with an empty `line` (the pilot, and anything paid from other funds) are recorded but count against
 nothing here. The guard counts each launch at its worst case: hourly price x hard runtime cap + other
 costs. Moving money between lines is a budget change and is not something this module does quietly.
+Money a provider returns is its own row with `status` `refund` and a negative total, on the line it was charged to.
 """
 import csv
 import math
@@ -34,9 +35,26 @@ def nonnegative_finite(value, name):
     return number
 
 
+REFUND = 'refund'  # the one `status` whose total may be negative: money a provider returned
+
+
+def row_total(row, number):
+    """A row's cost. Every row is validated, whichever line is asked for: a malformed ledger is not a basis for a launch.
+
+    A negative total lowers what counts as spent, so it has to say what it is: `status` must be `refund`.
+    """
+    name = f'ledger row {number} total_usd'
+    if (row.get('status') or '').strip().lower() != REFUND:
+        return nonnegative_finite(row.get('total_usd'), name)
+    try:
+        return -nonnegative_finite(-float(row.get('total_usd')), name)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f'{name} must be a finite number no greater than zero in a {REFUND} row') from None
+
+
 def spent(rows, **match):
-    total = sum(nonnegative_finite(r.get('total_usd'), f'ledger row {i} total_usd')
-                for i, r in enumerate(rows, 1) if all(r.get(k) == v for k, v in match.items()))
+    totals = [row_total(r, i) for i, r in enumerate(rows, 1)]
+    total = sum(t for t, r in zip(totals, rows) if all(r.get(k) == v for k, v in match.items()))
     return nonnegative_finite(total, 'ledger total')
 
 

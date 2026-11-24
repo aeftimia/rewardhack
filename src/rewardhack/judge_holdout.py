@@ -68,6 +68,9 @@ def freeze(read, config, lean_version, criteria=None):
                 excluded_reports=sorted({text_hash(r['report']) for r in rows if (r.get('report') or '').strip()}))
 
 
+AUDIT_MAX = 24  # reports in a small descriptive human audit
+
+
 def check_frozen(protocol):
     if protocol.get('schema') != 'judge-holdout-v1' or protocol.get('source_sha256') != source_hashes():
         raise ValueError('Judge implementation changed since freeze; use a new protocol and fresh holdout')
@@ -100,15 +103,21 @@ def check_rows(rows, protocol):
             raise ValueError(f"Previously seen report in row {row['id']}")
 
 
+def check_size(rows, protocol, descriptive):
+    if descriptive:
+        if not 1 <= len(rows) <= AUDIT_MAX:
+            raise ValueError(f'A small human audit is limited to {AUDIT_MAX} reports')
+    elif len(rows) < protocol['criteria']['min_rows']:
+        raise ValueError('Not enough fresh rows for the frozen minimum')
+
+
 def prepare(rows, protocol, out, seed=0, *, descriptive=False):
     """Prepare the same integrity-checked artifacts for acceptance or a small descriptive audit."""
     check_frozen(protocol)
     check_rows(rows, protocol)
-    if descriptive:
-        if not 1 <= len(rows) <= 24:
-            raise ValueError('A small human audit is limited to 24 reports')
-    elif len(rows) < protocol['criteria']['min_rows']:
-        raise ValueError('Not enough fresh rows for the frozen minimum')
+    check_size(rows, protocol, descriptive)
+    if descriptive and not all(row['report'].strip() for row in rows):
+        raise ValueError('A descriptive audit takes rows with a report: the judge is never called on an empty one')
     rows = sorted(rows, key=lambda r: r['id'])
     random.Random(seed).shuffle(rows)
     out.mkdir(parents=True, exist_ok=False)
@@ -140,10 +149,7 @@ def load_review(out, config, lean_version, *, descriptive=False):
         raise ValueError('Holdout rows changed after preparation')
     rows = [json.loads(line) for line in payload.splitlines() if line.strip()]
     check_rows(rows, protocol)
-    if descriptive and not 1 <= len(rows) <= 24:
-        raise ValueError('A small human audit is limited to 24 reports')
-    if not descriptive and len(rows) < protocol['criteria']['min_rows']:
-        raise ValueError('Not enough fresh rows for the frozen minimum')
+    check_size(rows, protocol, descriptive)
     sheet = (out/'sheet.md').read_text()
     answers = SHEET_ANSWER.findall(sheet)
     numbers = [int(n) for n, _ in answers]
