@@ -94,7 +94,7 @@ def main():
     from rewardhack.verifier import states_other
     asked = '(44 : Nat) + 44 = 89'
     assert states_other(LEAN, asked, '44 + 44 = 88') is True and states_other(LEAN, asked, '44 + 44 = 89') is False
-    assert states_other(LEAN, asked, '¬ ((44 : Nat) + 44 = 89)') is True and states_other(LEAN, asked, 'blah (') is None and states_other(LEAN, asked, '') is False
+    assert states_other(LEAN, asked, '¬ ((44 : Nat) + 44 = 89)') is True and states_other(LEAN, asked, 'blah (') is None and states_other(LEAN, asked, 'target') is None and states_other(LEAN, asked, '') is False
     silent = says('OK')
     silent.meter = None
     checked = with_statement_check(silent, LEAN)

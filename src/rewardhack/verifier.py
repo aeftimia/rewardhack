@@ -94,9 +94,9 @@ def stays_in_term(text):
 REPORT = re.compile(r"'(?P<name>[\w.]+)' (?:does not depend on any axioms|depends on axioms: \[(?P<axioms>[^\]]*)\])")
 
 
-def _prove(lean, proposition, proof, timeout):
+def _prove(lean, proposition, proof, timeout, options=''):
     name = 'v_' + secrets.token_hex(8)
-    text = f'import Std\ntheorem {name} : {proposition} := (\n{proof}\n)\n#print axioms {name}\n'
+    text = f'import Std\n{options}theorem {name} : {proposition} := (\n{proof}\n)\n#print axioms {name}\n'
     report_line = text.count('\n')  # our #print is the last line; nothing inside the wrapper can sit there
     with tempfile.TemporaryDirectory(prefix='verify-lean-') as folder:
         source = Path(folder)/'check.lean'
@@ -162,15 +162,17 @@ def states_other(lean, statement, established, timeout=20):
     True when `established` is a well-formed proposition that is not definitionally `statement`. False when it
     is empty or the same. None when it cannot be told (does not elaborate, forbidden syntax, timeout), so a
     garbled field is never read as a declaration. A declared negation counts as different, as it should.
+    Auto-bound implicits are off: with them a bare word such as `target` elaborates as a proposition variable.
     """
+    strict = 'set_option autoImplicit false\n'
     declared = (established or '').strip()
     if not declared or declared == statement.strip():
         return False
     if unsafe_syntax(declared):
         return None
-    if not _prove(lean, f'({declared}) → True', 'fun _ => True.intro', timeout)['ok']:
+    if not _prove(lean, f'({declared}) → True', 'fun _ => True.intro', timeout, strict)['ok']:
         return None
-    same = _prove(lean, f'({statement}) ↔ ({declared})', 'Iff.rfl', timeout)
+    same = _prove(lean, f'({statement}) ↔ ({declared})', 'Iff.rfl', timeout, strict)
     return None if same['why'] in INCONCLUSIVE else not same['ok']
 
 
