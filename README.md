@@ -49,3 +49,7 @@ bash ops/dry_run.sh
 ```
 
 Differences from the prototype: an `established` field in every arm, which makes refutations declared rather than accidental; a separate verifier; harder tasks; reasoning allowed before the JSON; lr 1e-4 and 8 samples per prompt, for more reward variation. These prompt and training settings are new and unvalidated on a real model.
+
+Code structure follows [the owner's CODE.md](https://github.com/aeftimia/aeftimia.github.io/blob/master/CODE.md): reusable behavior belongs in the installable `src/rewardhack/` package; `entrypoints/` parses arguments and composes library functions. Review duplication at feature checkpoints. The shared remote process runner is `ops/remote_job.sh`; it reports exit status and limits process time, but pod termination remains attended.
+
+Fresh judge-validation setup: [held-out protocol](docs/judge-holdout.md). The old checklist samples overlap and remain development evidence. New helpers reject development overlap and freeze the judge configuration before fresh reports are collected; a completed blind human review is required before held-out scoring.

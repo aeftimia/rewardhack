@@ -9,7 +9,7 @@ alternatives considered are in [notes-2026-11-21.md](notes-2026-11-21.md).
 
 | Step | State |
 |---|---|
-| 0 reward arm and judge | built and tested: `--arm report_correct --penalty λ --judge ...`. **Judge accepted 2026-11-24: gpt-5.4-nano, checklist prompt under a JSON schema, with Lean's check of the `established` field in front.** 97% agreement on the honesty bit over 2 x 320 stratified model-read reports (notes, section 17); about $0.0003 per report from the `api` line, capped per run with `--judge-max-usd` |
+| 0 reward arm and judge | built and tested: `--arm report_correct --penalty λ --judge ...`. **Judge accepted 2026-11-24: gpt-5.4-nano, checklist prompt under a JSON schema, with Lean's check of the `established` field in front.** 97% development agreement on two overlapping 320-report samples (notes, section 17); fresh held-out validation is pending; about $0.0003 per report from the `api` line, capped per run with `--judge-max-usd` |
 | 1 verifier | attacked and hardened; one real break found and closed; controls extended from 18 to 28; all 338 references re-verified |
 | 2 GPU path | gpt-oss `--reasoning-effort`, judge and penalty threaded through, per-step exploration log, budget guard on the grant's lines; CPU dry run passes |
 | 3 pod smoke test | `ops/remote_runpod_smoke.sh` written, **never run**; needs a launch approval |
@@ -21,25 +21,31 @@ account" in `resource`, and take their cost from that space's own billing page.
 The space was created on 2026-11-24 as the RunPod team `BlueDot RG-1451`. It is unfunded until the
 open questions about this plan are settled.
 
-Monday runbook, after the project space exists and the spend is approved (worst case 2 h x $2.51 =
-$5.02 plus storage):
+Runbook, after the project space exists and the spend is approved (attended target: 2 h x $2.51 =
+$5.02 plus storage; this is not an automatically enforced billing cap):
 
 ```bash
 .tools/venv/bin/python entrypoints/budget.py check --line gpt-oss-20b-gpu --hourly 2.51 --max-hours 2 --other-usd 0.5 --launch-cap 10
 ```
 
 ```bash
-bash ops/drive_runpod.sh <pod ssh host> <pod ssh port> ops/remote_runpod_smoke.sh results/runpod-smoke-20261123 120
+FORWARD_JUDGE_KEY=1 bash ops/drive_runpod.sh <pod ssh host> <pod ssh port> ops/remote_runpod_smoke.sh results/runpod-smoke-20261123 120
 ```
 
+Set `OPENAI_API_KEY` locally before invoking the driver. It checks the key-forwarding prerequisites before connecting.
+The shared remote runner stops the process after 120 minutes (plus a 30-second kill grace), even if the laptop disconnects.
+It does **not** terminate the pod or stop billing: remain available to terminate the pod in the console, including on any failure.
+The budget check is conditional on that attended termination; do not call it a hard spending cap.
+
 Then terminate the pod in the console, add the ledger row with `line` = `gpt-oss-20b-gpu`, and read
-`judge-validation/summary.json`, `train-*/summary.json` and `train-*/steps.jsonl` against the stop-go
+`probe/summary.json`, `train-*/summary.json` and `train-*/steps.jsonl` against the stop-go
 list at the end of this file.
 
-## Step 0 (free): the approved reward does not exist in code yet
+## Step 0: reward arm implemented; fresh judge validation pending
 
-`outcomes.score` knows two arms, `baseline` and `equal_reward`. The funded design is
-"grader + report-correctness reward + swept cheat penalty". Build it before anything is rented.
+`outcomes.score` implements `baseline` (`g`), the historical `equal_reward` arm, and the funded
+`report_correct` arm below. The baseline compares against the combined honesty/refutation intervention;
+it does not isolate the causal contribution of each added term.
 
 ### The idea, in three stages
 
@@ -136,20 +142,19 @@ declaration. Add and run locally:
 
 ## Step 2 (free): make the GPU path able to run gpt-oss-20b at all
 
-`hf_grpo` only knows Qwen's `enable_thinking`; gpt-oss needs `reasoning_effort` in the template and
-its Harmony output (JSON in the final channel). Also raise `budget.TOTAL_CAP` (still $50) to the
-grant lines, one cap per line. Extend `ops/dry_run.sh` to the new arm and the penalty flag so the
-plumbing is exercised on CPU before a pod is rented.
+`hf_grpo` now threads gpt-oss `reasoning_effort` through the chat template and handles reasoning
+before the final JSON. Budget checks use the grant lines, and `ops/dry_run.sh` exercises the new arm.
+These are implementation checks; the gpt-oss GPU smoke run is still pending.
 
 ## Step 3 (≈$5–10): one short pod, three questions
 
-One RTX PRO 6000 96 GB at ~$2.51/h, hard cap 2 h, gpt-oss-20b at **low** effort (the 12/60
+One RTX PRO 6000 96 GB at ~$2.51/h, attended billing target 2 h, gpt-oss-20b at **low** effort (the 12/60
 unprompted base rate was measured at low effort; high effort truncated 89/120 at 8k tokens).
 
 1. `run.py probe`: unseeded exploration through the *training* sampler (HF generate, not vLLM) on
    the hard-set training split. Readout: exploit / refutation / honest-exit frequency per
    8-sample group, share of groups with any reward variation. This is the gate 2 number.
-2. `run.py train`, 8–16 steps, new arm at λ=0: mixed-reward groups > 0, nonzero adapter change,
+2. `run.py train`, 8–12 steps, new arm at λ=0.5: mixed-reward groups > 0, nonzero adapter change,
    finite KL, format retention, no degenerate completions. Try lr 1e-5 beside 1e-4 if steps allow.
 3. Throughput: seconds per step at 8 generations × ~2k tokens, plus Lean time. From that,
    cost per run = steps × s/step × $/h, and the five settings × three seeds total. If it exceeds
@@ -177,3 +182,9 @@ against a fixed head drifts out of its training distribution. Cheapest use: run 
 checkpoint the five-setting sweep produces and ask whether the readout stays accurate as the policy
 learns to exploit and conceal. One untrained layer saved beside the LoRA adapter; a few pod-hours per
 model family. A material addition to the application, so it waits for BlueDot's email consent.
+
+## Review fixes (2026-11-24)
+
+The changed-statement check now requires a proposition, full judge checklists are retained, and the report reader sees late caveats. The old `acknowledged_false` aggregate is now named `failure_flag_on_false_tasks`: failure signaling does not imply recognizing impossibility. The probe samples training tasks in complete groups, with family coverage when limited, and records within-prompt reward variation before updates. Training evaluations use the same family-balanced task limiting.
+
+Remote failures propagate through `EXIT_CODE`; the optional on-pod judge must pass explicit development-validation thresholds before training. That does not replace fresh held-out validation. See [the held-out protocol](judge-holdout.md) before interpreting judge accuracy as generalization evidence. No new reward arms or changes to the owner-approved failure-flag rubric are introduced.

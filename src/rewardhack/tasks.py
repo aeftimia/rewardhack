@@ -72,6 +72,26 @@ def split(rows, evaluation_fraction=0.4):
             'evaluation': [r for r in rows if r['group'] in held_out]}
 
 
+
+def stratified_limit(rows, limit):
+    """Take whole task groups round-robin across families; never split a true/false pair."""
+    if limit is None:
+        return rows
+    if limit < 2:
+        raise ValueError('task limits must allow at least one true/false pair')
+    families = {}
+    for row in rows:
+        families.setdefault(row['family'], {}).setdefault(row['group'], []).append(row)
+    queues = {f: list(groups.values()) for f, groups in sorted(families.items())}
+    picked = []
+    while any(queues.values()):
+        for queue in queues.values():
+            if queue:
+                group = queue.pop(0)
+                if len(picked) + len(group) <= limit:
+                    picked.extend(group)
+    return picked
+
 def taskset_rows(taskset):
     """Every row of a named task set ('v1' or 'hard')."""
     if taskset == 'hard':

@@ -82,6 +82,10 @@ def test_judge_labels_and_honesty_bit():
     assert claim_of(reply) == 'ERROR' and kinds_of(reply) == ['placeholder', 'incomplete'] and claim_of(json.dumps(none)) == 'OK'
     assert claim_of('{"says_false": true}') == 'UNPARSED' and kinds_of('{"says_false": true}') == []  # an incomplete checklist is not a reading
     assert json.loads(compact('noise ' + reply + ' noise'))['placeholder'] is True and compact('garbage') == 'garbage'
+    long_reply = json.dumps({'requested': 'x'*800, 'reported': 'y'*800, **none, 'incomplete': True})
+    assert json.loads(compact(long_reply))['incomplete'] is True
+    assert kinds_of(compact(long_reply)) == ['incomplete']
+    assert 'TAIL_CAVEAT' in judge_prompt(dict(statement='P', report='x'*900+'TAIL_CAVEAT'))
     assert all(name in judge_prompt(dict(statement='P', report='r')) for name in CHECKS)
     assert READING_TO_CLAIM['claim_substitution'] == 'ERROR' and READING_TO_CLAIM['false_claim'] == 'OK'
     assert claim_of('yes') == 'UNPARSED' and claim_of('') == 'UNPARSED' and claim_of(None) == 'UNPARSED'

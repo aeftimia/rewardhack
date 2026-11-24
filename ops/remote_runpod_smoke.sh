@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 # Preflight smoke test for the funded training run (docs/preflight-plan.md, step 3). One RunPod pod with a
 # 80-96 GB card, about two hours. NOT YET RUN ON A POD: written on 2026-11-21 from the earlier probe scripts,
-# so expect the first launch to find environment problems; every step logs and a failed step does not block
-# the next. Model-written Lean IS executed here (training needs the reward), unlike the inference probes.
+# so expect the first launch to find environment problems; every step logs and failures stop the run. Model-written Lean IS executed here (training needs the reward), unlike the inference probes.
 #
 # Answers before any of the $800 line is spent:
 #   1. Only with JUDGE_KIND=pod: does a judge served on this pod agree with the model-read labels? (judge-validation)
 #   2. Does TRL GRPO train gpt-oss-20b at all: reward variation, real updates, stable output? (train-*)
 #   3. What does a step cost? seconds per step -> dollars per run -> 15 runs against $800.
+set -euo pipefail
 cd ~/pilot-repo
 export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_ATTENTION_BACKEND=TRITON_ATTN
 export PATH="/usr/local/cuda/bin:$PATH" CUDA_HOME=/usr/local/cuda
 mkdir -p ~/out /workspace/hf
 rm -f ~/out/DONE
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
-fail() { log "$1"; touch ~/out/DONE; exit 1; }
+fail() { log "$1"; exit 1; }
+JUDGE_PID=
+cleanup() { if [[ -n $JUDGE_PID ]]; then kill "$JUDGE_PID" 2>/dev/null || true; fi; }
+trap cleanup EXIT
 MODEL=openai/gpt-oss-20b; REV=6cee5e81ee83917806bbde320786a8fb61efebee
 JUDGE=${JUDGE_MODEL:-Qwen/Qwen3-8B}; JUDGE_REV=${JUDGE_REV:-b968826d9c46dd6066d109eabc6255188de91218}
 # The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
@@ -62,6 +65,7 @@ else
 log start judge-server
 /workspace/vllm-venv/bin/vllm serve "$JUDGE" --revision "$JUDGE_REV" --port 8001 --host 127.0.0.1 --max-model-len 3072 \
   --gpu-memory-utilization "${JUDGE_GPU_FRACTION:-0.22}" > ~/out/judge-server.log 2>&1 &
+JUDGE_PID=$!
 for _ in $(seq 90); do curl -sf http://127.0.0.1:8001/v1/models > /dev/null && break; sleep 5; done
 curl -sf http://127.0.0.1:8001/v1/models > /dev/null || fail JUDGE_SERVER_DID_NOT_START
 export NO_KEY=none
@@ -69,8 +73,8 @@ JUDGE_ARGS=(--judge api --judge-model "$JUDGE" --judge-url http://127.0.0.1:8001
 
 # Question 1. 60 rows of each reading category; minutes at vLLM speed, and it gates the reward below.
 log start judge-validation
-$PY entrypoints/validate_judge.py --out ~/out/judge-validation --per-category 60 "${JUDGE_ARGS[@]}" > ~/out/judge-validation.log 2>&1
-log "end judge-validation exit=$?"
+$PY entrypoints/validate_judge.py --out ~/out/judge-validation --per-category 60 --lean ~/lean-safe --require-acceptance "${JUDGE_ARGS[@]}" > ~/out/judge-validation.log 2>&1 || fail JUDGE_VALIDATION_FAILED
+log "end judge-validation passed"
 fi
 
 # Questions 2 and 3. Low reasoning effort: the unprompted base rate (12/60) was measured there, and high
@@ -78,11 +82,13 @@ fi
 BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" --reasoning-effort low --thinking unsupported --taskset hard
       --max-completion-length 2048 --num-generations 8 --eval-limit 12 --eval-samples 2 --save-every 8 --stop-no-variation 99
       --arm report_correct --penalty 0.5 "${JUDGE_ARGS[@]}")
+# Exploration is measured before updates, on stratified training groups with eight samples each.
+log start probe
+$PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit 12 --max-seconds 600 > ~/out/probe.log 2>&1 || fail PROBE_FAILED
 step() { name=$1; shift; log "start $name"
-  $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" "$@" > ~/out/"$name".log 2>&1
-  log "end $name exit=$?"; nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
-step train-lr1e-4 --steps 12 --learning-rate 1e-4 --max-seconds 2700 --final-eval-seconds 600
-# Only if the first run left time: the same at a tenth of the learning rate, to see whether 1e-4 is what breaks output format.
-step train-lr1e-5 --steps 8 --learning-rate 1e-5 --max-seconds 1500 --final-eval-seconds 420
-pkill -f 'vllm serve' || true
-touch ~/out/DONE
+  $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
+  log "end $name passed"; nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
+step train-lr1e-4 --steps 12 --learning-rate 1e-4 --max-seconds 2400 --final-eval-seconds 600
+# The shared remote runner bounds total process time; if time remains: the same at a tenth of the learning rate, to see whether 1e-4 is what breaks output format.
+step train-lr1e-5 --steps 8 --learning-rate 1e-5 --max-seconds 1200 --final-eval-seconds 420
+# ops/remote_job.sh records EXIT_CODE and DONE after this script exits.

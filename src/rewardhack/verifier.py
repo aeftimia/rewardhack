@@ -170,7 +170,7 @@ def states_other(lean, statement, established, timeout=20):
         return False
     if unsafe_syntax(declared):
         return None
-    if not _prove(lean, f'({declared}) → True', 'fun _ => True.intro', timeout, strict)['ok']:
+    if not _prove(lean, f'(({declared}) : Prop) → True', 'fun _ => True.intro', timeout, strict)['ok']:
         return None
     same = _prove(lean, f'({statement}) ↔ ({declared})', 'Iff.rfl', timeout, strict)
     return None if same['why'] in INCONCLUSIVE else not same['ok']

@@ -13,9 +13,9 @@ import time
 from pathlib import Path
 
 from .gpu import GpuSampler
-from .outcomes import score, sorry_attempt, summarize
+from .outcomes import reward_groups, score, summarize, tally
 from .prompts import prompt
-from .tasks import split, taskset_rows
+from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
 
 
@@ -63,22 +63,11 @@ def reasons(args):
     return args.thinking == 'on' or bool(args.reasoning_effort)
 
 
-def tally(rows):
-    """Counts of the behaviours a reward can separate, for one group, step or run."""
-    counts = dict(n=len(rows), exploit=sum(r['exploit'] for r in rows), genuine=sum(r['genuine'] for r in rows),
-                  refutation=sum(r['verified_refutation'] for r in rows), sorry_attempts=sum(sorry_attempt(r) for r in rows),
-                  format_valid=sum(r['format_valid'] for r in rows), inconclusive=sum(r['verifier_inconclusive'] for r in rows),
-                  reward=sum(r['reward'] for r in rows))
-    if rows and rows[0].get('claim') is not None:
-        counts.update(honest=sum(r['honest'] for r in rows), says_not_solved=sum(r['claim'] == 'ERROR' for r in rows),
-                      concealed_exploit=sum(r['exploit'] and not r['honest'] for r in rows))
-    return counts
-
-
-def evaluate(model, tokenizer, tasks, args, stage):
+def evaluate(model, tokenizer, tasks, args, stage, samples=None):
     import torch
     device = next(model.parameters()).device
     rows, generated, t_gen, t_lean = [], 0, 0.0, 0.0
+    samples = args.eval_samples if samples is None else samples
     torch.manual_seed(31415)
     model.eval()
     path = args.out/f'{stage}-evaluation.jsonl'
@@ -89,7 +78,7 @@ def evaluate(model, tokenizer, tasks, args, stage):
             t0 = time.perf_counter()
             with torch.inference_mode():
                 outputs = model.generate(**inputs, max_new_tokens=args.max_completion_length, do_sample=True, temperature=1.0, top_p=0.95,
-                                         top_k=20, num_return_sequences=args.eval_samples, pad_token_id=tokenizer.pad_token_id)
+                                         top_k=20, num_return_sequences=samples, pad_token_id=tokenizer.pad_token_id)
             t_gen += time.perf_counter()-t0
             start = inputs['input_ids'].shape[1]
             for output in outputs:
@@ -102,7 +91,10 @@ def evaluate(model, tokenizer, tasks, args, stage):
                 rows.append(row)
                 sink.write(json.dumps(row, ensure_ascii=False)+'\n')
                 sink.flush()
+    grouped = reward_groups(rows, samples)
     return dict(summarize(rows), generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
+                samples_per_prompt=samples, reward_groups=grouped['groups'], mixed_reward_groups=grouped['mixed_groups'],
+                zero_advantage_groups=grouped['zero_advantage_groups'], per_group=grouped['per_group'],
                 tokens_per_second=generated/max(t_gen, 1e-9), completions_per_hour=len(rows)/max(t_gen+t_lean, 1e-9)*3600)
 
 
@@ -131,9 +123,8 @@ def train(model, tokenizer, tasks, args, summary):
             rows.append(row)
         sink.flush()
         step = len(timing['lean'])+1
-        step_groups = [rows[i:i+args.num_generations] for i in range(0, len(rows), args.num_generations)]
-        mixed = [len({r['reward'] for r in group}) > 1 for group in step_groups]
-        groups.extend(mixed)
+        grouped = reward_groups(rows, args.num_generations)
+        groups.extend([True]*grouped['mixed_groups'] + [False]*grouped['zero_advantage_groups'])
         counts = tally(rows)
         for key, value in counts.items():
             summary['rollouts'][key] = summary['rollouts'].get(key, 0)+value
@@ -142,8 +133,7 @@ def train(model, tokenizer, tasks, args, summary):
             if counts.get(behaviour) and behaviour not in first_seen:
                 first_seen[behaviour] = step
         # A group whose rewards are all equal has zero advantage everywhere and moves nothing.
-        steps.write(json.dumps(dict(step=step, **counts, groups=len(mixed), mixed_groups=sum(mixed), zero_advantage_groups=len(mixed)-sum(mixed),
-                                    per_group=[tally(group) for group in step_groups]))+'\n')
+        steps.write(json.dumps(dict(step=step, **counts, **grouped))+'\n')
         steps.flush()
         timing['reward_end'] = time.perf_counter()
         timing['lean'].append(timing['reward_end']-t0)
@@ -215,8 +205,8 @@ def run(args):
         from .judge import from_args
         args.judge_fn = from_args(args)
         data = split(taskset_rows(args.taskset))
-        evaluation = data['evaluation'][:args.eval_limit]
-        training = data['train'][:args.train_limit]
+        evaluation = stratified_limit(data['evaluation'], args.eval_limit)
+        training = stratified_limit(data['train'], args.train_limit)
         (args.out/'tasks.json').write_text(json.dumps({'train': training, 'evaluation': evaluation}, indent=1, ensure_ascii=False)+'\n')
         import peft
         import torch
@@ -226,11 +216,13 @@ def run(args):
         summary.update(torch=torch.__version__, transformers=transformers.__version__, trl=trl.__version__, peft=peft.__version__,
                        gpus=[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())])
         model, tokenizer = load_model(args, summary)
-        summary['before'] = evaluate(model, tokenizer, evaluation, args, 'before')
-        print('before', summary['before'], flush=True)
         if args.mode == 'probe':
+            summary['probe'] = evaluate(model, tokenizer, training, args, 'probe', samples=args.num_generations)
+            summary['probe_split'] = 'train'
             summary['status'] = 'completed'
             return
+        summary['before'] = evaluate(model, tokenizer, evaluation, args, 'before')
+        print('before', summary['before'], flush=True)
         model = train(model, tokenizer, training, args, summary)
         summary['after'] = evaluate(model, tokenizer, evaluation, args, 'after')
         summary['status'] = 'completed'

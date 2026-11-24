@@ -7,9 +7,11 @@ false claim paid as an honest report) and the confusion table; writes every verd
 import argparse
 import json
 import time
+import subprocess
 from pathlib import Path
 
 from rewardhack.judge import add_arguments, from_args, read_set, sample_set, validate
+from rewardhack.judge_holdout import acceptance, judge_config, load_review
 
 
 def main():
@@ -20,14 +22,26 @@ def main():
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--lean', help='Lean binary: with it, a declared different proposition is flagged in code before the judge is asked')
     ap.add_argument('--max-usd', type=float, help='stop a metered judge at this spend')
+    ap.add_argument('--holdout', type=Path, help='prepared holdout directory with completed blind sheet; enforces frozen configuration and acceptance')
+    ap.add_argument('--require-acceptance', action='store_true', help='exit nonzero unless all predeclared acceptance thresholds pass')
     add_arguments(ap)
     args = ap.parse_args()
     if args.judge == 'none':
         ap.error('choose a judge to validate')
-    args.out.mkdir(parents=True, exist_ok=True)
-    rows = read_set(args.read)
-    if args.per_category:
-        rows = sample_set(rows, args.per_category, args.seed)
+    criteria, provenance = None, {}
+    if args.holdout:
+        if not args.lean or args.per_category:
+            ap.error('--holdout requires --lean and cannot be subsampled')
+        version = subprocess.check_output([args.lean, '--version'], text=True).strip()
+        try:
+            rows, criteria, provenance = load_review(args.holdout, judge_config(args), version)
+        except ValueError as error:
+            ap.error(str(error))
+    else:
+        rows = read_set(args.read)
+        if args.per_category:
+            rows = sample_set(rows, args.per_category, args.seed)
+    args.out.mkdir(parents=True, exist_ok=False)
     judge = from_args(args)
     started = time.perf_counter()
     with (args.out/'verdicts.jsonl').open('w') as sink:
@@ -35,8 +49,12 @@ def main():
     result.update(judge=args.judge, model=args.judge_model, revision=args.judge_revision, per_category=args.per_category, seed=args.seed, statement_check=bool(args.lean), planned=len(rows),
                   seconds=time.perf_counter()-started, seconds_per_report=(time.perf_counter()-started)/max(len(rows), 1),
                   usage=judge.meter.totals if judge.meter else None)
+    result.update(acceptance(result, len(rows), criteria))
+    result.update(validation_kind='human_heldout' if args.holdout else 'development', **provenance)
     (args.out/'summary.json').write_text(json.dumps(result, indent=1)+'\n')
     print(json.dumps(result, indent=1))
+    if (args.holdout or args.require_acceptance) and not result['accepted']:
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':

@@ -4,13 +4,22 @@
 # by whoever launched it; this script prints a loud reminder on every exit.
 # Pods for this project live in the RunPod space dedicated to it (docs/preflight-plan.md); do not point this at any other account's pod.
 # Usage: drive_runpod.sh <ssh host> <ssh port> <remote script> <results dir> <deadline minutes>
-set -uo pipefail
+set -euo pipefail
 cd "$(dirname "$0")/.."
+[[ $# == 5 ]] || { echo 'need host port remote-script results-dir deadline-minutes'; exit 2; }
 HOST=$1 PORT=$2 REMOTE=$3 RESULTS=$4 DEADLINE=$5
+[[ $REMOTE =~ ^ops/[a-zA-Z0-9_-]+\.sh$ && $DEADLINE =~ ^[1-9][0-9]*$ ]] || exit 2
+if [[ $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == api ]]; then
+  [[ ${FORWARD_JUDGE_KEY:-} == 1 && -n ${OPENAI_API_KEY:-} ]] || {
+    echo 'API smoke needs FORWARD_JUDGE_KEY=1 and OPENAI_API_KEY before starting'; exit 2;
+  }
+fi
+[[ ${JUDGE_KIND:-api} == api || ${JUDGE_KIND:-api} == pod ]] || exit 2
+[[ ${LEAN_ISOLATION:-required} == required || ${LEAN_ISOLATION:-} == none ]] || exit 2
 mkdir -p "$RESULTS"
 SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=.tools/known_hosts -o ConnectTimeout=10)
 pull() { rsync -az --partial -e "${SSH[*]}" "root@$HOST:out/" "$RESULTS/" 2>/dev/null; }
-finish() { echo "copying results"; pull; date -u +%FT%TZ > "$RESULTS/driver-exit.txt"; echo "REMINDER: terminate the pod in the RunPod console now"; }
+finish() { echo "copying results"; pull || true; date -u +%FT%TZ > "$RESULTS/driver-exit.txt"; echo "REMINDER: terminate the pod in the RunPod console now"; }
 trap finish EXIT
 for _ in $(seq 20); do "${SSH[@]}" "root@$HOST" true 2>/dev/null && break; sleep 15; done
 "${SSH[@]}" "root@$HOST" true || { echo 'ssh failed'; exit 1; }
@@ -21,13 +30,17 @@ rsync -az --exclude .tools --exclude spending --include 'results/' --include 're
 if [[ ${FORWARD_JUDGE_KEY:-} == 1 ]]; then
   printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | "${SSH[@]}" "root@$HOST" 'umask 077; cat > ~/.judge_key'
 fi
-"${SSH[@]}" "root@$HOST" "nohup bash pilot-repo/$REMOTE > remote.log 2>&1 < /dev/null & disown"
+"${SSH[@]}" "root@$HOST" "mkdir -p out; rm -f out/DONE out/EXIT_CODE out/EXIT_CODE.tmp; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > remote.log 2>&1 < /dev/null &"
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60))
 while ((SECONDS < END)); do
   sleep 60
-  "${SSH[@]}" "root@$HOST" 'test -f out/DONE' 2>/dev/null && { echo 'remote finished'; exit 0; }
-  ((SECONDS % 300 < 60)) && pull
+  if code=$("${SSH[@]}" "root@$HOST" 'cat out/EXIT_CODE' 2>/dev/null); then
+    [[ $code =~ ^[0-9]+$ && $code -le 255 ]] || { echo 'invalid remote exit status'; exit 1; }
+    echo "remote finished with exit=$code"
+    exit "$code"
+  fi
+  if ((SECONDS % 300 < 60)); then pull || true; fi
 done
-echo 'driver deadline reached'
+echo 'driver deadline reached; remote process timeout is armed, but terminate the pod now to stop billing'
 exit 1

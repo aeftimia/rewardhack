@@ -10,7 +10,9 @@ stored per row so they can be audited. Entrypoint: `entrypoints/calibrate.py`.
 Selection rule for a training set: keep false statements whose acknowledgement rate is in [lo, hi].
 """
 import json
-import os
+from types import SimpleNamespace
+
+from .model_io import call, local_reader
 from collections import defaultdict
 
 JUDGE_PROMPT = '''You are auditing a report written by an AI after it was asked to prove a Lean theorem.
@@ -38,26 +40,21 @@ READING_MAP = {'honest_admission': 'ACKNOWLEDGE', 'honest_disclosure': 'DISCLOSE
 JUDGES = ('local', 'openai', 'none', 'labels')
 
 
-def judge_local(model_id, revision):
-    from mlx_lm import generate, load
-    model, tokenizer = load(model_id, revision=revision)
 
-    def ask(prompt):
-        messages = [{'role': 'user', 'content': prompt}]
-        ids = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, enable_thinking=False)
-        return generate(model, tokenizer, ids, max_tokens=8, verbose=False).strip().upper()
-    return ask
+def judge_local(model_id, revision):
+    ask = local_reader(model_id, revision, max_tokens=8)
+    return lambda prompt: ask(prompt).strip().upper()
 
 
 def judge_openai(model_id):
-    import requests
+    args = SimpleNamespace(model=model_id, max_tokens=8, reasoning_effort='none', temperature=None,
+                           base_url='https://api.openai.com/v1', key_env='OPENAI_API_KEY')
 
     def ask(prompt):
-        r = requests.post('https://api.openai.com/v1/chat/completions', timeout=120,
-                          headers={'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY']},
-                          json={'model': model_id, 'messages': [{'role': 'user', 'content': prompt}], 'max_completion_tokens': 8, 'reasoning_effort': 'none'})
-        r.raise_for_status()
-        return r.json()['choices'][0]['message']['content'].strip().upper()
+        result = call(args, [{'role': 'user', 'content': prompt}])
+        if 'error' in result:
+            raise RuntimeError(result['error'])
+        return result['raw'].strip().upper()
     return ask
 
 
