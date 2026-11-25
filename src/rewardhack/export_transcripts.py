@@ -28,7 +28,13 @@ DISCLOSURE = {'honest_admission': 'acknowledged', 'honest_disclosure': 'disclose
 
 
 def _opt(argv, name):
-    return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else None
+    """Value of a command-line option written as `--name value` or `--name=value`."""
+    for index, arg in enumerate(argv):
+        if arg == name:
+            return argv[index + 1] if index + 1 < len(argv) else None
+        if isinstance(arg, str) and arg.startswith(name + '='):
+            return arg[len(name) + 1:]
+    return None
 
 
 def run_meta(summary, run):
@@ -77,7 +83,7 @@ def report_mode(row, summary):
 
 
 def update_history(run_dir):
-    """MLX records which attempted iterations really updated the model."""
+    """Both trainers record which attempted iterations had reward variation, and so really updated the model."""
     path = run_dir/'steps.jsonl'
     if not path.exists():
         return {}
@@ -87,6 +93,8 @@ def update_history(run_dir):
             continue
         row = json.loads(line)
         step, mixed = row.get('step'), row.get('mixed')
+        if mixed is None and type(row.get('mixed_groups')) is int:
+            mixed = row['mixed_groups'] > 0  # HF counts the groups with a nonzero advantage in each step
         if type(step) is not int or step < 1 or step in history or type(mixed) is not bool:
             return {}  # corrupt history cannot establish a generation checkpoint
         history[step] = mixed
@@ -98,8 +106,13 @@ def update_count(history, summary, row, stream):
     if type(stream) is int:
         return stream
     if stream == 'hf_after':
-        value = summary.get('global_step')
-        return value if type(value) is int and value >= 0 else None
+        # `global_step` counts attempted steps. A run stopped for no reward variation attempted many and updated nothing.
+        attempted = summary.get('global_step')
+        if type(attempted) is not int or attempted < 0:
+            return None
+        if attempted == 0 or summary.get('mixed_reward_groups') == 0:
+            return 0
+        return sum(history.values()) if set(history) == set(range(1, attempted+1)) else None
     if stream == 'hf_training':
         return None  # HF's rollout writer does not identify the generating checkpoint.
     step = row.get('step') if stream == 'mlx_training' else stream[1]
@@ -185,6 +198,9 @@ def atomic_text(path):
         with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, prefix='.export-', delete=False) as handle:
             temporary = Path(handle.name)
             yield handle
+        umask = os.umask(0)
+        os.umask(umask)
+        os.chmod(temporary, 0o666 & ~umask)  # a temporary file is owner-only; the export is an ordinary file
         os.replace(temporary, path)
     finally:
         if temporary is not None:
@@ -236,7 +252,8 @@ def export(results, out, tasks=None):
                             raise ValueError('follow-on report mode differs from its opening prompt')
                         messages = prompt(tasks[opener['task_id']]['statement'], meta['variant'], mode) + [
                             {'role': 'assistant', 'content': opener['raw']}, follow_on(task['statement'])]
-                    policy_updates = update_count(history, summary, row, updates)
+                    # A run started from an adapter was already trained by an unrecorded number of updates.
+                    policy_updates = None if meta['adapter'] else update_count(history, summary, row, updates)
                     trained = bool(meta['adapter']) or bool(policy_updates)
                     provenance = ('rl_induced' if trained else 'training_unknown' if policy_updates is None
                                   else 'hinted' if meta['variant'] == 'hint' else 'natural')

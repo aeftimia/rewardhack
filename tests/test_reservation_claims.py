@@ -119,10 +119,37 @@ except ValueError:
 
 def test_claim_uses_same_registry_lock_as_stage_reservation(ledger):
     registry=budget.reservation_path(ledger)
-    with file_lock(registry.with_suffix(registry.suffix+'.lock')):
-        result=run_guard(ledger,60)
-    assert result.returncode==1 and 'another process holds' in result.stderr
-    assert 'approved_usd' not in budget.read_reservations(ledger)[0]
+    lock=registry.with_suffix(registry.suffix+'.lock')
+    env=dict(os.environ,**{budget.RESERVATION_ENV:'stage-k'})
+    with file_lock(lock):
+        waiting=subprocess.Popen([sys.executable,str(SCRIPT),'--ledger',str(ledger),'claim','--line','api',
+                                  '--hourly','0','--max-hours','0','--other-usd','60'],env=env)
+        import time
+        time.sleep(1)
+        assert waiting.poll() is None  # held out by the registry lock, and waiting rather than refused
+        assert 'approved_usd' not in budget.read_reservations(ledger)[0]
+        with pytest.raises(ValueError,match='another process holds'):
+            with file_lock(lock,wait=.1):
+                pass
+    assert waiting.wait(timeout=10)==0 and budget.read_reservations(ledger)[0]['approved_usd']==60
+
+
+def test_simultaneous_claims_within_the_allowance_are_all_served(ledger):
+    env=dict(os.environ,**{budget.RESERVATION_ENV:'stage-k'})
+    claims=[subprocess.Popen([sys.executable,str(SCRIPT),'--ledger',str(ledger),'claim','--line','api',
+                              '--hourly','0','--max-hours','0','--other-usd','10'],env=env) for _ in range(8)]
+    assert [c.wait(timeout=30) for c in claims]==[0]*8
+    assert budget.read_reservations(ledger)[0]['approved_usd']==80
+
+
+def test_claim_equal_to_a_limit_that_is_not_a_whole_microdollar_fits(ledger):
+    records=json.loads(budget.reservation_path(ledger).read_text())
+    records[0]['total_usd']=10/3
+    budget.reservation_path(ledger).write_text(json.dumps(records))
+    assert budget.claim(ledger,'stage-k','api',0,0,1/3,launch_cap=1/3)['problems']==[]
+    result=budget.claim(ledger,'stage-k','api',10,.3)
+    assert result['problems']==[] and result['remaining_usd']==0
+    assert budget.claim(ledger,'stage-k','api',0,0,.000001)['problems']
 
 
 def test_claim_publication_interruption_retains_consumed_allowance(ledger,monkeypatch):

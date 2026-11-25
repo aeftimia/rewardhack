@@ -6,10 +6,12 @@ budget caps still apply; the wrapper bounds subprocess time, not provider billin
 """
 import contextlib
 import hashlib
+import multiprocessing
 import os
 from pathlib import Path
 import signal
 import subprocess
+import threading
 import time
 
 from . import budget, pilot
@@ -42,7 +44,7 @@ def _reserve(spec, out, stage, spec_hash):
         raise ValueError('the grant ledger must exist before execution')
     registry = budget.reservation_path(ledger)
     key = pilot.digest({'out': str(out), 'spec_hash': spec_hash, 'stage_id': stage['id']})
-    with _lock(registry.with_suffix(registry.suffix + '.lock')):
+    with _lock(registry.with_suffix(registry.suffix + '.lock'), wait=budget.REGISTRY_WAIT):
         reservations = budget.read_reservations(ledger)
         keys = {record['key'] for record in reservations}
         if key in keys:
@@ -127,54 +129,47 @@ class TimeCap(TimeoutError):
     """Pure evidence analysis exhausted its bounded wall-time allowance."""
 
 
-def _timer_available():
-    if any(signal.getitimer(signal.ITIMER_REAL)):
-        raise ValueError('pilot analysis cannot replace an active SIGALRM timer')
-    previous = signal.getsignal(signal.SIGALRM)
-    if previous is None:
-        raise ValueError('pilot analysis cannot replace an external SIGALRM handler')
-    mask = signal.pthread_sigmask(signal.SIG_BLOCK, [])
-    if signal.SIGALRM in mask:
-        raise ValueError('pilot analysis requires an unblocked SIGALRM')
-    return previous
+def _analyze(spec, paths, seconds):
+    """Read the evidence and decide, in a forked child that is killed at the deadline.
 
-
-@contextlib.contextmanager
-def _analysis_deadline(seconds):
-    """Bound pure analysis only, never a child start, cleanup, or receipt write.
-
-    An existing active timer is refused rather than overwritten. On exit, disarm
-    and drain a pending alarm before restoring the caller's handler and mask.
+    The parent only waits, so the deadline cannot fire inside a receipt write, be swallowed by code
+    that catches `OSError`, or arrive late and kill the runner, as an alarm signal in this process
+    could. The child shares nothing it can change; its result returns over a pipe.
+    A fork, not a fresh interpreter: the child must see exactly the frozen code and spec the parent holds.
+    The runner has no other threads, which is what makes forking it safe.
     """
     if seconds <= 0:
         raise TimeCap('pilot analysis exhausted the remaining wall-time budget')
-    previous = _timer_available()
-    armed = False
-    def expired(*unused):
-        nonlocal armed
-        if armed:
-            armed = False
-            raise TimeCap('pilot evidence analysis reached its wall-time cap')
-    signal.signal(signal.SIGALRM, expired)
-    try:
-        armed = True
-        signal.setitimer(signal.ITIMER_REAL, seconds)
-        yield
-    finally:
-        armed = False
-        mask = signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGALRM])
+    context = multiprocessing.get_context('fork')
+    receiver, sender = context.Pipe(duplex=False)
+    def work():
         try:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-            if signal.SIGALRM in signal.sigpending():
-                signal.sigwait([signal.SIGALRM])
-            signal.signal(signal.SIGALRM, previous)
-        finally:
-            signal.pthread_sigmask(signal.SIG_SETMASK, mask)
-
-
-def _analyze(spec, paths, seconds):
-    with _analysis_deadline(seconds):
-        return pilot.decide(spec, pilot.read_evidence(spec, paths))
+            message = ('ok', pilot.decide(spec, pilot.read_evidence(spec, paths)))
+        except (ValueError, OSError) as error:
+            message = ('invalid', str(error))
+        except BaseException as error:
+            message = ('crash', f'{type(error).__name__}: {error}')
+        sender.send(message)
+    child = context.Process(target=work, daemon=True)
+    child.start()
+    sender.close()
+    try:
+        if not receiver.poll(seconds):
+            raise TimeCap('pilot evidence analysis reached its wall-time cap')
+        try:
+            kind, value = receiver.recv()
+        except EOFError:
+            raise RuntimeError('pilot analysis process ended without a result') from None
+    finally:
+        if child.is_alive():
+            child.kill()
+        child.join()
+        receiver.close()
+    if kind == 'ok':
+        return value
+    if kind == 'invalid':
+        raise ValueError(value)
+    raise RuntimeError(value)
 
 
 def _verify_inputs(spec, spec_path):
@@ -206,7 +201,9 @@ def run(spec_path, out, *, execute=False):
     """Execute only with explicit opt-in; crash recovery never re-runs uncertain work."""
     if not execute:
         return plan(spec_path)
-    _timer_available()  # refuse conflicting process timers before any reservation or launch
+    if threading.current_thread() is not threading.main_thread():
+        # A stage's stop signals can only be handled there; refuse before any reservation or launch.
+        raise ValueError('a pilot can only be executed from the main thread')
     spec = pilot.load_spec(spec_path)
     _verify_inputs(spec, spec_path)
     spec_hash = pilot.digest(spec)
@@ -323,8 +320,12 @@ def run(spec_path, out, *, execute=False):
                 raise ValueError('terminal decision has no supporting evidence')
             return result
         if paths:
+            # A stop already recorded in the last stage's receipt is re-derived, not newly decided: like the
+            # audit of a terminal decision it gets its own allowance, so a late resume cannot replace it with a time cap.
+            recorded_stop = _read(out/'stages'/f'{completed-1:04d}.result.json').get('decision', {}).get('stop') is True
+            allowance = spec['budget']['max_seconds']-elapsed_time()
             try:
-                decision = _analyze(spec, paths, spec['budget']['max_seconds']-elapsed_time())
+                decision = _analyze(spec, paths, max(allowance, min(spec['budget']['max_seconds'], 30.0)) if recorded_stop else allowance)
             except TimeCap:
                 return finish('time_cap', phase='evidence_analysis')
             if decision['stop']:

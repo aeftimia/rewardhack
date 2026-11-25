@@ -49,7 +49,8 @@ def test_launch_that_exactly_fills_a_cap_is_not_refused_by_binary_rounding(tmp_p
         return subprocess.run([sys.executable, str(script), '--ledger', str(ledger), 'claim', '--line', 'storage',
                                '--hourly', '2.7', '--max-hours', hours],
                               env=dict(os.environ, **{budget.RESERVATION_ENV: key}), capture_output=True, text=True).returncode
-    assert (guard('24'), guard('24.01'), guard('24', key='other')) == (0, 1, 1)
+    # The refused claim comes first: it must not consume the allowance the exact one then needs.
+    assert (guard('24.01'), guard('24'), guard('24', key='other'), guard('0.01')) == (1, 0, 1, 1)
 
 
 def test_reading_reservations_never_changes_measured_csv(tmp_path):

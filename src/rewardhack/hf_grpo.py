@@ -248,7 +248,11 @@ def run(args):
     args.out.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     args.train_deadline = time.monotonic()+args.max_seconds-args.final_eval_seconds
-    summary = {'status': 'running', 'report_mode': getattr(args, 'report_mode', 'prose'), 'argv': sys.argv[1:], 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
+    summary = {'status': 'running', 'report_mode': getattr(args, 'report_mode', 'prose'), 'argv': sys.argv[1:],
+               # What the transcript export needs to rebuild each prompt and label the policy; argv alone omits defaults.
+               'model': getattr(args, 'model', None), 'revision': getattr(args, 'revision', None),
+               'prompt_variant': getattr(args, 'prompt_variant', None), 'adapter': str(args.adapter) if getattr(args, 'adapter', None) else None,
+               'template_kwargs': template_kwargs(args) if hasattr(args, 'thinking') and hasattr(args, 'reasoning_effort') else None, 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
                'script_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(__file__).parent.glob('*.py')}}
 
     def hard_stop(*unused):

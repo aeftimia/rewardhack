@@ -36,6 +36,7 @@ def test_current_hf_streams_export_once_with_known_or_unknown_updates(dataset):
     for stem in ('probe-evaluation','before-evaluation','after-evaluation','training-rollouts'):
         write(run/(stem+'.jsonl'),[dict(row,raw='raw view')])
         write(run/(stem+'.rescored.jsonl'),[dict(row,raw='preferred rescored view')])
+    write(run/'steps.jsonl',[dict(step=n,mixed_groups=m) for n,m in ((1,0),(2,3),(3,0),(4,1))])  # 4 attempted, 2 updated
     manifest,rows=exported(root)
     assert manifest['rows']==4
     assert all(r['response']=='preferred rescored view' for r in rows)
@@ -45,7 +46,7 @@ def test_current_hf_streams_export_once_with_known_or_unknown_updates(dataset):
         record=records[stem+'.rescored.jsonl']
         assert record['policy_updates']==0 and record['provenance']=='hinted'
     after=records['after-evaluation.rescored.jsonl']
-    assert after['policy_updates']==4 and after['provenance']=='rl_induced'
+    assert after['policy_updates']==2 and after['provenance']=='rl_induced'
     training=records['training-rollouts.rescored.jsonl']
     assert training['policy_updates'] is None and training['provenance']=='training_unknown'
 
@@ -107,5 +108,24 @@ def test_missing_or_corrupt_update_history_is_unknown(dataset):
     _,run,row,_=dataset
     assert update_count({}, {}, dict(row,step=2),'mlx_training') is None
     assert update_count({}, {}, row,'hf_after') is None
+    # HF: attempted steps are not updates. No reward variation is zero updates; a missing or short history is unknown.
+    assert update_count({}, dict(global_step=24,mixed_reward_groups=0,adapter_max_abs_change=0.0), row,'hf_after')==0
+    assert update_count({}, dict(global_step=4,mixed_reward_groups=3), row,'hf_after') is None
+    assert update_count({1:True,2:False}, dict(global_step=4,mixed_reward_groups=3), row,'hf_after') is None
+    assert update_count({1:True,2:False,3:True,4:True}, dict(global_step=4,mixed_reward_groups=5), row,'hf_after')==3
     write(run/'steps.jsonl',[dict(step=1,mixed=True),dict(step=1,mixed=False)])
     assert update_history(run)=={}
+
+
+def test_run_started_from_an_adapter_has_unknown_update_count_and_equals_options_are_read(dataset):
+    root,run,row,task=dataset
+    (run/'summary.json').write_text(json.dumps(dict(report_mode='typed', argv=['probe','--prompt-variant=hint','--adapter=/a','--model=m'])))
+    write(run/'probe-evaluation.jsonl',[row])
+    _,rows=exported(root)
+    record,=rows
+    assert (record['variant'],record['adapter'],record['model'])==('hint','/a','m')
+    assert record['messages']==prompt(task['statement'],'hint','typed')
+    assert record['policy_updates'] is None and record['provenance']=='rl_induced'
+    import os, stat
+    umask=os.umask(0); os.umask(umask)
+    assert stat.S_IMODE((root/'out.jsonl').stat().st_mode)==0o666 & ~umask

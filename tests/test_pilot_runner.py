@@ -448,25 +448,21 @@ def test_a_stage_equal_to_a_cap_that_rounds_up_runs_and_resumes(tmp_path, cheap_
 
 def test_evidence_analysis_is_bounded_by_remaining_pilot_time(tmp_path,monkeypatch):
     path,spec=fixture_spec(tmp_path)
-    spec['budget']['max_seconds']=.2
+    spec['budget']['max_seconds']=1.5
     for stage in spec['stages']:
-        stage['max_seconds']=.05
+        stage['max_seconds']=1  # generous for a slow interpreter start; the analysis is what must be cut off
     path.write_text(json.dumps(spec))
     def too_slow(*unused):
-        time.sleep(1)
-        pytest.fail('slow analysis was not interrupted')
+        time.sleep(6)
     monkeypatch.setattr(pilot,'decide',too_slow)
-    before=signal.getsignal(signal.SIGALRM)
     started=time.monotonic()
     result=runner.run(path,tmp_path/'out',execute=True)
-    assert time.monotonic()-started < .8
+    assert time.monotonic()-started < 4
     assert result['reason']=='time_cap' and result['reserved_usd']==1
     receipt=json.loads((tmp_path/'out'/'stages'/'0000.result.json').read_text())
     assert receipt['failure_reason']=='time_cap' and receipt['status']=='failed'
     assert Path(spec['stages'][0]['evidence']).exists()
     assert not Path(spec['stages'][1]['evidence']).exists()
-    assert signal.getsignal(signal.SIGALRM) is before
-    assert signal.getitimer(signal.ITIMER_REAL)==(0.,0.)
     assert runner.run(path,tmp_path/'out',execute=True)==result  # no analysis rerun or paid retry
 
 
@@ -488,37 +484,72 @@ def test_terminal_replay_has_fresh_bounded_audit_allowance(tmp_path,cheap_decisi
     monkeypatch.setattr(runner,'_analyze',original_analyze)
 
 
-def test_analysis_does_not_replace_an_existing_timer(tmp_path):
+def test_analysis_leaves_the_callers_alarm_timer_and_handler_alone(tmp_path,cheap_decision):
     path,_=fixture_spec(tmp_path)
-    handler=signal.getsignal(signal.SIGALRM)
-    signal.setitimer(signal.ITIMER_REAL,10)
+    def custom(*unused):
+        pytest.fail('the caller\'s alarm must not fire during a short pilot')
+    original=signal.signal(signal.SIGALRM,custom)
+    signal.setitimer(signal.ITIMER_REAL,60)
     try:
-        with pytest.raises(ValueError,match='active SIGALRM'):
-            runner.run(path,tmp_path/'out',execute=True)
-        assert signal.getsignal(signal.SIGALRM) is handler
-        assert signal.getitimer(signal.ITIMER_REAL)[0]>9
-        assert not (tmp_path/'out').exists()
+        assert runner.run(path,tmp_path/'out',execute=True)['reason']=='compute_cap'
+        assert signal.getsignal(signal.SIGALRM) is custom and signal.getitimer(signal.ITIMER_REAL)[0]>50
     finally:
         signal.setitimer(signal.ITIMER_REAL,0)
-
-
-def test_analysis_refuses_blocked_alarm_and_restores_custom_handler():
-    def custom(*unused):
-        pytest.fail('inactive caller handler should not be invoked')
-    original=signal.signal(signal.SIGALRM,custom)
-    try:
-        with runner._analysis_deadline(.1):
-            pass
-        assert signal.getsignal(signal.SIGALRM) is custom
-        mask=signal.pthread_sigmask(signal.SIG_BLOCK,[signal.SIGALRM])
-        try:
-            with pytest.raises(ValueError,match='unblocked SIGALRM'):
-                with runner._analysis_deadline(.1):
-                    pass
-        finally:
-            signal.pthread_sigmask(signal.SIG_SETMASK,mask)
-    finally:
         signal.signal(signal.SIGALRM,original)
+
+
+def test_analysis_result_errors_and_deadline_cross_the_process_boundary(tmp_path,monkeypatch):
+    path,spec=fixture_spec(tmp_path)
+    monkeypatch.setattr(pilot,'read_evidence',lambda spec,paths:paths)
+    monkeypatch.setattr(pilot,'decide',lambda spec,rows:dict(stop=False,value=.1+.2,rows=[str(r) for r in rows],none=None))
+    assert runner._analyze(spec,[Path('a')],5)==dict(stop=False,value=.1+.2,rows=['a'],none=None)
+    def invalid(*unused):
+        raise OSError('evidence unreadable')
+    monkeypatch.setattr(pilot,'decide',invalid)
+    with pytest.raises(ValueError,match='evidence unreadable'):
+        runner._analyze(spec,[],5)
+    monkeypatch.setattr(pilot,'decide',lambda *a:os._exit(3))
+    with pytest.raises(RuntimeError,match='without a result'):
+        runner._analyze(spec,[],5)
+    def swallows(*unused):
+        while True:  # code that catches every ordinary error cannot outlast the deadline
+            try:
+                time.sleep(.01)
+            except Exception:
+                pass
+    monkeypatch.setattr(pilot,'decide',swallows)
+    started=time.monotonic()
+    with pytest.raises(runner.TimeCap):
+        runner._analyze(spec,[],.2)
+    assert time.monotonic()-started<3
+    with pytest.raises(runner.TimeCap):
+        runner._analyze(spec,[],0)
+
+
+def test_pilot_off_the_main_thread_is_refused_before_any_reservation(tmp_path):
+    import threading
+    path,spec=fixture_spec(tmp_path)
+    seen=[]
+    def attempt():
+        try:
+            runner.run(path,tmp_path/'out',execute=True)
+        except ValueError as error:
+            seen.append(str(error))
+    thread=threading.Thread(target=attempt); thread.start(); thread.join()
+    assert seen==['a pilot can only be executed from the main thread']
+    assert not (tmp_path/'out').exists() and not (tmp_path/'ledger.csv.pilot-reservations.json').exists()
+
+
+def test_late_resume_keeps_a_stop_recorded_in_the_last_receipt(tmp_path,cheap_decision,monkeypatch):
+    path,spec=fixture_spec(tmp_path)
+    out=tmp_path/'out'
+    result=runner.run(path,out,execute=True)
+    assert result['reason']=='compute_cap'
+    (out/'decision.json').unlink()  # the runner died after the stage receipt, before the terminal decision
+    original=runner.time.time
+    monkeypatch.setattr(runner.time,'time',lambda:original()+3600)
+    resumed=runner.run(path,out,execute=True)
+    assert resumed['reason']=='compute_cap' and resumed['decision']==result['decision']
 
 
 def test_expired_active_replay_stops_before_analysis(tmp_path,cheap_decision,monkeypatch):

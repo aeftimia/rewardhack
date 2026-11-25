@@ -54,7 +54,7 @@ def read_reservations(ledger=LEDGER):
         nonnegative_finite(record['total_usd'], 'reservation total_usd')
         approved = record.get('approved_usd', 0.0)
         if (type(approved) not in (int, float) or not math.isfinite(approved) or approved < 0
-                or not math.isfinite(record['total_usd']) or round(approved, 6) > round(record['total_usd'], 6)):
+                or not math.isfinite(record['total_usd']) or round(approved, 6) > claim_cost(0, 0, record['total_usd'])):  # the capacity `claim` allows
             raise ValueError('invalid pilot reservation approved_usd')
         keys.add(record['key'])
     grant_spent(records)  # validates finite, nonnegative prices and totals
@@ -155,6 +155,9 @@ def check(rows, line, hourly, hours, other=0.0, launch_cap=None):
     return worst, problems
 
 
+REGISTRY_WAIT = 30.0  # seconds to wait for the reservation registry, which is held for one short update at a time
+
+
 def claim_cost(hourly, hours, other=0.0):
     """Debit every positive cost, rounding up at the ledger's one-microdollar unit.
 
@@ -195,7 +198,7 @@ def claim(ledger, key, line, hourly, hours, other=0.0, launch_cap=None):
     if not isinstance(key, str) or not key:
         raise ValueError(f'claim requires the runner-provided {RESERVATION_ENV}')
     registry = reservation_path(ledger)
-    with file_lock(registry.with_suffix(registry.suffix + '.lock')):
+    with file_lock(registry.with_suffix(registry.suffix + '.lock'), wait=REGISTRY_WAIT):
         records = read_reservations(ledger)
         own = next((record for record in records if record['key'] == key), None)
         if own is None or own['line'] != line:
@@ -203,13 +206,14 @@ def claim(ledger, key, line, hourly, hours, other=0.0, launch_cap=None):
         actual = read_ledger(ledger, include_reservations=False)
         other_rows = actual + [record for record in records if record is not own]
         debit = claim_cost(hourly, hours, other)
-        worst, problems = check(other_rows, line, 0, 0, debit, launch_cap)
+        # Limits go through the same ceiling as the debit: a claim equal to its limit (10/3 dollars) must fit it.
+        worst, problems = check(other_rows, line, 0, 0, debit, None if launch_cap is None else claim_cost(0, 0, launch_cap))
         # Existing commitments must still fit the grant, including approvals not
         # yet booked as charges. No temporary discount of the full reservation.
         _, committed_problems = check(actual + records, line, 0, 0)
         problems.extend(problem for problem in committed_problems if problem not in problems)
         approved = round(own.get('approved_usd', 0.0), 6)
-        capacity = round(own['total_usd'], 6)
+        capacity = claim_cost(0, 0, own['total_usd'])
         total = round(approved + worst, 6)
         if total > capacity:
             problems.append(f'cumulative launch claims ${total:.6f} exceed the ${capacity:.6f} stage reservation')

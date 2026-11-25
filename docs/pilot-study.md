@@ -155,23 +155,27 @@ must call `entrypoints/budget.py --ledger PATH claim --line LINE --hourly RATE -
 (and `--other-usd` / `--launch-cap` when applicable), then launch only if that command exits zero.
 The runner supplies `REWARDHACK_PILOT_RESERVATION`; a missing, unknown or wrong-line key is refused.
 Claims atomically consume cumulative worst-case dollars under the same registry lock used by the
-runner. Positive costs round up to a microdollar using decimal price arithmetic, so repeated tiny
+runner. The lock is held for one short update; a claim that finds it held waits up to 30 seconds
+instead of reporting a refusal, so launches made in parallel are served in turn. Positive costs round up to a microdollar using decimal price arithmetic, so repeated tiny
 requests cannot become free claims; insignificant binary representation noise near a positive
-ledger amount is normalized. A $100 reservation can authorize $60 then $40, but not $60 twice. A successful claim remains
+ledger amount is normalized. The reservation and any launch cap pass through the same rounding, so a
+claim equal to its limit fits. A $100 reservation can authorize $60 then $40, but not $60 twice. A successful claim remains
 consumed after interruption, cancellation or a later refund; no automatic credit is issued.
 The full reservation still counts toward grant caps for other consumers. Recorded charges can
 therefore conservatively block further claims until separately reconciled; claims never bypass an
 already overcommitted grant line. The ordinary `check` command remains read-only, includes all
 reservations and refuses to authorize launches when the pilot reservation variable is set; older
-stage scripts using `check` must switch to explicit `claim`. Arbitrary
+stage scripts using `check` must switch to explicit `claim`. `ops/launch_aws.sh` claims when the
+variable is set and checks otherwise. Arbitrary
 stage programs must follow the claim-before-launch protocol: the wrapper cannot discover or price
 network requests hidden inside a command. Wall-time limits bound each
-command and the overall pilot. Pure evidence reading and posterior analysis also have a timer
-using the remaining run allowance; expiry is `time_cap`, not a measurement or scientific verdict.
+command and the overall pilot. Pure evidence reading and posterior analysis run in a forked
+child process that is killed when the remaining run allowance is spent; expiry is `time_cap`, not a measurement or scientific verdict.
 Analysis interrupted after a stage retains its evidence and reservation and is not automatically
 retried. Re-reading a terminal scientific decision uses a fresh audit-only allowance of at most
-30 seconds (also bounded by the original maximum); it never launches a stage. Existing active
-SIGALRM timers are refused rather than overwritten. A stage runs in its own process group, which the runner kills on a
+30 seconds (also bounded by the original maximum); it never launches a stage. So does re-deriving a
+stop that the last stage's receipt already records, when the runner died before publishing it. The
+runner sets no alarm timer and refuses to execute off the main thread, before reserving anything. A stage runs in its own process group, which the runner kills on a
 time-out, a failure, or a hangup, interrupt, quit or termination signal. A signal the runner was
 started ignoring (a hangup under `nohup`) stays ignored, and both runner and stage carry on. A runner killed outright
 (`SIGKILL`, power loss) cannot do that: find and stop the stage's processes by hand before anything else. Commands run as argument lists,

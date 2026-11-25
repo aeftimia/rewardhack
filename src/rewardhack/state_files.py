@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 
 
 def sync_directory(path):
@@ -36,12 +37,23 @@ def atomic_json(path, value, *, exclusive=True):
 
 
 @contextlib.contextmanager
-def file_lock(path):
+def file_lock(path, wait=0.0):
+    """Exclusive lock, refused when held. `wait` is how long to keep trying, for locks held only briefly.
+
+    A lock that guards a whole run (one pilot per output folder) is refused at once. A lock around one
+    short read-modify-write (the reservation registry) is waited for: a second claimant being told the
+    budget refused it, with allowance left, would end its stage for nothing.
+    """
+    deadline = time.monotonic()+wait
     with Path(path).open('a') as handle:
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise ValueError(f'another process holds {path}') from None
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise ValueError(f'another process holds {path}') from None
+                time.sleep(.02)
         try:
             yield
         finally:
