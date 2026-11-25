@@ -7,7 +7,7 @@ driver settings. `ops/drive_runpod.sh` asks `launch_problems` itself before it r
 (`entrypoints/gate.py launch`), so the check follows the driver however it is started. What cannot live in a
 script the project owns stays in a Claude Code PreToolUse hook on Bash (`command_problems`): a pod created
 with a raw `runpodctl create`, a job script started over SSH around `remote_job.sh` or without
-`REQUIRE_AUTOSTOP=1`, an AWS launch, and a metered API judge with no spend cap. Removing a pod is never refused.
+`REQUIRE_AUTOSTOP=1`, and a metered API judge with no spend cap. Removing a pod is never refused.
 
 Commit gate. Git hooks (`ops/githooks`, installed with `entrypoints/gate.py install-hooks`) read the staged
 blobs, the commit message and every commit a push would publish, for the owner's withheld terms (kept in an
@@ -213,7 +213,7 @@ def driver_launch(root, remote, deadline, environment):
 # --- the Bash hook: what no project script can check for itself -----------------------------------------------------
 
 # A command without one of these shapes is passed without being read further.
-GATED = re.compile(r'runpodctl|remote_\w+\.sh|drive_run\.sh|launch_aws\.sh|--judge[ =]api')
+GATED = re.compile(r'runpodctl|remote_\w+\.sh|--judge[ =]api')
 REMOTE_SCRIPT = re.compile(r'remote_\w+\.sh')
 HEREDOC = re.compile(r'''<<-?\s*(['"]?)(\w+)\1[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?=\n|\)|$)''', re.S)
 ASSIGNMENT = re.compile(r'([A-Za-z_]\w*)=(.*)', re.S)
@@ -223,8 +223,6 @@ SSH_WITH_VALUE = set('pioFJLRDEbcelmOQSWw')
 # Machines that bill from the moment they exist, started by a command the hook sees whole. The value says whether these words start one.
 STARTS_A_MACHINE = {
     'runpodctl': lambda words: bool({'create', 'deploy'} & set(words[1:3])),  # `runpodctl create pod`, `runpodctl pod create`
-    'drive_run.sh': lambda words: True,  # the AWS driver: launches an instance through launch_aws.sh --approved
-    'launch_aws.sh': lambda words: '--approved' in words,  # without --approved it only prints the plan
 }
 
 

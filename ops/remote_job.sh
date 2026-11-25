@@ -3,7 +3,7 @@
 # On a RunPod pod it also arms a billing time cap: the pod removes itself with RunPod's own CLI a grace
 # period after the job's deadline, and again a grace period after the job ends, whichever comes first.
 # Neither needs the laptop or the console. With REQUIRE_AUTOSTOP=1 the job refuses to start unless that
-# cap could be armed. Elsewhere (AWS has an OS shutdown timer) this stops the job, not the billing.
+# cap could be armed. Elsewhere this stops the job, not the billing.
 set -uo pipefail
 OUT=${REMOTE_JOB_OUT:-$HOME/out}
 GRACE=${AUTOSTOP_GRACE_SECONDS:-600}  # time for the driver to copy results before the pod is removed

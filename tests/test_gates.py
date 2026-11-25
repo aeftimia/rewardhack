@@ -202,8 +202,6 @@ def test_no_host_skips_the_launch_check(project):
     "bash -c \"ssh root@1.2.3.4 'bash pilot-repo/ops/remote_runpod_smoke.sh'\"",
     'runpodctl create pod --gpuType "RTX PRO 6000"',
     'runpodctl pod create --gpuType "RTX PRO 6000"',
-    'bash ops/launch_aws.sh --type g6e.xlarge --hours 1 --model m --hourly 1.8 --approved',
-    'LINE=api bash ops/drive_run.sh ops/remote_8b.sh results/x 60 --type g6e.xlarge --approved',
 ])
 def test_a_job_or_a_machine_started_around_the_driver_is_refused(repo, command):
     assert problems(repo, command)
@@ -222,7 +220,6 @@ def test_a_job_with_the_timer_and_a_new_machine_still_need_the_record(repo):
     "ssh root@1.2.3.4 'bash -s -- --arm-only 900' < ops/remote_job.sh",
     'runpodctl remove pod abc123',
     'grep -n REQUIRE_AUTOSTOP ops/remote_job.sh ops/drive_runpod.sh',
-    'bash ops/launch_aws.sh --type g6e.xlarge --hours 1 --model m --hourly 1.8',
     "ssh root@1.2.3.4 'cat out/autostop.log; tail -5 pilot-repo/ops/remote_runpod_smoke.sh'",
     # The driver checks its own launch now, however it is started: the hook no longer reads it.
     DRIVER, f'eval "{DRIVER}"', f'nohup {DRIVER} > driver.log 2>&1 &',
