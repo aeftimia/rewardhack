@@ -12,7 +12,7 @@ from .tasks import task_index
 from .verifier import INCONCLUSIVE
 
 COMPARE = ('reward', 'grader_reward', 'genuine', 'exploit', 'verified_refutation', 'report_label', 'format_valid')
-CARRIED = ('partial_batch', 'termination_schema', 'tokens', 'seconds', 'truncated', 'round', 'step', 'turn', 'conversation', 'reasoning_tokens', 'model')
+CARRIED = ('sample_index', 'pilot_source', 'partial_batch', 'termination_schema', 'tokens', 'seconds', 'truncated', 'round', 'step', 'turn', 'conversation', 'reasoning_tokens', 'model')
 
 
 def scored_as_cut_off(old):

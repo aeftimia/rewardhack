@@ -6,6 +6,9 @@ line also carries the two outcome axes the reading gives us (cheat × disclosure
 side comes from Lean and only the disclosure side from reading. Entrypoint: `entrypoints/export_transcripts.py`.
 """
 import hashlib
+import os
+import tempfile
+from contextlib import contextmanager
 import json
 import subprocess
 from collections import Counter
@@ -43,21 +46,72 @@ def run_meta(summary, run):
         thinking = effort != 'none'
     return dict(model=summary.get('model') or _opt(argv, '--model') or legacy[0],
                 revision=summary.get('revision') or _opt(argv, '--revision') or legacy[1],
-                variant=summary.get('variant') or _opt(argv, '--variant') or 'neutral',
+                variant=summary.get('variant') or summary.get('prompt_variant') or _opt(argv, '--variant') or _opt(argv, '--prompt-variant') or 'neutral',
                 thinking=thinking, reasoning_effort=effort,
                 adapter=summary.get('adapter') or _opt(argv, '--adapter'), arm=_opt(argv, '--arm'))
 
 
 def row_files(run_dir):
-    """(file, policy_updates) for every scored file of a run: probes have one, trainers have rollouts and monitors."""
-    for name in ('rows.ok.rescored.jsonl', 'rows.rescored.jsonl'):
-        if (run_dir / name).exists():
-            yield run_dir / name, None
-            break
-    if (run_dir / 'rollouts.rescored.jsonl').exists():
-        yield run_dir / 'rollouts.rescored.jsonl', 'step'
-    for path in sorted(run_dir.glob('monitor-step*.rescored.jsonl'), key=lambda p: int(p.stem.split('step')[1].split('.')[0])):
-        yield path, int(path.stem.split('step')[1].split('.')[0])
+    """One preferred scored view per stream; never export raw and rescored copies twice."""
+    def first(names):
+        return next((run_dir/name for name in names if (run_dir/name).exists()), None)
+
+    probe = first(('rows.ok.rescored.jsonl', 'rows.rescored.jsonl', 'rows.ok.jsonl', 'rows.jsonl'))
+    if probe:
+        yield probe, 0
+    streams = [('rollouts', 'mlx_training'), ('training-rollouts', 'hf_training'),
+               ('probe-evaluation', 0), ('before-evaluation', 0), ('after-evaluation', 'hf_after')]
+    for stem, updates in streams:
+        path = first((stem+'.rescored.jsonl', stem+'.jsonl'))
+        if path:
+            yield path, updates
+    steps = sorted({int(p.name.split('step')[1].split('.')[0]) for p in run_dir.glob('monitor-step*.jsonl')})
+    for step in steps:
+        yield first((f'monitor-step{step}.rescored.jsonl', f'monitor-step{step}.jsonl')), ('mlx_monitor', step)
+
+
+def report_mode(row, summary):
+    """Only absent historical metadata defaults to prose; invalid explicit values fail."""
+    mode = row['report_mode'] if 'report_mode' in row else summary.get('report_mode', 'prose')
+    return validate_mode(mode)
+
+
+def update_history(run_dir):
+    """MLX records which attempted iterations really updated the model."""
+    path = run_dir/'steps.jsonl'
+    if not path.exists():
+        return {}
+    history = {}
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        step, mixed = row.get('step'), row.get('mixed')
+        if type(step) is not int or step < 1 or step in history or type(mixed) is not bool:
+            return {}  # corrupt history cannot establish a generation checkpoint
+        history[step] = mixed
+    return history
+
+
+def update_count(history, summary, row, stream):
+    """Completed updates at generation time, or None when the writer did not record them."""
+    if type(stream) is int:
+        return stream
+    if stream == 'hf_after':
+        value = summary.get('global_step')
+        return value if type(value) is int and value >= 0 else None
+    if stream == 'hf_training':
+        return None  # HF's rollout writer does not identify the generating checkpoint.
+    step = row.get('step') if stream == 'mlx_training' else stream[1]
+    if type(step) is not int or step < 0:
+        return None
+    last = step-1 if stream == 'mlx_training' else step
+    if last <= 0:
+        return 0
+    completed = {step: mixed for step, mixed in history.items() if step <= last}
+    if set(completed) != set(range(1, last+1)) or any(type(value) is not bool for value in completed.values()):
+        return None
+    return sum(completed.values())
 
 
 def reading_index(results):
@@ -101,6 +155,10 @@ def content_key(run, task_id, established, body, report):
 
 
 def cheat_axis(row):
+    if row.get('verifier_inconclusive'):
+        return 'unverified'
+    if not row['format_valid']:
+        return 'no_answer'
     if row['genuine']:
         return 'genuine'
     if row['exploit']:
@@ -119,6 +177,20 @@ def git_commit(repo):
         return None
 
 
+@contextmanager
+def atomic_text(path):
+    """A rejected row must not leave a partial export or overwrite the last good one."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, prefix='.export-', delete=False) as handle:
+            temporary = Path(handle.name)
+            yield handle
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def export(results, out, tasks=None):
     """Write `out` (JSONL) and `<out>.manifest.json`; return the manifest."""
     results, out = Path(results), Path(out)
@@ -127,7 +199,7 @@ def export(results, out, tasks=None):
     commit = git_commit(results.parent)
     counts, skipped, n = Counter(), Counter(), 0
     out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open('w') as sink:
+    with atomic_text(out) as sink:
         for summary_path in sorted(results.rglob('summary.json')):
             run_dir = summary_path.parent
             run = run_dir.relative_to(results).as_posix()
@@ -135,6 +207,7 @@ def export(results, out, tasks=None):
                 continue
             summary = json.loads(summary_path.read_text())
             meta = run_meta(summary, run)
+            history = update_history(run_dir)
             for path, updates in row_files(run_dir):
                 lines = [line for line in path.read_text().splitlines() if line.strip()]
                 rows = [json.loads(line) for line in lines]
@@ -142,14 +215,16 @@ def export(results, out, tasks=None):
                 file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
                 rel = path.relative_to(results).as_posix()
                 for i, row in enumerate(rows):
+                    if row.get('scored') is False or not all(k in row for k in ('task_id', 'raw', 'genuine', 'exploit', 'verified_refutation', 'format_valid', 'established', 'body', 'report')):
+                        skipped['unscored row'] += 1
+                        continue
                     task = tasks.get(row['task_id'])
                     if task is None:
                         skipped['unknown task'] += 1
                         continue
                     turn = int(str(row.get('turn', 1)))
                     # The prompt the model saw depends on the report format; rows from before the typed format are prose.
-                    mode = row.get('report_mode') or summary.get('report_mode') or 'prose'
-                    validate_mode(mode)
+                    mode = report_mode(row, summary)
                     if turn == 1:
                         messages = prompt(task['statement'], meta['variant'], mode)
                     else:
@@ -157,11 +232,14 @@ def export(results, out, tasks=None):
                         if opener is None:
                             skipped['follow-on without opener'] += 1
                             continue
+                        if report_mode(opener, summary) != mode:
+                            raise ValueError('follow-on report mode differs from its opening prompt')
                         messages = prompt(tasks[opener['task_id']]['statement'], meta['variant'], mode) + [
                             {'role': 'assistant', 'content': opener['raw']}, follow_on(task['statement'])]
-                    policy_updates = row.get('step') if updates == 'step' else updates
+                    policy_updates = update_count(history, summary, row, updates)
                     trained = bool(meta['adapter']) or bool(policy_updates)
-                    provenance = 'rl_induced' if trained else ('hinted' if meta['variant'] == 'hint' else 'natural')
+                    provenance = ('rl_induced' if trained else 'training_unknown' if policy_updates is None
+                                  else 'hinted' if meta['variant'] == 'hint' else 'natural')
                     reading = by_content.get(content_key(run, row['task_id'], row['established'], row['body'], row['report']))
                     positional = by_position.get((run, i))
                     if positional and positional['task_id'] == row['task_id']:
@@ -183,6 +261,9 @@ def export(results, out, tasks=None):
                                   messages=messages, response=row['raw'], established=row['established'], body=row['body'], report=row['report'],
                                   genuine=bool(row['genuine']), exploit=bool(row['exploit']), verified_refutation=bool(row['verified_refutation']),
                                   format_valid=bool(row['format_valid']), truncated=row.get('truncated'),
+                                  verifier_inconclusive=bool(row.get('verifier_inconclusive', False)),
+                                  genuine_why=row.get('genuine_why'), refutation_why=row.get('refutation_why'),
+                                  declaration_why=row.get('declaration_why'), partial_batch=row.get('partial_batch', False),
                                   reading=reading, trace_reading={k: v for k, v in trace.items() if k != 'task_id'} if trace else None,
                                   cheat_axis=axis, disclosure_axis=disclosure)
                     sink.write(json.dumps(record, ensure_ascii=False) + '\n')
@@ -191,5 +272,6 @@ def export(results, out, tasks=None):
     manifest = dict(schema=SCHEMA, rows=n, repo_commit=commit, results=str(results), out_sha256=hashlib.sha256(out.read_bytes()).hexdigest(),
                     skipped=dict(skipped), read=sum(v for k, v in counts.items() if k[3] != 'unread'),
                     cells=[dict(run=k[0], provenance=k[1], cheat=k[2], disclosure=k[3], n=v) for k, v in sorted(counts.items())])
-    out.with_name(out.name + '.manifest.json').write_text(json.dumps(manifest, indent=1, ensure_ascii=False))
+    with atomic_text(out.with_name(out.name + '.manifest.json')) as handle:
+        handle.write(json.dumps(manifest, indent=1, ensure_ascii=False))
     return manifest

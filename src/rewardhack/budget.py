@@ -7,12 +7,14 @@ costs. Moving money between lines is a budget change and is not something this m
 Money a provider returns is its own row with a negative total and a `status` that starts with `refund`, on the line it was charged to.
 """
 import csv
+from decimal import Decimal, ROUND_CEILING
 import json
 import math
 import re
 from pathlib import Path
 
 from .json_objects import unique_object
+from .state_files import atomic_json, file_lock
 
 LEDGER = Path('spending/ledger.csv')  # relative to the project root; entrypoints pass an explicit path
 FIELDS = ['date', 'provider', 'model', 'purpose', 'resource', 'hours', 'hourly_usd', 'other_usd', 'total_usd', 'status', 'evidence', 'line']
@@ -30,19 +32,6 @@ def reservation_path(ledger=LEDGER):
 RESERVATION_ENV = 'REWARDHACK_PILOT_RESERVATION'  # set by the pilot runner for a stage's commands
 
 
-def without_own_reservation(rows, key, line):
-    """Rows for a guard run inside a pilot stage, and the dollars that stage already reserved on `line`.
-
-    The stage's worst case is in the registry before its command starts. Counting the launch again on
-    top of it would refuse any stage larger than half of what is left. Only the one reservation named
-    by the runner is set aside, and only on its own line; the caller must hold the launch within it.
-    The guard keeps no record of launches it has passed, here as anywhere else: a stage that makes
-    several guarded launches must enter each charge in the ledger before the next check.
-    """
-    own = [r for r in rows if key and r.get('key') == key and r.get('line') == line]
-    return [r for r in rows if not any(r is o for o in own)], (own[0]['total_usd'] if own else None)
-
-
 def read_reservations(ledger=LEDGER):
     """Read validated worst-case commitments; they never become negative credits."""
     path = reservation_path(ledger)
@@ -54,12 +43,19 @@ def read_reservations(ledger=LEDGER):
         raise ValueError('invalid pilot reservation registry')
     keys = set()
     for record in records:
-        if (not isinstance(record, dict) or set(record) != {'key', 'line', 'total_usd', 'status'}
+        if (not isinstance(record, dict)
+                or not {'key', 'line', 'total_usd', 'status'} <= record.keys()
+                or record.keys() - {'key', 'line', 'total_usd', 'status', 'approved_usd'}
                 or not isinstance(record['key'], str) or record['key'] in keys
                 or record['status'] != 'pilot worst-case reservation'
                 or not isinstance(record['line'], str) or record['line'] not in LINES
                 or type(record['total_usd']) not in (int, float)):
             raise ValueError('invalid pilot reservation registry record')
+        nonnegative_finite(record['total_usd'], 'reservation total_usd')
+        approved = record.get('approved_usd', 0.0)
+        if (type(approved) not in (int, float) or not math.isfinite(approved) or approved < 0
+                or not math.isfinite(record['total_usd']) or round(approved, 6) > round(record['total_usd'], 6)):
+            raise ValueError('invalid pilot reservation approved_usd')
         keys.add(record['key'])
     grant_spent(records)  # validates finite, nonnegative prices and totals
     return records
@@ -157,3 +153,68 @@ def check(rows, line, hourly, hours, other=0.0, launch_cap=None):
     if round(total_spent+worst, 6) > TOTAL_CAP:
         problems.append(f'grant total ${total_spent:.2f}+${worst:.2f} exceeds ${TOTAL_CAP:.2f}')
     return worst, problems
+
+
+def claim_cost(hourly, hours, other=0.0):
+    """Debit every positive cost, rounding up at the ledger's one-microdollar unit.
+
+    Decimal arithmetic preserves the declared decimal prices. A positive six-place
+    result within 1e-12 dollars absorbs binary representation noise (0.1+0.2);
+    that normalization can never turn a positive charge into a free claim.
+    """
+    values = []
+    for value, name in ((hourly, 'hourly price'), (hours, 'maximum hours'), (other, 'other costs')):
+        if isinstance(value, bool):
+            raise ValueError(f'{name} must be a finite, nonnegative number')
+        nonnegative_finite(value, name)
+        values.append(Decimal(str(value)))
+    exact = values[0]*values[1]+values[2]
+    nonnegative_finite(exact, 'worst-case cost')
+    if exact > Decimal(str(TOTAL_CAP)):
+        return float(exact)  # the grant guard refuses it; no quantization of enormous amounts
+    unit = Decimal('0.000001')
+    nearest = exact.quantize(unit)
+    if nearest > 0 and abs(exact-nearest) <= Decimal('0.000000000001'):
+        exact = nearest
+    return float(exact.quantize(unit, rounding=ROUND_CEILING))
+
+
+def claim(ledger, key, line, hourly, hours, other=0.0, launch_cap=None):
+    """Atomically consume a stage's reserved allowance for one bounded launch.
+
+    Every successful call consumes its worst-case cost before the caller launches
+    anything. Claims survive interruption; actual charges and refunds never reset
+    them. The full stage reservation remains visible to other budget consumers.
+    Ordinary `check` is read-only and cannot perform this authorization.
+    """
+    if isinstance(launch_cap, bool):
+        raise ValueError('launch cap must be a finite, nonnegative number')
+    ledger = Path(ledger).resolve()
+    if not ledger.is_file():
+        raise ValueError('the grant ledger must exist before claiming')
+    if not isinstance(key, str) or not key:
+        raise ValueError(f'claim requires the runner-provided {RESERVATION_ENV}')
+    registry = reservation_path(ledger)
+    with file_lock(registry.with_suffix(registry.suffix + '.lock')):
+        records = read_reservations(ledger)
+        own = next((record for record in records if record['key'] == key), None)
+        if own is None or own['line'] != line:
+            raise ValueError('claim requires the matching stage reservation and grant line')
+        actual = read_ledger(ledger, include_reservations=False)
+        other_rows = actual + [record for record in records if record is not own]
+        debit = claim_cost(hourly, hours, other)
+        worst, problems = check(other_rows, line, 0, 0, debit, launch_cap)
+        # Existing commitments must still fit the grant, including approvals not
+        # yet booked as charges. No temporary discount of the full reservation.
+        _, committed_problems = check(actual + records, line, 0, 0)
+        problems.extend(problem for problem in committed_problems if problem not in problems)
+        approved = round(own.get('approved_usd', 0.0), 6)
+        capacity = round(own['total_usd'], 6)
+        total = round(approved + worst, 6)
+        if total > capacity:
+            problems.append(f'cumulative launch claims ${total:.6f} exceed the ${capacity:.6f} stage reservation')
+        if not problems:
+            own['approved_usd'] = total
+            atomic_json(registry, records, exclusive=False)
+        return dict(worst_usd=worst, approved_usd=approved if problems else total,
+                    remaining_usd=round(capacity-(approved if problems else total), 6), problems=problems)

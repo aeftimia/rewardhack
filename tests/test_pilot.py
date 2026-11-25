@@ -47,7 +47,8 @@ def test_unknown_and_duplicate_seed_or_nonprefix_are_rejected(spec):
 
 
 def variant(success=.5, future=.5, plateau=.5, misfit=False):
-    return dict(success_lower=success, success_upper=success, future_success_upper=future, plateau_lower=plateau, model_misfit=misfit)
+    return dict(success_lower=success, success_upper=success, future_success_upper=future, plateau_lower=plateau, model_misfit=misfit,
+                prior_success_lower=.5, prior_future_success_upper=.5, prior_plateau_lower=.5)
 
 
 def test_all_sensitivities_and_strict_boundary_required(spec, monkeypatch):

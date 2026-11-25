@@ -201,7 +201,7 @@ def test_output_lock_prevents_concurrent_launch(tmp_path, cheap_decision):
     path, _ = fixture_spec(tmp_path)
     out = tmp_path/'out'; out.mkdir()
     with runner._lock(out/'pilot.lock'):
-        with pytest.raises(ValueError, match='another pilot holds'):
+        with pytest.raises(ValueError, match='another process holds'):
             runner.run(path, out, execute=True)
 
 
@@ -360,13 +360,13 @@ def test_stages_that_exactly_fill_the_pilot_cap_all_run(tmp_path, cheap_decision
     assert runner.run(path, tmp_path/'out', execute=True) == result
 
 
-def test_stage_running_the_ledger_guard_is_not_charged_twice(tmp_path, cheap_decision):
+def test_stage_claims_its_allowance_once_without_double_counting(tmp_path, cheap_decision):
     """A stage's own reservation covers its launch; anything above it, or on another line, is still refused."""
     path, spec = fixture_spec(tmp_path, cost=60, cap=60)
     guard = Path(__file__).resolve().parents[1]/'entrypoints'/'budget.py'
     report = tmp_path/'guard.json'
     code = ('import json,os,subprocess,sys; from pathlib import Path\n'
-            f'run=lambda line,usd: subprocess.run([sys.executable,{str(guard)!r},"--ledger",{spec["budget"]["ledger"]!r},"check",'
+            f'run=lambda line,usd: subprocess.run([sys.executable,{str(guard)!r},"--ledger",{spec["budget"]["ledger"]!r},"claim",'
             '"--line",line,"--hourly","0","--max-hours","0","--other-usd",usd]).returncode\n'
             f'Path({str(report)!r}).write_text(json.dumps([run("storage","60"),run("storage","60.01"),run("api","300")]))')
     spec['stages'][0]['argv'] = [sys.executable, '-c', code]
@@ -375,7 +375,7 @@ def test_stage_running_the_ledger_guard_is_not_charged_twice(tmp_path, cheap_dec
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(os, 'environ', env)
         runner.run(path, tmp_path/'out', execute=True)
-    assert json.loads(report.read_text()) == [0, 1, 0]
+    assert json.loads(report.read_text()) == [0, 1, 1]
     # Outside the stage the reservation counts in full again.
     outside = subprocess.run([sys.executable, str(guard), '--ledger', spec['budget']['ledger'], 'check', '--line', 'storage',
                               '--hourly', '0', '--max-hours', '0', '--other-usd', '60'], env=env, capture_output=True, text=True)
@@ -430,3 +430,105 @@ def test_stop_signal_while_the_stage_is_started_or_cleaned_up_still_kills_it(tmp
     assert signal.getsignal(signal.SIGTERM) is before
     time.sleep(2.3 if moment == 'starting' else 0)
     assert marker.exists() == (moment == 'cleaning')  # mid-start: killed before it wrote; mid-cleanup: it had finished
+
+
+@pytest.mark.parametrize('cap', [.1234567, 1.15*100])
+def test_a_stage_equal_to_a_cap_that_rounds_up_runs_and_resumes(tmp_path, cheap_decision, cap):
+    path, spec = fixture_spec(tmp_path, cost=cap, cap=cap)
+    spec['budget']['line'] = 'api'  # enough grant headroom for the $115 case
+    path.write_text(json.dumps(spec))
+    out = tmp_path/'out'
+    result = runner.run(path, out, execute=True)
+    assert result['reason'] == 'budget_cap'  # one full-cap stage, then no second launch
+    assert result['reserved_usd'] == round(cap, 6)
+    assert Path(spec['stages'][0]['evidence']).exists()
+    assert not Path(spec['stages'][1]['evidence']).exists()
+    assert runner.run(path, out, execute=True) == result
+
+
+def test_evidence_analysis_is_bounded_by_remaining_pilot_time(tmp_path,monkeypatch):
+    path,spec=fixture_spec(tmp_path)
+    spec['budget']['max_seconds']=.2
+    for stage in spec['stages']:
+        stage['max_seconds']=.05
+    path.write_text(json.dumps(spec))
+    def too_slow(*unused):
+        time.sleep(1)
+        pytest.fail('slow analysis was not interrupted')
+    monkeypatch.setattr(pilot,'decide',too_slow)
+    before=signal.getsignal(signal.SIGALRM)
+    started=time.monotonic()
+    result=runner.run(path,tmp_path/'out',execute=True)
+    assert time.monotonic()-started < .8
+    assert result['reason']=='time_cap' and result['reserved_usd']==1
+    receipt=json.loads((tmp_path/'out'/'stages'/'0000.result.json').read_text())
+    assert receipt['failure_reason']=='time_cap' and receipt['status']=='failed'
+    assert Path(spec['stages'][0]['evidence']).exists()
+    assert not Path(spec['stages'][1]['evidence']).exists()
+    assert signal.getsignal(signal.SIGALRM) is before
+    assert signal.getitimer(signal.ITIMER_REAL)==(0.,0.)
+    assert runner.run(path,tmp_path/'out',execute=True)==result  # no analysis rerun or paid retry
+
+
+def test_terminal_replay_has_fresh_bounded_audit_allowance(tmp_path,cheap_decision,monkeypatch):
+    path,spec=fixture_spec(tmp_path)
+    out=tmp_path/'out';result=runner.run(path,out,execute=True)
+    original=runner.time.time
+    monkeypatch.setattr(runner.time,'time',lambda: original()+3600)
+    assert runner.run(path,out,execute=True)==result  # original run deadline is past
+    original_analyze=runner._analyze
+    def bounded(spec,paths,seconds):
+        assert seconds==min(spec['budget']['max_seconds'],30)
+        raise runner.TimeCap('slow terminal audit')
+    monkeypatch.setattr(runner,'_analyze',bounded)
+    before=(out/'decision.json').read_bytes()
+    with pytest.raises(ValueError,match='terminal decision audit'):
+        runner.run(path,out,execute=True)
+    assert (out/'decision.json').read_bytes()==before
+    monkeypatch.setattr(runner,'_analyze',original_analyze)
+
+
+def test_analysis_does_not_replace_an_existing_timer(tmp_path):
+    path,_=fixture_spec(tmp_path)
+    handler=signal.getsignal(signal.SIGALRM)
+    signal.setitimer(signal.ITIMER_REAL,10)
+    try:
+        with pytest.raises(ValueError,match='active SIGALRM'):
+            runner.run(path,tmp_path/'out',execute=True)
+        assert signal.getsignal(signal.SIGALRM) is handler
+        assert signal.getitimer(signal.ITIMER_REAL)[0]>9
+        assert not (tmp_path/'out').exists()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL,0)
+
+
+def test_analysis_refuses_blocked_alarm_and_restores_custom_handler():
+    def custom(*unused):
+        pytest.fail('inactive caller handler should not be invoked')
+    original=signal.signal(signal.SIGALRM,custom)
+    try:
+        with runner._analysis_deadline(.1):
+            pass
+        assert signal.getsignal(signal.SIGALRM) is custom
+        mask=signal.pthread_sigmask(signal.SIG_BLOCK,[signal.SIGALRM])
+        try:
+            with pytest.raises(ValueError,match='unblocked SIGALRM'):
+                with runner._analysis_deadline(.1):
+                    pass
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK,mask)
+    finally:
+        signal.signal(signal.SIGALRM,original)
+
+
+def test_expired_active_replay_stops_before_analysis(tmp_path,cheap_decision,monkeypatch):
+    path,spec=fixture_spec(tmp_path,cap=1)
+    out=tmp_path/'out'
+    result=runner.run(path,out,execute=True)
+    assert result['reason']=='budget_cap'
+    (out/'decision.json').unlink()  # simulate a completed stage before terminal publication
+    original=runner.time.time
+    monkeypatch.setattr(runner.time,'time',lambda:original()+3600)
+    monkeypatch.setattr(pilot,'decide',lambda *a:pytest.fail('expired run must not analyze'))
+    result=runner.run(path,out,execute=True)
+    assert result['reason']=='time_cap' and result['phase']=='evidence_analysis'

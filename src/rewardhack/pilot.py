@@ -231,17 +231,29 @@ def decide(spec, rows):
     # Before maturity nothing is decided from the posterior, so a misfit there is reported and the pilot
     # goes on: one seed improving late is the delayed learning the maturity rule exists to wait for.
     misfit = any(v.get('model_misfit', False) for v in variants)
+    # A declared skeptical sensitivity must be moved across each decision boundary
+    # by evidence. Counts alone do not prevent a strong prior deciding the result.
+    boundaries = (
+        ('evidence_for_at_tested_compute', 'success_lower', 'prior_success_lower', lambda p: p > confidence),
+        ('predicted_futility_within_budget', 'future_success_upper', 'prior_future_success_upper', lambda p: p < 1-confidence),
+        ('practical_plateau_within_budget', 'plateau_lower', 'prior_plateau_lower', lambda p: p > confidence),
+    )
+    crossed, prior_driven = [], []
+    for boundary, posterior_key, prior_key, test in boundaries:
+        if posterior_key != 'success_lower' and len(points) == len(spec['checkpoints']):
+            continue  # no future horizon exists on which to forecast futility or plateau
+        if all(v[posterior_key] is not None and test(v[posterior_key]) for v in variants):
+            if all(v[prior_key] is not None and test(v[prior_key]) for v in variants):
+                prior_driven.append(boundary)
+            elif any(v[prior_key] is not None and not test(v[prior_key]) for v in variants):
+                crossed.append(boundary)
     if mature and misfit:
         reason = 'model_misfit'
-    elif mature and all(v['success_lower'] is not None and v['success_lower'] > confidence for v in variants):
-        reason = 'evidence_for_at_tested_compute'
-    elif mature and len(points) < len(spec['checkpoints']) and all(v['future_success_upper'] is not None and v['future_success_upper'] < 1-confidence for v in variants):
-        reason = 'predicted_futility_within_budget'
-    elif mature and all(v['plateau_lower'] is not None and v['plateau_lower'] > confidence for v in variants):
-        reason = 'practical_plateau_within_budget'
+    elif mature and crossed:
+        reason = crossed[0]
     elif len(points) == len(spec['checkpoints']):
         reason = 'compute_cap'
     return dict(stop=reason is not None, reason=reason or 'continue', posterior=posterior,
                 next_checkpoint=None if reason else spec['checkpoints'][len(points)],
-                mature=mature, model_misfit=misfit, hypothesis_defined=all(e['target'] is not None for e in spec['endpoints']),
+                mature=mature, model_misfit=misfit, prior_driven_boundaries=prior_driven, hypothesis_defined=all(e['target'] is not None for e in spec['endpoints']),
                 recommendation=None if reason else 'Complete the next matched checkpoint; keep seed and evaluation protocol fixed.')

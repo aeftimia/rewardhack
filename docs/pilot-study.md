@@ -86,12 +86,20 @@ The example's `plateau_delta: 0.02` is an editable planning value for two percen
 not an agreed scientific effect threshold. Freeze any changed threshold before collecting the
 data on which it will operate.
 
-The minimum-support and maturity requirements prevent a prior or a short flat prefix from
-ending a run. A model-misfit alarm before maturity is recorded in the decision (`model_misfit`) and
-the pilot continues; from maturity on it stops the pilot as inconclusive. At least three distinct training seeds and three observed checkpoints are required,
-and decisions require at least half the planned exposure horizon; the frozen spec may demand more. Keep delayed-learning alternatives in the frozen model; a
-model that cannot represent late improvement cannot reliably decide that late improvement is
-unlikely.
+The minimum-support and maturity requirements block decisions from a short flat prefix: at least
+three distinct training seeds and three observed checkpoints are required, and decisions require
+at least half the planned exposure horizon; the frozen spec may demand more. Counts and maturity
+alone do not establish that the data, rather than the prior, supplied the confidence.
+
+Each statistical boundary therefore has a prior-only check using the same proper coefficient and
+shape prior and the same current/future checkpoint events. Every posterior sensitivity must cross
+the boundary, and at least one declared sensitivity must **not** already cross it without data.
+If all priors already satisfy a boundary, that boundary cannot stop the run; it is recorded in
+`prior_driven_boundaries` while the study continues or reaches its cap. This applies separately to
+benefit, predicted futility, and plateau. It prevents a prior alone from supplying the entire stopping
+decision, but does not guarantee a minimum information gain, a correct learning-curve model, or a
+frequentist false-decision rate. Keep delayed-learning alternatives in the frozen model; a model
+that cannot represent late improvement cannot reliably decide that late improvement is unlikely.
 
 ## Learning-curve model and its limits
 
@@ -142,12 +150,28 @@ automatically released after a cheap stage or when the actual charge is entered 
 a finished stage is counted twice, conservatively, for as long as its reservation stays. There is no
 release command. The runner refuses to resume, or even re-read, a pilot output whose reservations
 were removed or changed, so edit the registry by hand only after the pilot has its terminal decision,
-and keep the output folder as the record. A stage command that runs the `budget.py check` guard
-is told its own reservation: the guard sets that one reservation aside on its line and refuses a
-launch whose worst case exceeds it, instead of counting the launch twice. The guard does not
-remember what it has passed, inside a stage or outside one: a stage that makes more than one guarded
-launch must enter each charge in the ledger before the next check, or the same reservation covers each of them. Wall-time limits bound each
-command and the overall pilot. A stage runs in its own process group, which the runner kills on a
+and keep the output folder as the record. Before **each** billable launch inside a stage, its producer
+must call `entrypoints/budget.py --ledger PATH claim --line LINE --hourly RATE --max-hours HOURS`
+(and `--other-usd` / `--launch-cap` when applicable), then launch only if that command exits zero.
+The runner supplies `REWARDHACK_PILOT_RESERVATION`; a missing, unknown or wrong-line key is refused.
+Claims atomically consume cumulative worst-case dollars under the same registry lock used by the
+runner. Positive costs round up to a microdollar using decimal price arithmetic, so repeated tiny
+requests cannot become free claims; insignificant binary representation noise near a positive
+ledger amount is normalized. A $100 reservation can authorize $60 then $40, but not $60 twice. A successful claim remains
+consumed after interruption, cancellation or a later refund; no automatic credit is issued.
+The full reservation still counts toward grant caps for other consumers. Recorded charges can
+therefore conservatively block further claims until separately reconciled; claims never bypass an
+already overcommitted grant line. The ordinary `check` command remains read-only, includes all
+reservations and refuses to authorize launches when the pilot reservation variable is set; older
+stage scripts using `check` must switch to explicit `claim`. Arbitrary
+stage programs must follow the claim-before-launch protocol: the wrapper cannot discover or price
+network requests hidden inside a command. Wall-time limits bound each
+command and the overall pilot. Pure evidence reading and posterior analysis also have a timer
+using the remaining run allowance; expiry is `time_cap`, not a measurement or scientific verdict.
+Analysis interrupted after a stage retains its evidence and reservation and is not automatically
+retried. Re-reading a terminal scientific decision uses a fresh audit-only allowance of at most
+30 seconds (also bounded by the original maximum); it never launches a stage. Existing active
+SIGALRM timers are refused rather than overwritten. A stage runs in its own process group, which the runner kills on a
 time-out, a failure, or a hangup, interrupt, quit or termination signal. A signal the runner was
 started ignoring (a hangup under `nohup`) stays ignored, and both runner and stage carry on. A runner killed outright
 (`SIGKILL`, power loss) cannot do that: find and stop the stage's processes by hand before anything else. Commands run as argument lists,

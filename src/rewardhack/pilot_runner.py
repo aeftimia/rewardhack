@@ -5,17 +5,15 @@ is reserved before starting and is never automatically refunded. Existing child
 budget caps still apply; the wrapper bounds subprocess time, not provider billing.
 """
 import contextlib
-import fcntl
 import hashlib
-import json
 import os
 from pathlib import Path
 import signal
 import subprocess
-import tempfile
 import time
 
 from . import budget, pilot
+from .state_files import atomic_json as _write, file_lock as _lock
 
 _read = pilot.read_json
 # Signals that end the runner while a stage is live. SIGKILL cannot be caught: after it, the stage's
@@ -35,47 +33,6 @@ def _hash_file(path):
 def _sources():
     root = Path(__file__).parent
     return {path.name: _hash_file(path) for path in sorted(root.glob('*.py'))}
-
-
-def _sync_directory(path):
-    descriptor = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
-def _write(path, value, *, exclusive=True):
-    """Publish a complete durable JSON record; existing receipts cannot be replaced."""
-    path = Path(path)
-    descriptor, temporary = tempfile.mkstemp(prefix='.pilot-', dir=path.parent)
-    try:
-        with os.fdopen(descriptor, 'w') as handle:
-            json.dump(value, handle, sort_keys=True, allow_nan=False)
-            handle.write('\n')
-            handle.flush()
-            os.fsync(handle.fileno())
-        if exclusive:
-            os.link(temporary, path)
-        else:
-            os.replace(temporary, path)
-        _sync_directory(path.parent)
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(temporary)
-
-
-@contextlib.contextmanager
-def _lock(path):
-    with Path(path).open('a') as handle:
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise ValueError(f'another pilot holds {path}') from None
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _reserve(spec, out, stage, spec_hash):
@@ -118,8 +75,8 @@ def _execute(stage, log, timeout=None, reservation_key=None):
 
     The stage runs in its own session, so a closed terminal would not reach it: hangup and quit are
     handled like termination, unless the caller ignores them (nohup), in which case runner and stage
-    both go on. The child is told its reservation so that the ledger guard, if the stage runs it, does
-    not count the same launch twice.
+    both go on. The child receives its reservation key so the budget guard can
+    atomically claim part of the stage allowance before each launch.
     """
     started = time.monotonic()
     with Path(log).open('xb') as sink:
@@ -166,6 +123,60 @@ def _execute(stage, log, timeout=None, reservation_key=None):
                 raise stop()
 
 
+class TimeCap(TimeoutError):
+    """Pure evidence analysis exhausted its bounded wall-time allowance."""
+
+
+def _timer_available():
+    if any(signal.getitimer(signal.ITIMER_REAL)):
+        raise ValueError('pilot analysis cannot replace an active SIGALRM timer')
+    previous = signal.getsignal(signal.SIGALRM)
+    if previous is None:
+        raise ValueError('pilot analysis cannot replace an external SIGALRM handler')
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, [])
+    if signal.SIGALRM in mask:
+        raise ValueError('pilot analysis requires an unblocked SIGALRM')
+    return previous
+
+
+@contextlib.contextmanager
+def _analysis_deadline(seconds):
+    """Bound pure analysis only, never a child start, cleanup, or receipt write.
+
+    An existing active timer is refused rather than overwritten. On exit, disarm
+    and drain a pending alarm before restoring the caller's handler and mask.
+    """
+    if seconds <= 0:
+        raise TimeCap('pilot analysis exhausted the remaining wall-time budget')
+    previous = _timer_available()
+    armed = False
+    def expired(*unused):
+        nonlocal armed
+        if armed:
+            armed = False
+            raise TimeCap('pilot evidence analysis reached its wall-time cap')
+    signal.signal(signal.SIGALRM, expired)
+    try:
+        armed = True
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        yield
+    finally:
+        armed = False
+        mask = signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGALRM])
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            if signal.SIGALRM in signal.sigpending():
+                signal.sigwait([signal.SIGALRM])
+            signal.signal(signal.SIGALRM, previous)
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+
+
+def _analyze(spec, paths, seconds):
+    with _analysis_deadline(seconds):
+        return pilot.decide(spec, pilot.read_evidence(spec, paths))
+
+
 def _verify_inputs(spec, spec_path):
     if pilot.load_spec(spec_path) != spec:
         raise ValueError('pilot specification changed during execution')
@@ -195,6 +206,7 @@ def run(spec_path, out, *, execute=False):
     """Execute only with explicit opt-in; crash recovery never re-runs uncertain work."""
     if not execute:
         return plan(spec_path)
+    _timer_available()  # refuse conflicting process timers before any reservation or launch
     spec = pilot.load_spec(spec_path)
     _verify_inputs(spec, spec_path)
     spec_hash = pilot.digest(spec)
@@ -271,7 +283,7 @@ def run(spec_path, out, *, execute=False):
                     or reservation['total_usd'] != stage['max_usd'] or reservation['line'] != spec['budget']['line']):
                 raise ValueError('stage reservation is missing or changed in shared registry')
             charged = _usd(charged + stage['max_usd'])
-            if charged > spec['budget']['max_usd']:
+            if charged > _usd(spec['budget']['max_usd']):
                 raise ValueError('stage receipts exceed the frozen pilot budget')
             if not result_path.exists():
                 raise ValueError('stage was started but has no completion receipt; refusing automatic retry '
@@ -301,14 +313,20 @@ def run(spec_path, out, *, execute=False):
                 if result.get('reason') != failed_result.get('failure_reason', 'stage_failure'):
                     raise ValueError('terminal decision disagrees with failed stage')
             elif 'decision' in result:
-                replayed = pilot.decide(spec, pilot.read_evidence(spec, paths))
+                try:
+                    replayed = _analyze(spec, paths, min(spec['budget']['max_seconds'], 30.0))
+                except TimeCap as error:
+                    raise ValueError('terminal decision audit exceeded its bounded allowance; saved decision unchanged') from error
                 if result['decision'] != replayed or result['reason'] != replayed['reason'] or not replayed['stop']:
                     raise ValueError('terminal decision disagrees with immutable evidence')
             elif result.get('reason') not in ('budget_cap', 'time_cap', 'grant_budget_cap'):
                 raise ValueError('terminal decision has no supporting evidence')
             return result
         if paths:
-            decision = pilot.decide(spec, pilot.read_evidence(spec, paths))
+            try:
+                decision = _analyze(spec, paths, spec['budget']['max_seconds']-elapsed_time())
+            except TimeCap:
+                return finish('time_cap', phase='evidence_analysis')
             if decision['stop']:
                 return finish(decision['reason'], decision=decision)
         for index, stage in enumerate(spec['stages'][completed:], completed):
@@ -316,7 +334,7 @@ def run(spec_path, out, *, execute=False):
                 raise ValueError('pilot source code changed during execution')
             _verify_inputs(spec, spec_path)
             elapsed = elapsed_time()
-            if _usd(charged + stage['max_usd']) > spec['budget']['max_usd']:
+            if _usd(charged + stage['max_usd']) > _usd(spec['budget']['max_usd']):
                 return finish('budget_cap', next_stage=stage['id'])
             if elapsed + stage['max_seconds'] > spec['budget']['max_seconds']:
                 return finish('time_cap', next_stage=stage['id'])
@@ -349,9 +367,10 @@ def run(spec_path, out, *, execute=False):
                             if _hash_file(evidence) != expected_hash:
                                 raise ValueError('completed stage evidence changed during execution')
                         candidate_paths = paths + [Path(stage['evidence'])]
-                        rows = pilot.read_evidence(spec, candidate_paths)
-                        decision = pilot.decide(spec, rows)
+                        decision = _analyze(spec, candidate_paths, spec['budget']['max_seconds']-elapsed_time())
                         result.update(status='completed', evidence_sha256=_hash_file(stage['evidence']), decision=decision)
+                    except TimeCap as error:
+                        result.update(status='failed', failure_reason='time_cap', error=str(error))
                     except (ValueError, OSError) as error:
                         result.update(status='failed', failure_reason='measurement_failure', error=str(error)[:1000])
             except BaseException as error:

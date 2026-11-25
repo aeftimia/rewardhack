@@ -46,7 +46,7 @@ def test_launch_that_exactly_fills_a_cap_is_not_refused_by_binary_rounding(tmp_p
     budget.reservation_path(ledger).write_text(json.dumps([reservation(key='k', total=64.8)]))
     script = Path(__file__).resolve().parents[1]/'entrypoints'/'budget.py'
     def guard(hours, key='k'):
-        return subprocess.run([sys.executable, str(script), '--ledger', str(ledger), 'check', '--line', 'storage',
+        return subprocess.run([sys.executable, str(script), '--ledger', str(ledger), 'claim', '--line', 'storage',
                                '--hourly', '2.7', '--max-hours', hours],
                               env=dict(os.environ, **{budget.RESERVATION_ENV: key}), capture_output=True, text=True).returncode
     assert (guard('24'), guard('24.01'), guard('24', key='other')) == (0, 1, 1)

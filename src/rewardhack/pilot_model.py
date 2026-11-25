@@ -142,6 +142,35 @@ def _joint(probabilities):
     return max(0.0, 1-math.fsum(1-p for p in probabilities)), min(probabilities)
 
 
+def _summaries(spec, endpoint_fits, current, horizon, future):
+    """Use identical events and probability bounds for prior and posterior curves."""
+    targets_known = all(endpoint['target'] is not None for endpoint in spec['endpoints'])
+    present = {endpoint['name']: _distribution(endpoint_fits[endpoint['name']], current/horizon, endpoint['target'])
+               for endpoint in spec['endpoints']}
+    forecasts = []
+    plateau_failures = []
+    for checkpoint in future:
+        forecast = {'checkpoint': checkpoint}
+        for endpoint in spec['endpoints']:
+            name = endpoint['name']
+            forecast[name] = _distribution(endpoint_fits[name], checkpoint/horizon, endpoint['target'])
+            probability = 0.0
+            for fit in endpoint_fits[name]:
+                difference = (_basis(fit['kind'], checkpoint/horizon, fit['knee'])
+                              - _basis(fit['kind'], current/horizon, fit['knee']))
+                mean = difference*fit['mean'][1]
+                variance = _variance(difference*difference*fit['covariance'][2])
+                probability += fit['weight']*_inside(mean, variance, endpoint['plateau_delta'])
+            plateau_failures.append(1-min(1.0, max(0.0, probability)))
+        forecasts.append(forecast)
+    lower, upper = _joint([value['p_target'] for value in present.values()]) if targets_known else (None, None)
+    future_upper = (min(1.0, math.fsum(min(forecast[endpoint['name']]['p_target'] for endpoint in spec['endpoints'])
+                                     for forecast in forecasts)) if targets_known and future else None)
+    return dict(current=present, future=forecasts, success_lower=lower, success_upper=upper,
+                future_success_upper=future_upper,
+                plateau_lower=max(0.0, 1-math.fsum(plateau_failures)) if future else None)
+
+
 def analyze(spec, rows):
     """Analyze completed checkpoints; decisions and maturity gates belong to pilot.py.
 
@@ -159,7 +188,6 @@ def analyze(spec, rows):
     model = spec['model']
     shapes = [('flat', None), ('linear', None), ('saturating', None)]
     shapes += [('delayed', knee) for knee in model['delayed_knees']]
-    targets_known = all(endpoint['target'] is not None for endpoint in spec['endpoints'])
     variants = []
     for prior_scale, noise_floor, seed_sd in product(model['prior_scales'], model['noise_floors'], model['seed_sds']):
         endpoint_fits = {}
@@ -177,32 +205,18 @@ def analyze(spec, rows):
             for fit, weight in zip(fits, weights, strict=True):
                 fit['weight'] = weight/total  # equal, proper prior mass on the declared shapes
             endpoint_fits[name] = fits
-        present = {endpoint['name']: _distribution(endpoint_fits[endpoint['name']], current/horizon, endpoint['target'])
-                   for endpoint in spec['endpoints']}
-        forecasts = []
-        plateau_failures = []
-        for checkpoint in future:
-            forecast = {'checkpoint': checkpoint}
-            for endpoint in spec['endpoints']:
-                name = endpoint['name']
-                forecast[name] = _distribution(endpoint_fits[name], checkpoint/horizon, endpoint['target'])
-                probability = 0.0
-                for fit in endpoint_fits[name]:
-                    difference = (_basis(fit['kind'], checkpoint/horizon, fit['knee'])
-                                  - _basis(fit['kind'], current/horizon, fit['knee']))
-                    mean = difference*fit['mean'][1]
-                    variance = _variance(difference*difference*fit['covariance'][2])
-                    probability += fit['weight']*_inside(mean, variance, endpoint['plateau_delta'])
-                plateau_failures.append(1-min(1.0, max(0.0, probability)))
-            forecasts.append(forecast)
-        lower, upper = _joint([value['p_target'] for value in present.values()]) if targets_known else (None, None)
-        future_upper = (min(1.0, math.fsum(min(forecast[endpoint['name']]['p_target'] for endpoint in spec['endpoints'])
-                                         for forecast in forecasts)) if targets_known and future else None)
+        posterior = _summaries(spec, endpoint_fits, current, horizon, future)
+        prior_fits = {endpoint['name']: [dict(kind=kind, knee=knee, weight=1/len(shapes),
+                                            mean=(0.0, 0.0), covariance=(prior_scale**2, 0.0, prior_scale**2))
+                                       for kind, knee in shapes] for endpoint in spec['endpoints']}
+        prior = _summaries(spec, prior_fits, current, horizon, future)
         misfit_endpoints = [name for name, fits in endpoint_fits.items()
                             if all(fit['max_abs_loo_z'] > 6 for fit in fits)]
-        variants.append(dict(prior_scale=prior_scale, noise_floor=noise_floor, seed_sd=seed_sd, current=present, future=forecasts,
-                             success_lower=lower, success_upper=upper, future_success_upper=future_upper,
-                             plateau_lower=max(0.0, 1-math.fsum(plateau_failures)) if future else None,
+        variants.append(dict(prior_scale=prior_scale, noise_floor=noise_floor, seed_sd=seed_sd,
+                             **posterior,
+                             prior_success_lower=prior['success_lower'],
+                             prior_future_success_upper=prior['future_success_upper'],
+                             prior_plateau_lower=prior['plateau_lower'],
                              model_misfit=bool(misfit_endpoints), misfit_endpoints=misfit_endpoints,
                              shape_weights={name: [{'kind': fit['kind'], 'knee': fit['knee'], 'weight': fit['weight'],
                                                    'max_abs_loo_z': fit['max_abs_loo_z']}
