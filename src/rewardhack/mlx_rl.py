@@ -47,8 +47,22 @@ def attach_lora(model, args, adapter=None):
     model.freeze()
     linear_to_lora_layers(model, args.lora_layers, {'rank': args.lora_rank, 'scale': args.lora_scale, 'dropout': 0.0})
     if adapter:
-        model.load_weights(str(adapter), strict=False)
-        mx.eval(model.parameters())
+        load_adapter(model, adapter)
+
+
+def load_adapter(model, adapter):
+    """Load saved LoRA weights into a model that already has its LoRA layers, refusing a file that does not fit them.
+
+    The file holds only the trainable weights, so the load cannot be strict about the base weights. Left at that, a file
+    from another LoRA shape or another model matches no name, loads nothing, and the run goes on from untrained
+    layers under the saved run's name. So the names are compared here: the file must hold exactly the trainable ones.
+    """
+    saved, expected = set(mx.load(str(adapter))), {name for name, _ in tree_flatten(model.trainable_parameters())}
+    if saved != expected:
+        raise ValueError(f'{adapter} does not fit this model\'s LoRA layers: {len(expected-saved)} trainable weights are not in the file '
+                         f'(first: {sorted(expected-saved)[:3]}) and {len(saved-expected)} weights in the file are not trainable here (first: {sorted(saved-expected)[:3]})')
+    model.load_weights(str(adapter), strict=False)
+    mx.eval(model.parameters())
 
 
 def probe(args, model, tokenizer):

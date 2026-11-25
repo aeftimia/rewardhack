@@ -95,7 +95,8 @@ def test_remote_runner_propagates_failure(tmp_path):
     job = tmp_path/'fail.sh'
     job.write_text('exit 7\n')
     import os
-    env = dict(os.environ, REMOTE_JOB_OUT=str(tmp_path/'out'), REMOTE_JOB_PIDS=str(tmp_path/'pids'), PATH=str(bin_dir)+':'+os.environ['PATH'])
+    env = dict(os.environ, REMOTE_JOB_OUT=str(tmp_path/'out'), REMOTE_JOB_PIDS=str(tmp_path/'pids'), PATH=str(bin_dir)+':'+os.environ['PATH'],
+               REQUIRE_AUTOSTOP='0')
     result = subprocess.run(['bash', 'ops/remote_job.sh', str(job), '10'], env=env)
     assert result.returncode == 7
     assert len((tmp_path/'pids').read_text().split()) == 2  # runner and job group, for a relaunch to stop
@@ -196,7 +197,7 @@ def test_driver_returns_remote_status(tmp_path, remote_code):
         path = bin_dir/name
         path.write_text('#!/bin/bash\n'+body)
         path.chmod(0o755)
-    env = dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'], JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0')
+    env = dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'], JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none')
     result = subprocess.run(['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh',
                              str(tmp_path/'results'), '1'], env=env, capture_output=True, text=True)
     assert result.returncode == remote_code, result.stderr

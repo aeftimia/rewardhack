@@ -230,7 +230,7 @@ def decide(spec, rows):
     # A pilot's posterior is conditional on its curve model/cohort, not confirmation.
     # Before maturity nothing is decided from the posterior, so a misfit there is reported and the pilot
     # goes on: one seed improving late is the delayed learning the maturity rule exists to wait for.
-    misfit = any(v.get('model_misfit', False) for v in variants)
+    misfit = any(v['model_misfit'] for v in variants)  # `pilot_model.analyze` writes it on every variant; without it a misfit could not stop the pilot
     # A declared skeptical sensitivity must be moved across each decision boundary
     # by evidence. Counts alone do not prevent a strong prior deciding the result.
     boundaries = (

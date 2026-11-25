@@ -35,7 +35,8 @@ exit 0
 for arg in "$@"; do if [[ $arg == *:out/ ]]; then exit {1 if pull_fails else 0}; fi; done
 exit 0
 '''
-    env = dict(os.environ, PATH=write_stubs(tmp_path, ssh=ssh, rsync=rsync, sleep='exit 0\n'), JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', KEEP_POD='1' if keep_pod else '0')
+    env = dict(os.environ, PATH=write_stubs(tmp_path, ssh=ssh, rsync=rsync, sleep='exit 0\n'), JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', KEEP_POD='1' if keep_pod else '0',
+               LEAN_ISOLATION='none')
     command = ['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'results'), '1']
     if close_stdout:
         command = ['bash', '-c', 'exec "$@" >&-', 'driver']+command
@@ -91,7 +92,7 @@ def test_a_terminated_runner_takes_its_job_with_it(tmp_path):
     job = tmp_path/'job.sh'
     job.write_text('sleep 300 & wait\n')
     pids = tmp_path/'pids'
-    env = dict(os.environ, PATH=path, REMOTE_JOB_OUT=str(tmp_path/'out'), REMOTE_JOB_PIDS=str(pids))
+    env = dict(os.environ, PATH=path, REMOTE_JOB_OUT=str(tmp_path/'out'), REMOTE_JOB_PIDS=str(pids), REQUIRE_AUTOSTOP='0')
     runner = subprocess.Popen(['bash', 'ops/remote_job.sh', str(job), '600'], env=env)
     try:
         for _ in range(100):
@@ -139,3 +140,46 @@ def test_probe_rules_are_read_from_a_real_summary():
     assert limit == 4096 and check == 0 and 'tasks 1 of 2' in line  # half the answers were cut off: the limit goes up
     with pytest.raises(ValueError, match='undetermined'):
         probe_rules.decide(dict(outcomes.summarize([]), tasks_planned=0, tasks_completed=0))
+
+
+def refused(tmp_path, results, **env):
+    """The driver's own refusals, which must come before it contacts the pod at all."""
+    calls = tmp_path/'calls'
+    calls.write_text('')
+    path = write_stubs(tmp_path, ssh=f'echo ssh >> {calls}\n', rsync=f'echo rsync >> {calls}\n', sleep='exit 0\n')
+    base = dict(os.environ, PATH=path, JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none')
+    result = subprocess.run(['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', results, '1'],
+                            env=dict(base, **env), capture_output=True, text=True)
+    return result.returncode, result.stdout, calls.read_text()
+
+
+def test_the_driver_refuses_what_would_only_fail_on_a_billing_pod(tmp_path):
+    cases = [(str(tmp_path/'results with space'), {}, 'must not contain spaces'),
+             (str(tmp_path/'r'), dict(SMOKE_SKIP_PROBE='1'), 'needs SMOKE_TOKEN_LIMIT'),
+             (str(tmp_path/'r'), dict(AUTOSTOP_GRACE_SECONDS='36000'), 'at most 600')]
+    for results, env, message in cases:
+        code, output, calls = refused(tmp_path, results, **env)
+        assert code == 2 and message in output, (env, output)
+        assert calls == '', 'the driver contacted the pod before refusing'
+
+
+def test_the_copy_to_the_pod_leaves_local_settings_and_tools_behind():
+    line = next(line for line in open('ops/drive_runpod.sh') if line.startswith('rsync -az') and 'pilot-repo' in line)
+    for kept_out in ('.git', '.tools', '.claude', 'spending'):
+        assert f'--exclude {kept_out} ' in line, kept_out
+
+
+def test_the_driver_can_check_a_command_without_a_pod(tmp_path):
+    """`DRIVE_CHECK_ONLY=1` runs the refusals and nothing else, so they can be made before anything is deployed."""
+    code, output, calls = refused(tmp_path, str(tmp_path/'r'), DRIVE_CHECK_ONLY='1')
+    assert code == 0 and output.strip() == 'check passed' and calls == ''
+    assert not (tmp_path/'r').exists(), 'a check created the results directory'
+    code, output, calls = refused(tmp_path, str(tmp_path/'r'), DRIVE_CHECK_ONLY='1', SMOKE_SKIP_PROBE='1')
+    assert code == 2 and 'check passed' not in output
+
+
+def test_each_job_script_states_its_deadline():
+    import re
+    for script, minutes in (('ops/remote_runpod_smoke.sh', 170), ('ops/remote_runpod_genbench.sh', 60)):
+        stated = re.search(r'^# deadline: (\d+)$', open(script).read(), re.M)
+        assert stated and int(stated.group(1)) == minutes, script

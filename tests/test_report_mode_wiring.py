@@ -58,6 +58,7 @@ def test_vllm_mode_reaches_prompt_scoring_and_storage(monkeypatch, tmp_path, lea
     modes, scored = [], []
     monkeypatch.setattr(vllm_probe, 'prompt', lambda statement, variant, mode: modes.append(mode) or [])
     class Tokenizer:
+        chat_template = ''  # no clock and no reasoning switch to settle
         def apply_chat_template(self, *a, **kw): return 'prompt'
         def __call__(self, text): return {'input_ids': [1]}
     class LLM:
@@ -154,7 +155,7 @@ def test_hf_training_routes_typed_prompt_and_reward(monkeypatch, tmp_path):
             self.model, self.reward = model, reward_funcs
             self.state = SimpleNamespace(global_step=1, log_history=[])
             self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
-            self.router_aux_loss_coef, self.aux_loss_enabled = 0.0, False
+            self.router_aux_loss_coef, self.aux_loss_enabled, self.generation_config = 0.0, False, SimpleNamespace(to_dict=dict)
         def train(self):
             assert self.reward(['{}'], ['True'], completion_ids=[[2, 9]]) == [0.]
         def save_model(self, path): pass

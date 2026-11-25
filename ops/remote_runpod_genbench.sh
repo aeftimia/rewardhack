@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# deadline: 60
 # vLLM generation benchmark for gpt-oss-20b on one pod (docs/notes-2026-11-21.md, sections 54 to 56). About 13 minutes if it goes as estimated; its inner limits add up to
 # about 55 (install, a 15 minute readiness wait, a 35 minute benchmark limit), so drive it with a 60 minute deadline.
 # No Lean, no judge, no key, no training. A vLLM server holds the base model in 30% of the card, the share left beside a
@@ -28,7 +29,8 @@ pod_self_test 40 "$PORT"
 [[ -s $ADAPTER/adapter_model.safetensors && -s $ADAPTER/adapter_config.json ]] || fail 'NO_ADAPTER: copy the trained adapter to payload/adapter before driving'
 
 log start install
-python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm==0.34.0 ninja > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
+# Not timed alone yet (about 3 minutes estimated), so three times that; a stalled download must not run to the job's deadline.
+python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q vllm==0.34.0 ninja > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
 /workspace/vllm-venv/bin/pip freeze > ~/out/pip-freeze-vllm.txt
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
 
@@ -37,14 +39,19 @@ log 'start vllm serve at 0.30 of the card'
   --gpu-memory-utilization 0.30 --enable-lora --max-lora-rank 16 --max-loras 2 > ~/out/vllm-serve.log 2>&1 &
 SERVER=$!
 trap 'if kill -0 "$SERVER"; then stop_server "$SERVER"; fi' EXIT
-# Up to 15 minutes, twice the 6.5 it took the one time it was timed: the server fetches the 13 GB of weights itself (268 s last time) and then compiles and warms up (about 90 s).
-wait_for_server "$SERVER" "$PORT" "$MODEL" 180 || fail 'VLLM_NOT_READY'
+# 15 minutes of elapsed time, 2.3x the 6.5 minutes (390 s) it took the one time it was timed: the server fetches the 13 GB of weights itself (268 s last time) and then compiles and warms up (about 90 s).
+# cap: 2x measured 390 s
+SERVER_WAIT=900
+wait_for_server "$SERVER" "$PORT" "$MODEL" "$SERVER_WAIT" || fail 'VLLM_NOT_READY'
 refuse_ignored_settings ~/out/vllm-serve.log
 log "vllm ready; card memory in use $(gpu_used)"
 # The client is standard library plus this package's task list, so the server's own Python runs it from the source tree.
 STATUS=0
-# 35 minutes: five measurements bounded by the client's own 300 s per request, plus adapter loads of up to 120 s each.
-# Never timed, so the limit is the worst case, not an estimate.
+# The client has never been timed, so its basis is an estimate: about 5 minutes (300 s), which is this script's 13 minute estimate
+# less the measured install (1.2) and server start (6.5). Three times that is 900 s. The limit is 2100 s so that it also sits above
+# the client's own worst case and fires only on a hang: five measurements bounded by its 300 s per request, plus two adapter
+# loads of up to 120 s each, 1740 s in all.
+# cap: 3x estimated 300 s
 PYTHONPATH=src timeout 2100 /workspace/vllm-venv/bin/python entrypoints/bench_generation.py server --out ~/out/vllm --model "$MODEL" --url "http://127.0.0.1:$PORT/v1" \
   --adapter trained="$ADAPTER" --concurrency 4,16,32 --base-concurrency 4,16 --template-kwargs '{"reasoning_effort": "low"}' > ~/out/vllm.log 2>&1 || STATUS=$?
 log "vllm bench exit $STATUS; card memory in use $(gpu_used)"

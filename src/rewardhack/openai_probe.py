@@ -10,7 +10,7 @@ import json
 import random
 import time
 
-from .model_io import Meter, call
+from .model_io import Meter, call, token_counts
 from .budget import nonnegative_finite
 
 from .prompts import follow_on, prompt
@@ -18,9 +18,12 @@ from .tasks import select_tasks, taskset_rows
 
 
 def unscored_row(task, index, result, turn, conversation, reasoning, report_mode='prose'):
-    """A raw row for later rescoring; `turn` 2 rows belong to the same `conversation` as their turn 1."""
+    """A raw row for later rescoring; `turn` 2 rows belong to the same `conversation` as their turn 1.
+
+    `tokens` and `reasoning_tokens` are None when the provider did not send that counter: unknown, not 0.
+    """
     return dict(task_id=task['id'], arm='baseline', raw=result['raw'], round=index, scored=False, termination_schema='cutoff-v1', turn=turn, conversation=conversation,
-                tokens=result['usage'].get('completion_tokens', 0), reasoning_tokens=reasoning, truncated=result['finish'] == 'length',
+                tokens=token_counts(result['usage'])['output'], reasoning_tokens=reasoning, truncated=result['finish'] == 'length',
                 model=result['model'], report_mode=report_mode)
 
 
@@ -55,8 +58,10 @@ def run(args):
         if 'error' in result:
             meter.totals['errors'] += 1
             sink.write(json.dumps(error_row(task, index, result, turn, conversation, report_mode))+'\n')
+            if 'usage' in result:
+                meter.add(result['usage'])  # a reply that arrived in an unusable shape was still billed
             return False
-        row = unscored_row(task, index, result, turn, conversation, meter.add(result['usage']), report_mode)
+        row = unscored_row(task, index, result, turn, conversation, meter.add(result['usage'])['reasoning'], report_mode)
         rows.append(row)
         sink.write(json.dumps(row, ensure_ascii=False)+'\n')
         return True
@@ -81,7 +86,7 @@ def run(args):
                     futures.add(pool.submit(job, *next_job))
     summary = dict(model=args.model, report_mode=report_mode, variant=args.variant, samples=len(rows), planned=len(jobs), reasoning_effort=args.reasoning_effort,
                    max_tokens=args.max_tokens, truncated=sum(r['truncated'] for r in rows), **meter.totals,
-                   mean_output_tokens=meter.totals['output']/max(len(rows), 1), elapsed_seconds=time.perf_counter()-started,
+                   mean_output_tokens=meter.totals['output']/len(rows) if rows and meter.totals['output'] is not None else None, elapsed_seconds=time.perf_counter()-started,
                    purpose='exploration probe; inference only; scored later with entrypoints/rescore.py', cost_cap_hit=stop)
     (args.out/'summary.json').write_text(json.dumps(summary, indent=1)+'\n')
     print(json.dumps(summary, indent=1))

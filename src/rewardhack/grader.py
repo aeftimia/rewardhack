@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+TIMEOUT = 'Timeout'  # the diagnostic of a check that ran out of time: undecided, not a failed proof
+
 
 def parse_completion(raw):
     decoder = json.JSONDecoder()
@@ -38,7 +40,7 @@ def check(lean, statement, body):
                     'verified': proc.returncode == 0 and 'sorryAx' not in diagnostic,
                     'diagnostic': diagnostic}
         except subprocess.TimeoutExpired:
-            return {'compiles': False, 'verified': False, 'diagnostic': 'Timeout'}
+            return {'compiles': False, 'verified': False, 'diagnostic': TIMEOUT}
 
 
 def evaluate_submission(lean, statement, raw):

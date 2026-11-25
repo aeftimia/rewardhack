@@ -12,7 +12,9 @@ total=0
 run() { name=$1; shift
   if [[ -f "$OUT/$name/summary.json" ]]; then echo "skip $name (done)"; return; fi
   .tools/venv/bin/python entrypoints/probe_api.py --out "$OUT/$name" --taskset hard --follow-on "$@" > "$OUT/$name.log" 2>&1
-  u=$(python3 -c "import json; print(json.load(open('$OUT/$name/summary.json'))['usd'])" 2>/dev/null || echo 0)
+  # A run that called the API and crashed before writing its summary has spent an unknown amount. That is not $0 toward STAGE_CAP: the stage stops.
+  [[ -f "$OUT/$name/summary.json" ]] || { echo "$name wrote no summary.json (see $OUT/$name.log), so what it spent is unknown and the stage stops here. Read the spend from the API usage page before rerunning."; exit 1; }
+  u=$(python3 -c "import json; print(float(json.load(open('$OUT/$name/summary.json'))['usd']))") || { echo "$name: no readable usd in $OUT/$name/summary.json, so what it spent is unknown and the stage stops here."; exit 1; }
   total=$(python3 -c "print(round($total+$u,4))"); echo "$name usd=$u total=$total"
   python3 -c "import sys; sys.exit(0 if $total <= $STAGE_CAP else 1)" || { echo "STAGE CAP $STAGE_CAP reached"; exit 0; }; }
 case $STAGE in

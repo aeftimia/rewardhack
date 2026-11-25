@@ -73,7 +73,7 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
             self.model, self.reward = model, reward_funcs
             self.state = SimpleNamespace(global_step=1, log_history=[])
             self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
-            self.router_aux_loss_coef, self.aux_loss_enabled = 0.0, False
+            self.router_aux_loss_coef, self.aux_loss_enabled, self.generation_config = 0.0, False, SimpleNamespace(to_dict=dict)
         def train(self):
             with pytest.raises(ValueError, match='completion_ids'):
                 self.reward([RAW], ['True'])
@@ -149,6 +149,7 @@ def test_vllm_finish_reason_reaches_scoring(args, monkeypatch):
                          samples=1, max_tokens=4, variant='neutral')
     tokenizer = SimpleNamespace(apply_chat_template=lambda *a, **kw: 'prompt')
     class Tokenizer:
+        chat_template = ''  # no clock and no reasoning switch to settle
         apply_chat_template = tokenizer.apply_chat_template
         def __call__(self, text):
             return dict(input_ids=[1])
@@ -392,7 +393,7 @@ def trl_stub(monkeypatch, drive):
             self.model, self.reward, self.callbacks = model, reward_funcs, callbacks
             self.state = SimpleNamespace(global_step=1, log_history=[])
             self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
-            self.router_aux_loss_coef, self.aux_loss_enabled = 0.0, False
+            self.router_aux_loss_coef, self.aux_loss_enabled, self.generation_config = 0.0, False, SimpleNamespace(to_dict=dict)
         def train(self):
             drive(self.reward, self.callbacks[0])
         def save_model(self, path):
@@ -433,7 +434,7 @@ def test_training_records_what_the_verifier_cost_it(args, monkeypatch):
     assert (step['unverified_rate'], step['check_verifier'], step['retries_denied'], step['variation_lost_to_verifier']) == (0.5, True, 0, 1)
     # No judge was asked in this scripted run, so its failure rate is unknown, not zero.
     assert summary['training_verifier'] == dict(unverified_rate=0.5, check_verifier=True, retries_denied=0, variation_lost_groups=1,
-                                                judge_undecided_rate=None, judged_or_tried=0, check_judge=None)
+                                                judge_undecided_rate=None, judge_asked=0, judge_undecided=0, check_judge=None)
     assert summary['early_stop'] == outcomes.VERIFIER_UNDECIDED and json.loads((args.out/'live.json').read_text())['check_verifier'] is True
 
 

@@ -51,7 +51,11 @@ if [[ $SG == None ]]; then
   SG=$(aws ec2 create-security-group --region "$REGION" --group-name "$KEY" --description 'rewardhack SSH' --query GroupId --output text)
 fi
 MYIP=$(curl -fsS https://checkip.amazonaws.com)
-aws ec2 authorize-security-group-ingress --region "$REGION" --group-id "$SG" --protocol tcp --port 22 --cidr "$MYIP/32" >/dev/null 2>&1 || true
+# A rule that is already there (InvalidPermission.Duplicate) is the one refusal that may pass. Any other one stops here, before the
+# paid request: without the rule this machine could not reach the instance it is about to pay for.
+if ! INGRESS=$(aws ec2 authorize-security-group-ingress --region "$REGION" --group-id "$SG" --protocol tcp --port 22 --cidr "$MYIP/32" 2>&1); then
+  [[ $INGRESS == *InvalidPermission.Duplicate* ]] || { echo "could not open SSH from $MYIP in security group $SG; nothing launched: $INGRESS"; exit 1; }
+fi
 # The claim is the last step before the paid request: a setup step failing above must not spend the allowance.
 [[ -z ${REWARDHACK_PILOT_RESERVATION:-} ]] || python3 entrypoints/budget.py claim "${GUARD_ARGS[@]}"
 ID=$(aws ec2 run-instances "${COMMON[@]}" --key-name "$KEY" --security-group-ids "$SG" --query 'Instances[0].InstanceId' --output text)

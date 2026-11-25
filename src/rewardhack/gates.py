@@ -16,6 +16,7 @@ large files.
 """
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -30,15 +31,16 @@ LEDGER = Path('spending') / 'ledger.csv'
 TERMS = Path('.claude') / 'commit-gate-terms.txt'
 # What the pod runs is the working tree under these paths (ops/drive_runpod.sh copies it), so they must match the tested commit.
 SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements.txt')
-# Minutes a pod can bill outside the job's own deadline: the 15 minute provisional timer the driver arms
-# before the job starts, and the 10 minute grace after the deadline before the pod removes itself.
-OVERHEAD_MINUTES = 25
+# A pod can bill outside the job's own deadline: for the provisional timer the driver arms before the job starts,
+# and for the grace after the deadline before the pod removes itself.
+PROVISIONAL_MINUTES = 15
+DRIVER_GRACE_SECONDS = 600  # what ops/remote_job.sh uses when AUTOSTOP_GRACE_SECONDS is not given
 DRIVER_JUDGE_MAX_USD = 1.0  # what ops/drive_runpod.sh passes to the pod when JUDGE_MAX_USD is not given
 MULTIPLES = {'measured': 2.0, 'estimated': 3.0}  # CLAUDE.md, "Sizing time caps and approvals"
 UNIT_MINUTES = {'s': 1/60, 'min': 1.0, 'h': 60.0}
 BASIS = re.compile(r'\s*(\d+(?:\.\d+)?)\s*x\s+(measured|estimated)\s+(\d+(?:\.\d+)?)\s*(s|min|h)\s*')
 READY = '.tools/venv/bin/python entrypoints/gate.py ready --remote ops/<script>.sh --deadline <minutes> ' \
-        "--basis '<2x measured|3x estimated> <time> <s|min|h>' --line <budget line> --hourly <usd> --other-usd <judge cap and other costs>"
+        "--basis '<2x measured|3x estimated> <time> <s|min|h>' --line <budget line> --hourly <usd> --other-usd <judge cap and other costs> [--set NAME=value ...]"
 
 MAX_BYTES = 15_000_000  # the largest result file tracked on purpose is 11 MB of rows; model files start above this
 SECRET_NAMES = re.compile(r'(^|/)(\.env(\..+)?|\.netrc|id_rsa.*|id_ed25519.*|.*\.pem|.*\.key|.*_key)$')
@@ -56,7 +58,13 @@ GATED = re.compile(r'\bgit\s+(?:-\S+\s+(?:[^-\s]\S*\s+)?)*(add|commit|push)\b|dr
                    r'|runpodctl\s+(pod\s+)?(create|deploy)|--judge[ =]api')
 HEREDOC = re.compile(r'''<<-?\s*(['"]?)(\w+)\1[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?=\n|\)|$)''', re.S)
 ASSIGNMENT = re.compile(r'([A-Za-z_]\w*)=(.*)', re.S)
-WRAPPERS = {'bash', 'sh', 'zsh', 'nohup', 'exec', 'time', 'command', 'env', 'setsid', 'sudo'}
+WRAPPERS = {'bash', 'sh', 'zsh', 'nohup', 'exec', 'time', 'command', 'env', 'setsid', 'sudo', 'caffeinate', 'nice', 'stdbuf',
+            'if', 'then', 'else', 'elif', 'while', 'until', 'do', '!', '{'}
+# Commands that take a script as something to read. Anything else that names the driver without being it is refused as unreadable.
+READERS = {'cat', 'grep', 'rg', 'head', 'tail', 'less', 'wc', 'ls', 'sed', 'awk', 'git', 'diff', 'shellcheck', 'stat', 'file', 'echo', 'printf', 'chmod'}
+# Environment settings ops/drive_runpod.sh reads. The launch record holds the ones a launch was checked with.
+DRIVER_SETTINGS = re.compile(r'SMOKE_[A-Z_]+|LEAN_ISOLATION|JUDGE_KIND|JUDGE_MAX_USD|FORWARD_JUDGE_KEY|AUTOSTOP_GRACE_SECONDS|KEEP_POD')
+CHECK_ONLY = 'DRIVE_CHECK_ONLY'  # set to 1, the driver validates the launch and exits before it reaches for a pod
 SSH_WITH_VALUE = set('pioFJLRDEbcelmOQSWw')
 
 
@@ -103,6 +111,10 @@ def command_words(tokens):
             return settings, ['bash -c', tokens[index+2]]
         elif token not in WRAPPERS:
             break
+        elif token not in ('export', 'declare', 'typeset'):
+            # `bash -x script`, `caffeinate -i cmd`: the wrapper's own flags are not the command. `bash -s -- args` reads its script from stdin.
+            while index+1 < len(tokens) and tokens[index+1].startswith('-') and tokens[index+1] not in ('-s', '--'):
+                index += 1
         index += 1
     return settings, tokens[index:]
 
@@ -146,12 +158,52 @@ def file_sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, test_command):
-    """Make every check a pod launch depends on and write the launch record. Returns (record, problems); no record is written with problems."""
+def grace_seconds(settings):
+    """How long the pod outlives its job under these driver settings. Raises ValueError when the setting is not a whole number."""
+    if 'AUTOSTOP_GRACE_SECONDS' not in settings:
+        return DRIVER_GRACE_SECONDS
+    if not settings['AUTOSTOP_GRACE_SECONDS'].isdigit():
+        raise ValueError(f"AUTOSTOP_GRACE_SECONDS={settings['AUTOSTOP_GRACE_SECONDS']} is not a whole number of seconds")
+    return int(settings['AUTOSTOP_GRACE_SECONDS'])
+
+
+def driver_check(root, remote, deadline, settings):
+    """Run the driver's own validation of this launch, with nothing deployed. Returns the reasons it refuses."""
+    driver = root/'ops'/'drive_runpod.sh'
+    if CHECK_ONLY not in driver.read_text():
+        return [f'ops/drive_runpod.sh has no {CHECK_ONLY} mode, so its refusals would only be met with a pod already billing']
+    # Paths relative to the repository, as the driver is run: it refuses a results path with a space in it.
+    done = subprocess.run(['bash', 'ops/drive_runpod.sh', 'check.invalid', '22', remote, str(RECORD.parent/'driver-check'), str(deadline)],
+                          cwd=root, env={**os.environ, **settings, CHECK_ONLY: '1'}, capture_output=True, text=True)
+    if done.returncode != 0 or 'check passed' not in done.stdout:
+        said = '\n    '.join((done.stdout + done.stderr).strip().splitlines()[-6:])
+        return [f'ops/drive_runpod.sh refuses this launch with these settings (exit {done.returncode}):\n    {said}']
+    return []
+
+
+def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, settings, test_command):
+    """Make every check a pod launch depends on and write the launch record. Returns (record, problems); no record is written with problems.
+
+    `settings` are the driver's environment settings for this launch (LEAN_ISOLATION, SMOKE_*, ...): the driver command must carry exactly these.
+    """
     root = Path(root)
     problems = []
     if not re.fullmatch(r'ops/[A-Za-z0-9_-]+\.sh', remote) or not (root/remote).is_file():
-        problems.append(f'{remote} is not an existing ops/*.sh script')
+        return None, [f'{remote} is not an existing ops/*.sh script']
+    unknown = sorted(name for name in settings if not DRIVER_SETTINGS.fullmatch(name))
+    if unknown:
+        return None, [f"not settings ops/drive_runpod.sh reads: {', '.join(unknown)}"]
+    floor = re.search(r'^# deadline: (\d+)\b', (root/remote).read_text(), re.M)
+    if floor and deadline < int(floor.group(1)):
+        problems.append(f'{remote} asks for a deadline of at least {floor.group(1)} min (its `# deadline:` line); {deadline} would cut it off')
+    try:
+        overhead = PROVISIONAL_MINUTES + math.ceil(grace_seconds(settings) / 60)
+    except ValueError as error:
+        return None, [str(error)]
+    judge_cap = driver_judge_cap(settings)
+    if judge_cap is not None and judge_cap > other_usd:
+        problems.append(f'these settings let the API judge spend ${judge_cap:.2f}; --other-usd must cover it and is ${other_usd:.2f}')
+    problems += driver_check(root, remote, deadline, settings)
     dirty = dirty_paths(root)
     if dirty:
         problems.append('uncommitted changes in what the pod would run, so it is not the tested commit:\n    ' + '\n    '.join(dirty[:12]))
@@ -161,7 +213,7 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, te
             problems.append(f'the deadline of {deadline} min is under the {needed:g} min that {basis.strip()!r} calls for')
     except ValueError as error:
         problems.append(str(error))
-    hours = (deadline + OVERHEAD_MINUTES) / 60
+    hours = (deadline + overhead) / 60
     worst, refused = check(read_ledger(root/LEDGER), line, hourly, hours, other_usd, launch_cap)
     problems += [f'budget: {reason}' for reason in refused]
     if problems:
@@ -172,7 +224,8 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, te
         return None, [f"the tests do not pass ({' '.join(test_command)} exited {tests.returncode}):\n    {tail}"]
     record = dict(head=git(root, 'rev-parse', 'HEAD').strip(), ledger_sha256=file_sha256(root/LEDGER), remote=remote,
                   deadline_minutes=deadline, basis=basis.strip(), line=line, hourly_usd=hourly, other_usd=other_usd, worst_case_usd=worst,
-                  worst_case_minutes=deadline + OVERHEAD_MINUTES, written_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
+                  worst_case_minutes=deadline + overhead, settings=dict(sorted(settings.items())),
+                  written_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
     (root/RECORD).parent.mkdir(parents=True, exist_ok=True)
     (root/RECORD).write_text(json.dumps(record, indent=1) + '\n')
     return record, []
@@ -187,13 +240,28 @@ def driver_judge_cap(settings):
     return float(settings['JUDGE_MAX_USD'])
 
 
-def launch_problems(root, remote=None, deadline=None, judge_cap=None):
-    """Why the launch record does not cover a launch now, optionally of this remote script at this deadline with this judge cap."""
+def mark_launched(root):
+    """A record covers one launch: its budget check counted one worst case. Called when a driver command is let through."""
+    path = Path(root)/RECORD
+    record = json.loads(path.read_text())
+    record['launched_at'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    path.write_text(json.dumps(record, indent=1) + '\n')
+
+
+def launch_problems(root, remote=None, deadline=None, settings=None):
+    """Why the launch record does not cover a launch now, optionally of this remote script at this deadline with these driver settings."""
     root = Path(root)
     if not (root/RECORD).exists():
         return [f'there is no launch record. Settle the launch first:\n    {READY}']
     record = json.loads((root/RECORD).read_text())
     problems = []
+    if 'launched_at' in record:
+        problems.append(f"the launch record already started a launch at {record['launched_at']}; its budget check counted one")
+    if settings is not None and settings != record['settings']:
+        def show(values):
+            return ' '.join(f'{name}={value}' for name, value in sorted(values.items())) if values else '(none)'
+        problems.append(f"the driver settings on this command are not the ones that were checked.\n    checked: {show(record['settings'])}\n"
+                        f'    command: {show(settings)}')
     if record['head'] != git(root, 'rev-parse', 'HEAD').strip():
         problems.append(f"the launch record is for commit {record['head'][:7]}, and HEAD has moved since the tests ran")
     dirty = dirty_paths(root)
@@ -205,9 +273,6 @@ def launch_problems(root, remote=None, deadline=None, judge_cap=None):
         problems.append(f"the launch record is for {record['remote']}, not {remote}")
     if deadline is not None and record['deadline_minutes'] != deadline:
         problems.append(f"the launch record is for a {record['deadline_minutes']} min deadline, not {deadline}")
-    if judge_cap is not None and judge_cap > record['other_usd']:
-        problems.append(f"this command lets the API judge spend ${judge_cap:.2f}, and the budget check counted ${record['other_usd']:.2f} "
-                        'beside the pod (--other-usd)')
     return problems + ([f'Settle the launch again before starting it:\n    {READY}'] if problems else [])
 
 
@@ -242,14 +307,36 @@ def remote_problems(root, settings, words):
     return [f"{name} started directly skips ops/remote_job.sh, which arms the pod's removal timer; start it with ops/drive_runpod.sh"]
 
 
-def spend_problems(root, settings, words, remote):
+def driver_problems(root, settings, words, exported, launches):
+    """`words` starts at ops/drive_runpod.sh. A passing launch is noted in `launches`."""
+    arguments = words[1:6]
+    if len(arguments) < 5:
+        return []  # too few arguments: the driver prints its usage and exits before it touches a pod
+    unread = [word for word in arguments if '$' in word or '`' in word]
+    if unread:
+        return [f"the driver's arguments must be written out so the launch can be checked; {' '.join(unread)} is only known to the shell"]
+    if not arguments[4].isdigit():
+        return []  # the driver refuses a deadline that is not a whole number
+    outside = sorted(name for name in exported if DRIVER_SETTINGS.fullmatch(name))
+    if outside:
+        return [f"{', '.join(outside)} is set earlier in the command, where the launch check cannot hold it to the record; "
+                'put driver settings on the driver command itself: NAME=value bash ops/drive_runpod.sh ...']
+    problems = launch_problems(root, remote=arguments[2], deadline=int(arguments[4]),
+                               settings={name: value for name, value in settings.items() if DRIVER_SETTINGS.fullmatch(name)})
+    if not problems:
+        launches.append(arguments[2])
+    return problems
+
+
+def spend_problems(root, settings, words, remote, exported, launches):
     name = os.path.basename(words[0])
     if remote:
         return remote_problems(root, settings, words) if re.fullmatch(r'remote_\w+\.sh', name) else []
     if name == 'drive_runpod.sh':
-        if len(words) != 6 or not words[5].isdigit():
-            return []  # the driver refuses this itself, before it touches a pod
-        return launch_problems(root, remote=words[3], deadline=int(words[5]), judge_cap=driver_judge_cap(settings))
+        return driver_problems(root, settings, words, exported, launches)
+    if name not in READERS and any(os.path.basename(word) == 'drive_runpod.sh' for word in words[1:]):
+        return [f'this names ops/drive_runpod.sh after `{words[0]}`, and whether that runs it cannot be told. Start the driver as '
+                '`NAME=value ... bash ops/drive_runpod.sh <host> <port> <remote script> <results dir> <deadline>`.']
     if name == 'drive_run.sh' or (name == 'launch_aws.sh' and '--approved' in words) \
             or (name == 'runpodctl' and {'create', 'deploy'} & set(words[1:3])):
         problems = launch_problems(root)
@@ -360,8 +447,13 @@ def git_problems(root, folder, words, documents):
 
 # --- the hook ------------------------------------------------------------------------------------------------------
 
-def command_problems(root, command, folder, remote=False):
-    """Every reason to refuse this shell command, run in `folder`. `remote` marks the far side of an SSH call."""
+def command_problems(root, command, folder, remote=False, launches=None):
+    """Every reason to refuse this shell command, run in `folder`. `remote` marks the far side of an SSH call.
+
+    `launches`, when given, collects the remote script of each driver launch the command was allowed.
+    """
+    launches = [] if launches is None else launches
+    exported = set()
     if not GATED.search(command):
         return []
     try:
@@ -372,10 +464,12 @@ def command_problems(root, command, folder, remote=False):
     problems = []
     for tokens in groups:
         settings, words = command_words(tokens)
-        if not words:
+        if not words or words[0] in ('export', 'declare', 'typeset'):
+            # Set for the rest of the command, not for one program: `X=1; cmd` and `export X=1; cmd`.
+            exported |= set(settings) | {match.group(1) for match in map(ASSIGNMENT.fullmatch, words[1:]) if match}
             continue
         if words[0] == 'bash -c':
-            problems += command_problems(root, words[1], folder, remote)
+            problems += command_problems(root, words[1], folder, remote, launches)
         elif words[0] == 'cd' and len(words) > 1 and not remote:
             folder = os.path.join(folder, os.path.expanduser(words[1]))
         elif words[0] == 'ssh' and not remote:
@@ -383,5 +477,5 @@ def command_problems(root, command, folder, remote=False):
         elif words[0] == 'git' and not remote:
             problems += git_problems(root, folder, words, documents)
         else:
-            problems += spend_problems(root, settings, words, remote)
+            problems += spend_problems(root, settings, words, remote, exported, launches)
     return problems

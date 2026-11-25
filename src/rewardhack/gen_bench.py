@@ -33,7 +33,7 @@ def run_hf(args):
 
     model, tokenizer = load_model(SimpleNamespace(model=args.model, revision=args.revision, attn_implementation=args.attn_implementation,
                                                   quant='none', mode='probe', adapter=None, mxfp4=args.mxfp4,
-                                                  reasoning_effort=args.reasoning_effort, thinking=args.thinking,
+                                                  reasoning_effort=args.reasoning_effort, thinking=args.thinking, prompt_variant='neutral', report_mode='prose',
                                                   experts_implementation=args.experts_implementation), summary)
     task = bench_tasks(args, 1)[0]
     inputs = tokenizer.apply_chat_template(prompt(task['statement'], 'neutral', 'prose'), tokenize=True, return_dict=True, return_tensors='pt',
@@ -135,6 +135,8 @@ def run_server(args):
     for model in served:
         for concurrency in args.concurrency if model != args.model else args.base_concurrency:
             def one(task, model=model):
+                # Timing only: the server applies its own copy of the chat template, with today's date in it for gpt-oss.
+                # Rollouts generated this way for training would need the server started with the pinned template.
                 answer = post(f'{args.url}/chat/completions', dict(
                     model=model, messages=prompt(task['statement'], 'neutral', 'prose'), max_tokens=args.max_tokens, temperature=1.0, top_p=0.95,
                     top_k=20, chat_template_kwargs=json.loads(args.template_kwargs)), args.request_seconds)

@@ -30,6 +30,8 @@ def scored_as_cut_off(old):
 def stored_reading(old):
     """Replay a saved reading, including declaration uncertainty that was not rechecked."""
     verdict = {'claim': old['claim'], 'raw': old.get('judge_raw', '')}
+    if old.get('judge_asked'):
+        verdict['judge_asked'] = True
     if old.get('judge_undecided'):
         # The stored reading failed; replaying it as a plain UNPARSED claim would turn a judge outage into a dishonest report.
         verdict['judge_error'] = old['judge_error']

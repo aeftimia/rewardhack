@@ -26,7 +26,7 @@ def exploit(monkeypatch):
 
 
 def failed_reading(row):
-    return {'claim': 'UNPARSED', 'raw': '', 'judge_error': 'HTTP 503: unavailable'}
+    return {'claim': 'UNPARSED', 'raw': '', 'judge_error': 'HTTP 503: unavailable', 'judge_asked': True}
 
 
 def test_a_failed_judge_reading_is_carried_through_scoring_and_rescoring(exploit, tmp_path):
@@ -59,13 +59,15 @@ def test_reward_groups_refuse_rows_from_different_prompts():
 
 def test_an_unreliable_judge_stops_training(tmp_path, monkeypatch):
     """Two failures in a row never reach the streak limit of three, yet half the rollouts would be silently left out."""
-    monkeypatch.setattr(hf_grpo, 'JUDGE_ROWS_BEFORE_STOP', 8)
     def reading(position, step):
-        return dict(claim='UNPARSED' if position % 2 else 'OK', judge_undecided=bool(position % 2), honest=False)
-    with pytest.raises(RuntimeError, match='judge failed on 50% of 8 readings'):
+        return dict(claim='UNPARSED' if position % 2 else 'OK', judge_asked=True, judge_undecided=bool(position % 2), honest=False)
+    with pytest.raises(RuntimeError, match='judge failed on 4 of 8 readings'):
         train(tmp_path, monkeypatch, REWARDS['first of the group'], steps=5, extra=reading)
     out = next(tmp_path.iterdir())
-    assert len((out/'training-rollouts.jsonl').read_text().splitlines()) == 8, 'the batch that tripped the limit was not saved'
+    saved = [json.loads(line) for line in (out/'training-rollouts.jsonl').read_text().splitlines()]
+    assert len(saved) == 8, 'the batch that tripped the limit was not saved'
+    assert [bool(row.get('partial_batch')) for row in saved] == [False]*4+[True]*4, 'rows that are in no step must say so'
+    assert json.loads((out/'training-log.json').read_text()) is not None
 
 
 def test_reward_scaling_is_the_one_asked_for(tmp_path, monkeypatch):
@@ -133,7 +135,7 @@ def test_a_continuation_with_other_settings_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(transformers.AutoTokenizer, 'from_pretrained', lambda *a, **kw: tokenizer)
     saved = json.loads((first.out/'adapter'/'adapter_config.json').read_text())
     args = SimpleNamespace(model=saved['base_model_name_or_path'], revision=None, attn_implementation='eager', quant='none', mxfp4='absent',
-                           experts_implementation=None, adapter=first.out/'adapter', mode='train', reasoning_effort=None, thinking='unsupported', lora_rank=16)
+                           experts_implementation=None, adapter=first.out/'adapter', mode='train', reasoning_effort=None, thinking='unsupported', lora_rank=16, prompt_variant='neutral', report_mode='prose')
     with pytest.raises(ValueError, match='rank 2'):
         hf_grpo.load_model(args, {})
     args.lora_rank, args.model = 2, 'some/other-model'
@@ -144,16 +146,15 @@ def test_a_continuation_with_other_settings_is_refused(tmp_path, monkeypatch):
 def test_the_prompt_does_not_depend_on_the_day_or_on_a_missing_switch():
     _, tokenizer = tiny('plain')
     tokenizer.chat_template = '{{ "Current date: " + strftime_now("%Y-%m-%d") }} Reasoning: {{ reasoning_effort }} {{ messages[0]["content"] }}'
-    args = SimpleNamespace(reasoning_effort='low', thinking='unsupported')
-    assert hf_grpo.settle_template(tokenizer, args) is True
+    assert hf_grpo.settle_template(tokenizer, 'low', 'unsupported') is True
     text = tokenizer.apply_chat_template([{'role': 'user', 'content': 'hello'}], tokenize=False, reasoning_effort='low')
     assert f'Current date: {hf_grpo.PROMPT_DATE} Reasoning: low' in text
-    for bad in (SimpleNamespace(reasoning_effort=None, thinking='unsupported'), SimpleNamespace(reasoning_effort='low', thinking='off')):
+    for bad in ((None, 'unsupported'), ('low', 'off')):
         with pytest.raises(ValueError):
-            hf_grpo.settle_template(tokenizer, bad)
+            hf_grpo.settle_template(tokenizer, *bad)
     plain = tiny('plain')[1]
     with pytest.raises(ValueError, match='reasoning-effort'):
-        hf_grpo.settle_template(plain, SimpleNamespace(reasoning_effort='low', thinking='unsupported'))  # a switch the template would ignore
+        hf_grpo.settle_template(plain, 'low', 'unsupported')  # a switch the template would ignore
 
 
 def stubs(tmp_path, **bodies):
@@ -192,7 +193,7 @@ def test_a_relaunch_stops_the_earlier_job_first(tmp_path):
     pids.write_text(f'{old_runner.pid} {old_job.pid}\n')
     job = tmp_path/'job.sh'
     job.write_text('exit 0\n')
-    env = dict(os.environ, PATH=path, REMOTE_JOB_OUT=str(tmp_path/'out'), REMOTE_JOB_PIDS=str(pids))
+    env = dict(os.environ, PATH=path, REMOTE_JOB_OUT=str(tmp_path/'out'), REMOTE_JOB_PIDS=str(pids), REQUIRE_AUTOSTOP='0')
     try:
         result = subprocess.run(['bash', 'ops/remote_job.sh', str(job), '10'], env=env, capture_output=True, text=True)
         assert result.returncode == 0, result.stdout+result.stderr

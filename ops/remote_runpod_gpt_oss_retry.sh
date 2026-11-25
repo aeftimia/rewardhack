@@ -22,7 +22,9 @@ step oss20-low  "$M" "$R" --max-tokens 2048 --max-model-len 3072 --max-seconds 6
 step oss20-high "$M" "$R" --max-tokens 8192 --max-model-len 9216 --max-seconds 900 --template-kwargs '{"reasoning_effort": "high"}'
 M=openai/gpt-oss-120b; R=b5c939de8f754692c1647ca79fbf85e8c1e70f8a
 log "start re-verify download $M"
-/workspace/vllm-venv/bin/hf download "$M" --revision "$R" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-gpt-oss-120b-retry.log 2>&1; log "end re-verify exit=$?"
+/workspace/vllm-venv/bin/hf download "$M" --revision "$R" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-gpt-oss-120b-retry.log 2>&1 \
+  || { log "DOWNLOAD_FAILED $M exit=$?: stopping, its probe steps would only fail on missing weights"; touch ~/out/DONE; exit 1; }
+log "end re-verify exit=0"
 step oss120-low  "$M" "$R" --max-tokens 2048 --max-model-len 3072 --max-seconds 600 --template-kwargs '{"reasoning_effort": "low"}'
 step oss120-high "$M" "$R" --max-tokens 8192 --max-model-len 9216 --max-seconds 900 --template-kwargs '{"reasoning_effort": "high"}'
 touch ~/out/DONE

@@ -20,7 +20,9 @@ remove_after() {  # detached, so it outlives this script, the SSH session and a 
 }
 arm() {  # $1: seconds until removal. The new timer is proven alive first; only then are the earlier ones stopped.
   local earlier new pid
-  earlier=$(pgrep -f 'runpodctl remove pod')  # empty when none are running; pgrep's status 1 for that is not an error here
+  # The bracket keeps the pattern from matching any command line that merely quotes it (a shell running this check); the timer's own
+  # command line, `bash -c "sleep N; while true; do runpodctl remove pod ..."`, still matches.
+  earlier=$(pgrep -f '[r]unpodctl remove pod')  # empty when none are running; pgrep's status 1 for that is not an error here
   remove_after "$1"
   new=$!
   sleep 1
@@ -57,6 +59,11 @@ trap 'exit 143' TERM  # nohup covers only a hang-up; a TERM must end through `fi
 [[ $# == 2 && $2 =~ ^[1-9][0-9]*$ && $GRACE =~ ^[0-9]+$ ]] || { echo 'need a job script and a whole number of seconds; AUTOSTOP_GRACE_SECONDS must be a number'; exit 2; }
 command -v timeout >/dev/null || { echo 'GNU timeout is required'; exit 2; }
 command -v setsid >/dev/null || { echo 'setsid is required'; exit 2; }
+# No default: left unset, a job started by any route but the driver on a machine that cannot remove itself would run with no cap on billing and nothing saying so.
+[[ ${REQUIRE_AUTOSTOP:-} == 0 || ${REQUIRE_AUTOSTOP:-} == 1 ]] || {
+  echo 'REQUIRE_AUTOSTOP must be set to 1 or 0. 1 (every RunPod pod; ops/drive_runpod.sh sets it): the job does not start unless this machine has armed its own removal. 0: the job starts even if no removal timer can be armed, which is only right where something else bounds the billing.' | tee -a "$OUT/autostop.log"
+  exit 2
+}
 # A relaunch must not share the GPU with an earlier job that is still running, and that job's exit must not write this
 # run's EXIT_CODE or arm a removal in the middle of it. Its runner goes first, without its exit trap, then its whole process group.
 PIDS=${REMOTE_JOB_PIDS:-$HOME/.remote_job.pids}
@@ -74,9 +81,11 @@ if can_remove; then
   AUTOSTOP=1
   # A relaunch on the same pod replaces the earlier job's timers; otherwise the old one would remove the pod mid-run.
   arm "$(($2+30+GRACE))"
-elif [[ ${REQUIRE_AUTOSTOP:-0} == 1 ]]; then
+elif [[ $REQUIRE_AUTOSTOP == 1 ]]; then
   echo 'NO_AUTOSTOP: this pod cannot remove itself (no pod id, no runpodctl, or its key was refused); not starting' | tee -a "$OUT/autostop.log"
   exit 3
+else
+  echo "$(date -u +%FT%TZ) NO_AUTOSTOP: REQUIRE_AUTOSTOP=0 and this machine cannot remove itself (no pod id, no runpodctl, or its key was refused). The job starts with NO removal timer: this script stops the job after ${2}s but does not stop the billing." | tee -a "$OUT/autostop.log"
 fi
 # Its own session, so everything the job starts (servers, their workers) is one process group a relaunch can stop.
 setsid timeout --signal=TERM --kill-after=30 "$2" bash "$1" &

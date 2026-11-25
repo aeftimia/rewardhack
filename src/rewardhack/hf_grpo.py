@@ -5,7 +5,6 @@ reward differs. Entrypoint: `entrypoints/run.py`.
 """
 import hashlib
 import json
-import math
 import resource
 import subprocess
 import sys
@@ -14,7 +13,7 @@ from pathlib import Path
 
 from . import deadline
 from .gpu import GpuSampler
-from .outcomes import JUDGE_ROWS_BEFORE_STOP, judge_advice, NO_VARIATION, RETRY_SECONDS, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
+from .outcomes import judge_advice, judge_failing, NO_VARIATION, RETRY_SECONDS, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
@@ -43,6 +42,11 @@ class VerifierMaskMixin:
 
     def _compute_loss(self, model, inputs):
         loss = super()._compute_loss(model, inputs)
+        import torch
+        if not bool(torch.isfinite(loss)):
+            # Here, before the optimiser step, so the adapter is still the last good one. The step callback is too late and too
+            # early at once: it runs after the update and before the step's loss is logged.
+            raise FloatingPointError(f'the training loss is {float(loss)} at step {self.state.global_step+1}')
         keep = inputs.get('verifier_keep')
         if keep is None:
             return loss
@@ -52,10 +56,11 @@ class VerifierMaskMixin:
         return loss * (keep.numel() * self.accelerator.num_processes / count.clamp(min=1))
 
 
+EVALUATION_SEED = 31415
 PROMPT_DATE = '2026-11-24'  # the day of the first unhinted probe; every prompt since carries it
 
 
-def settle_template(tokenizer, args):
+def settle_template(tokenizer, reasoning_effort, thinking):
     """Make the chat template say the same thing on every day and refuse a reasoning switch it would ignore.
 
     The gpt-oss template writes "Current date: <today>" into the system message, so the prompt changed at midnight,
@@ -68,10 +73,10 @@ def settle_template(tokenizer, args):
         if 'strftime_now' in pinned:
             raise ValueError('the chat template reads the clock in a form this code does not pin')
         tokenizer.chat_template = pinned
-    if ('reasoning_effort' in template) != bool(args.reasoning_effort):
+    if ('reasoning_effort' in template) != bool(reasoning_effort):
         raise ValueError('--reasoning-effort must be given exactly when the model\'s chat template takes one (gpt-oss); '
                          'unset, that template silently uses medium')
-    if args.thinking != 'unsupported' and 'enable_thinking' not in template:
+    if thinking != 'unsupported' and 'enable_thinking' not in template:
         raise ValueError('--thinking on/off needs a chat template with enable_thinking; pass --thinking unsupported for this model')
     return 'strftime_now' in template
 
@@ -84,10 +89,10 @@ def load_model(args, summary):
     tokenizer.padding_side = 'left'
     if not tokenizer.chat_template and args.model.startswith('hf-internal-testing/'):
         tokenizer.chat_template = "{% for m in messages %}{{ m['role'] }}: {{ m['content'] }}\n{% endfor %}assistant:"  # CPU dry run only
-    reads_clock = settle_template(tokenizer, args)
-    rendered = tokenizer.apply_chat_template(prompt('True', 'neutral', 'prose'), tokenize=False, add_generation_prompt=True, **template_kwargs(args))
+    reads_clock = settle_template(tokenizer, args.reasoning_effort, args.thinking)
+    rendered = tokenizer.apply_chat_template(prompt('True', args.prompt_variant, args.report_mode), tokenize=False, add_generation_prompt=True, **template_kwargs(args))
     summary['prompt'] = {'date_in_template': PROMPT_DATE if reads_clock else None,
-                         'sha256_of_reference_prompt': hashlib.sha256(rendered.encode()).hexdigest()}
+                         'sha256_of_prompt_for_statement_True': hashlib.sha256(rendered.encode()).hexdigest()}
     kwargs = {'revision': args.revision, 'attn_implementation': args.attn_implementation}
     cuda = torch.cuda.is_available()
     kwargs['dtype'] = torch.bfloat16 if cuda else torch.float32
@@ -163,7 +168,9 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
     report_mode = getattr(args, 'report_mode', 'prose')
     retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))
     samples = args.eval_samples if samples is None else samples
-    torch.manual_seed(31415)
+    # A constant, not --seed: the before- and after-evaluations draw from the same stream so their difference is the
+    # adapter's. It also means a probe or a before-evaluation is the same draw under every --seed, and says so in the summary.
+    torch.manual_seed(EVALUATION_SEED)
     model.eval()
     path = args.out/f'{stage}-evaluation.jsonl'
     completed, slowest = 0, 0.0
@@ -192,6 +199,8 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
                 rows.append(row)
                 sink.write(json.dumps(row, ensure_ascii=False)+'\n')
                 sink.flush()
+            if judge_failing(rows):
+                raise RuntimeError(f"the judge is failing in the {stage} evaluation: {judge_advice(rows)}")
             completed, slowest = completed+1, max(slowest, time.monotonic()-task_started)
     training_rewards(rows, samples)  # probe variation must predict the signal the trainer will actually use
     grouped = reward_groups(rows, samples)
@@ -240,14 +249,16 @@ def prepare_training(model, tokenizer, tasks, args, summary):
                 raise
         rewards = training_rewards(rows, args.num_generations)
         trainer._verifier_keep = [training_keep(row) for row in rows]
-        undecided.extend({key: row.get(key) for key in ('verifier_inconclusive', 'claim', 'format_valid', 'judge_undecided')} for row in rows)
+        undecided.extend({key: row.get(key) for key in ('verifier_inconclusive', 'judge_asked', 'judge_undecided')} for row in rows)
         judging = judge_advice(undecided)
         summary['training_verifier'] = dict(verifier_advice(undecided), retries_denied=retries.denied, **judging)
-        if judging['check_judge'] and judging['judged_or_tried'] >= JUDGE_ROWS_BEFORE_STOP:
-            # Stops a paid run whose rollouts are being dropped by an unreliable judge; this batch is already saved below.
-            sink.write(''.join(json.dumps(row, ensure_ascii=False)+'\n' for row in rows))
+        if judge_failing(undecided):
+            # Stops a paid run whose rollouts are being dropped by an unreliable judge. The batch is saved and marked: it is in
+            # no step and no tally.
+            sink.write(''.join(json.dumps(dict(row, partial_batch=True), ensure_ascii=False)+'\n' for row in rows))
             sink.flush()
-            raise RuntimeError(f"the judge failed on {judging['judge_undecided_rate']:.0%} of {judging['judged_or_tried']} readings, above the 5% limit")
+            summary['partial_batch_rows'] = len(rows)
+            raise RuntimeError(f"the judge failed on {judging['judge_undecided']} of {judging['judge_asked']} readings: its failure rate is above the 5% limit")
         sink.write(''.join(json.dumps(row, ensure_ascii=False)+'\n' for row in rows))
         sink.flush()
         step = len(timing['lean'])+1
@@ -271,14 +282,18 @@ def prepare_training(model, tokenizer, tasks, args, summary):
     run_args = args
 
     class Instrument(TrainerCallback):
+        def on_pre_optimizer_step(self, args, state, control, **kwargs):
+            # A finite loss can still have non-finite gradients; the optimiser would write them into the adapter, and the
+            # loss check would only notice one paid step later, with the last good weights gone.
+            bad = [name for name, p in kwargs['model'].named_parameters() if p.grad is not None and not bool(p.grad.isfinite().all())]
+            if bad:
+                raise FloatingPointError(f'non-finite gradient at step {state.global_step+1} in {len(bad)} tensors, first {bad[0]}')
+
         def on_step_begin(self, args, state, control, **kwargs):
             timing['step_start'] = time.perf_counter()
 
         def on_step_end(self, args, state, control, **kwargs):
             timing['update'].append(time.perf_counter()-timing['reward_end'])
-            losses = [row['loss'] for row in state.log_history[-1:] if 'loss' in row]
-            if losses and not math.isfinite(losses[0]):
-                raise FloatingPointError(f'the loss is {losses[0]} at step {state.global_step}')
             (run_args.out/'live.json').write_text(json.dumps({'step': state.global_step, **summary['rollouts'], **summary.get('training_verifier', {}), 'mixed_groups': sum(groups)}))
             if state.global_step % run_args.save_every == 0:
                 kwargs['model'].save_pretrained(str(run_args.out/f'adapter-step{state.global_step}'))
@@ -319,6 +334,8 @@ def prepare_training(model, tokenizer, tasks, args, summary):
     summary['trainer'] = {'lr_schedule': trainer.args.lr_scheduler_type, 'router_aux_loss_coef': trainer.router_aux_loss_coef,
                           'aux_loss_enabled': trainer.aux_loss_enabled, 'scale_rewards': args.scale_rewards, 'max_grad_norm': args.max_grad_norm,
                           'arguments_in_effect': trainer.args.to_dict(),
+                          # What TRL generates with, after the model's own generation config has filled what we left unset.
+                          'generation_in_effect': trainer.generation_config.to_dict(),
                           'lora_target_modules': sorted({name.split('.')[-1] for name, module in trainer.model.named_modules() if hasattr(module, 'lora_A')})}
     def fit():
         t0 = time.perf_counter()
@@ -328,14 +345,17 @@ def prepare_training(model, tokenizer, tasks, args, summary):
         try:
             trainer.train()
         except BaseException:
-            # Whatever stopped training, the updates made so far were paid for.
+            # Whatever stopped training, the updates made so far were paid for. The deadline repeats every 30 s; it has
+            # been heard, and must not cut this save short.
+            deadline.disarm()
             trainer.save_model(str(args.out/'adapter-at-failure'))
             raise
         finally:
+            summary.update(global_step=trainer.state.global_step, mixed_reward_groups=sum(groups), reward_groups=len(groups))
             # Paid for whether or not training finished: the per-step log, and what each step's time went on.
             (args.out/'training-log.json').write_text(json.dumps(trainer.state.log_history, indent=1)+'\n')
             (args.out/'step-seconds.json').write_text(json.dumps({k: timing[k] for k in ('rollout', 'lean', 'update')}, indent=1)+'\n')
-        summary.update(training_seconds=time.perf_counter()-t0, global_step=trainer.state.global_step, mixed_reward_groups=sum(groups), reward_groups=len(groups),
+        summary.update(training_seconds=time.perf_counter()-t0,
                        adapter_max_abs_change=max(float((p.detach().cpu()-before[n]).abs().max()) for n, p in trainer.model.named_parameters() if n in before),
                        mean_seconds={k: sum(timing[k])/max(len(timing[k]), 1) for k in ('rollout', 'lean', 'update')})
         trainer.save_model(str(args.out/'adapter'))
@@ -355,7 +375,7 @@ def run(args):
     args.out.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     args.train_deadline = time.monotonic()+args.max_seconds-args.final_eval_seconds
-    summary = {'status': 'running', 'report_mode': getattr(args, 'report_mode', 'prose'), 'argv': sys.argv[1:],
+    summary = {'status': 'running', 'report_mode': getattr(args, 'report_mode', 'prose'), 'argv': sys.argv[1:], 'evaluation_seed': EVALUATION_SEED,
                # What the transcript export needs to rebuild each prompt and label the policy; argv alone omits defaults.
                'model': args.model, 'revision': args.revision, 'prompt_variant': args.prompt_variant,
                'adapter': str(args.adapter) if args.adapter else None, 'template_kwargs': template_kwargs(args), 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
@@ -409,6 +429,7 @@ def run(args):
             summary['before_on_after_tasks'] = summarize(matched)
         summary['status'] = 'completed'
     except BaseException as error:
+        deadline.disarm()  # heard once; the summary below must be written
         summary.update(status='failed', reason=f'{type(error).__name__}: {str(error)[:800]}')
         raise
     finally:

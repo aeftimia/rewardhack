@@ -82,10 +82,10 @@ def test_unknown_targets_and_finished_horizon_have_no_invented_prior_events(spec
 
 
 def test_one_skeptical_prior_is_sufficient_and_equality_is_not_crossing(spec,monkeypatch):
-    variants=[dict(success_lower=.99,prior_success_lower=.99,
+    variants=[dict(success_lower=.99,prior_success_lower=.99,model_misfit=False,
                    future_success_upper=None,prior_future_success_upper=None,
                    plateau_lower=.5,prior_plateau_lower=.5),
-              dict(success_lower=.99,prior_success_lower=.95,
+              dict(success_lower=.99,prior_success_lower=.95,model_misfit=False,
                    future_success_upper=None,prior_future_success_upper=None,
                    plateau_lower=.5,prior_plateau_lower=.5)]
     monkeypatch.setattr(pilot_model,'analyze',lambda *unused:dict(variants=variants))

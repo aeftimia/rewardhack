@@ -52,7 +52,8 @@ def main():
     with (args.out/'verdicts.jsonl').open('w') as sink:
         result = validate(judge, rows, sink, args.max_usd)
     result.update(judge=args.judge, model=args.judge_model, revision=args.judge_revision, per_category=args.per_category, seed=args.seed, statement_check=bool(args.lean), planned=len(rows),
-                  seconds=time.perf_counter()-started, seconds_per_report=(time.perf_counter()-started)/max(len(rows), 1),
+                  # Per report judged, not per report planned: a run stopped at its cost cap judged fewer than it planned.
+                  seconds=time.perf_counter()-started, seconds_per_report=(time.perf_counter()-started)/result['rows'] if result['rows'] else None,
                   usage=judge.meter.totals if judge.meter else None)
     if args.audit:
         result.update(complete=result['rows'] == len(rows),

@@ -5,10 +5,20 @@ REGION=${1:-us-west-2}
 FILTER=Name=tag:project,Values=rewardhack
 IDS=$(aws ec2 describe-instances --region "$REGION" --filters "$FILTER" Name=instance-state-name,Values=pending,running,stopping,stopped --query 'Reservations[].Instances[].InstanceId' --output text)
 if [[ -n $IDS ]]; then
-  # shellcheck disable=SC2086
-  aws ec2 terminate-instances --region "$REGION" --instance-ids $IDS >/dev/null
-  # shellcheck disable=SC2086
-  aws ec2 wait instance-terminated --region "$REGION" --instance-ids $IDS
+  # One throttled or dropped call must not leave the instances running: asked up to five times, 10 s apart. Whatever happens here,
+  # the counts below are still taken and decide the exit status.
+  ACCEPTED=0
+  for attempt in 1 2 3 4 5; do
+    # shellcheck disable=SC2086
+    if aws ec2 terminate-instances --region "$REGION" --instance-ids $IDS >/dev/null; then ACCEPTED=1; break; fi
+    echo "terminate-instances attempt $attempt of 5 failed for: $IDS"
+    sleep 10
+  done
+  if [[ $ACCEPTED == 0 ]]; then echo "TERMINATION WAS NOT ACCEPTED in 5 attempts; still running and billing: $IDS"
+  else
+    # shellcheck disable=SC2086
+    if ! aws ec2 wait instance-terminated --region "$REGION" --instance-ids $IDS; then echo "waiting for termination failed; the counts below say what is left: $IDS"; fi
+  fi
 fi
 LIVE=$(aws ec2 describe-instances --region "$REGION" --filters Name=instance-state-name,Values=pending,running,stopping,stopped --query 'length(Reservations[].Instances[])' --output text)
 VOLUMES=$(aws ec2 describe-volumes --region "$REGION" --query 'length(Volumes[])' --output text)

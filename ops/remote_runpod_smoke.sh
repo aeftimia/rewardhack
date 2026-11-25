@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# deadline: 170
 # Preflight smoke test for the funded training run (docs/preflight-plan.md, step 3). One RunPod pod with a
 # 80-96 GB card. First run on a pod: 2026-11-24 (results/runpod-smoke-20261124*). Its inner limits add up to about 150 minutes
 # (probe 55, first training run 60, second 35) plus setup, so drive it with a 170 minute deadline; when everything works it ends
@@ -54,7 +55,10 @@ fi
 
 # --- Lean, isolated. Proof bodies are model-written, so Lean runs with an empty environment and no network.
 log start lean
-mkdir -p /workspace/lean && curl -fsSL https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst | tar --zstd -xf - -C /workspace/lean \
+# A stalled download used to hold the billing pod until the job deadline. Download plus unpacking took 2, 4, 4 and 5 s on the four
+# pod runs of 24 and 25 Nov (steps.log, `start lean` to the next line). 60 s is 12x the longest: past that it is a hang, and tar then fails on the cut-off stream.
+# cap: 2x measured 5 s
+mkdir -p /workspace/lean && curl -fsSL --max-time 60 https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst | tar --zstd -xf - -C /workspace/lean \
   || fail LEAN_DOWNLOAD_FAILED
 LEAN_BIN=/workspace/lean/lean-4.19.0-linux/bin/lean
 # The verifier writes each source into a private temporary folder; the unprivileged user needs to read that one file.
@@ -66,12 +70,14 @@ ln -sf /workspace/bin/lean-safe ~/lean-safe
 
 # --- Python: the pinned training stack, and vLLM in its own environment for the judge server.
 log start install
-python -m venv /workspace/train-venv && /workspace/train-venv/bin/pip install -q torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED
+# Limits on the steps that fetch from the network, so a stalled connection ends in minutes and not at the job's deadline:
+# the install took 81 s when timed, the 13 GB download 3.5 to 5.1 minutes; vLLM's install has not been timed alone (about 3 minutes estimated).
+python -m venv /workspace/train-venv && timeout 300 /workspace/train-venv/bin/pip install -q torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED
 # The `hf` command comes with huggingface_hub itself; the `[cli]` extra asked for until 25 Nov does not exist, and pip stepped back through versions looking for it.
 HF=/workspace/train-venv/bin/hf
 [[ -x $HF ]] || fail 'NO_HF_COMMAND: huggingface_hub did not install its hf command'
 /workspace/train-venv/bin/pip freeze > ~/out/pip-freeze-train.txt
-if [[ $JUDGE_KIND == pod ]]; then python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm==0.34.0 ninja > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED; fi
+if [[ $JUDGE_KIND == pod ]]; then python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q vllm==0.34.0 ninja > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED; fi
 PY=/workspace/train-venv/bin/python
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
 $PY entrypoints/run.py controls --out ~/out/controls --lean ~/lean-safe > ~/out/controls.log 2>&1 || fail VERIFIER_CONTROLS_FAILED
@@ -80,7 +86,7 @@ log 'verifier controls passed'
 # --- Downloads (both ungated; no Hugging Face token on this pod).
 PAIRS=("$MODEL $REV"); [[ $JUDGE_KIND == pod ]] && PAIRS+=("$JUDGE $JUDGE_REV")
 for pair in "${PAIRS[@]}"; do set -- $pair
-  log "start download $1"; $HF download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-"${1##*/}".log 2>&1 || fail "DOWNLOAD_FAILED $1"
+  log "start download $1"; timeout 660 $HF download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-"${1##*/}".log 2>&1 || fail "DOWNLOAD_FAILED $1"
 done
 
 if [[ $JUDGE_KIND == api ]]; then
@@ -93,8 +99,11 @@ log start judge-server
 PATH="/workspace/vllm-venv/bin:$PATH" /workspace/vllm-venv/bin/vllm serve "$JUDGE" --revision "$JUDGE_REV" --port "$JUDGE_PORT" --host 127.0.0.1 --max-model-len 3072 \
   --gpu-memory-utilization "${JUDGE_GPU_FRACTION:-0.22}" > ~/out/judge-server.log 2>&1 &
 JUDGE_PID=$!
-# 15 minutes: vLLM's first start took 6.5 on this pod type, with its own fetch of the weights.
-wait_for_server "$JUDGE_PID" "$JUDGE_PORT" "$JUDGE" 180 || fail JUDGE_SERVER_DID_NOT_START
+# 15 minutes of elapsed time. vLLM's first start took 6.5 minutes (390 s) on this pod type, with its own fetch of the weights; that
+# was gpt-oss-20b in the benchmark job, the only start timed so far, and this judge model's own start has not been timed.
+# cap: 2x measured 390 s
+SERVER_WAIT=900
+wait_for_server "$JUDGE_PID" "$JUDGE_PORT" "$JUDGE" "$SERVER_WAIT" || fail JUDGE_SERVER_DID_NOT_START
 refuse_ignored_settings ~/out/judge-server.log
 export NO_KEY=none
 JUDGE_ARGS=(--judge api --judge-model "$JUDGE" --judge-url "http://127.0.0.1:$JUDGE_PORT/v1" --judge-key-env NO_KEY --judge-extra '{"chat_template_kwargs": {"enable_thinking": false}}')

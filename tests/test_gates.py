@@ -23,7 +23,10 @@ def repo(tmp_path):
     root = tmp_path / 'repo'
     for folder in ('ops', 'src', 'spending', '.claude', '.tools'):
         (root / folder).mkdir(parents=True)
-    (root / 'ops' / 'remote_runpod_smoke.sh').write_text('echo job\n')
+    (root / 'ops' / 'remote_runpod_smoke.sh').write_text('# deadline: 5\necho job\n')
+    (root / 'ops' / 'drive_runpod.sh').write_text(  # the real driver's check-only mode, in miniature
+        "[[ ${LEAN_ISOLATION:-} != required ]] || { echo 'LEAN_ISOLATION=required cannot work on this pod'; exit 2; }\n"
+        "[[ ${DRIVE_CHECK_ONLY:-} == 1 ]] && { echo 'check passed'; exit 0; }\nexit 9\n")
     (root / 'spending' / 'ledger.csv').write_text((PROJECT / 'spending' / 'ledger.csv').read_text().splitlines()[0] + '\n')
     (root / '.claude' / 'commit-gate-terms.txt').write_text(f'# what stays out\n\\b{TERM}\\b\n')
     (root / '.gitignore').write_text('.claude/\n.tools/\n')
@@ -36,7 +39,8 @@ def repo(tmp_path):
 
 
 def settle(repo, deadline=60, basis='2x measured 30 min', tests=PASS, **kw):
-    return gates.ready(repo, 'ops/remote_runpod_smoke.sh', deadline, basis, 'gpt-oss-20b-gpu', 2.70, kw.get('other_usd', 0.0), kw.get('launch_cap'), tests)
+    return gates.ready(repo, 'ops/remote_runpod_smoke.sh', deadline, basis, 'gpt-oss-20b-gpu', 2.70, kw.get('other_usd', 0.0), kw.get('launch_cap'),
+                       kw.get('settings', {}), tests)
 
 
 def problems(repo, command):
@@ -50,7 +54,7 @@ def test_a_driver_with_no_launch_record_is_refused(repo):
 
 
 def test_a_settled_launch_starts_and_only_that_launch(repo):
-    record, refused = settle(repo)
+    record, refused = settle(repo, settings=dict(KEEP_POD='1'))
     assert refused == [] and record['worst_case_minutes'] == 85 and record['worst_case_usd'] == pytest.approx(2.70*85/60)
     assert problems(repo, 'KEEP_POD=1 ' + DRIVER) == []
     assert 'not ops/remote_other.sh' in '\n'.join(problems(repo, DRIVER.replace('remote_runpod_smoke', 'remote_other')))
@@ -58,15 +62,56 @@ def test_a_settled_launch_starts_and_only_that_launch(repo):
 
 
 def test_the_judge_cap_must_be_inside_the_budget_check(repo):
-    settle(repo)
-    assert problems(repo, DRIVER) == []  # no key is sent, so no judge can spend
-    assert 'lets the API judge spend $1.00' in '\n'.join(problems(repo, 'FORWARD_JUDGE_KEY=1 ' + DRIVER))
-    settle(repo, other_usd=1.0)
+    judged = dict(FORWARD_JUDGE_KEY='1')
+    assert 'let the API judge spend $1.00' in settle(repo, settings=judged)[1][0]
+    assert 'spend $5.00' in settle(repo, other_usd=1.0, settings=dict(judged, JUDGE_MAX_USD='5'))[1][0]
+    assert settle(repo, other_usd=1.0, settings=judged)[1] == []
     assert problems(repo, 'FORWARD_JUDGE_KEY=1 ' + DRIVER) == []
-    assert 'spend $5.00' in '\n'.join(problems(repo, 'FORWARD_JUDGE_KEY=1 JUDGE_MAX_USD=5 ' + DRIVER))
-    done = subprocess.run([sys.executable, str(PROJECT / 'entrypoints' / 'gate.py'), 'ready', '--remote', 'ops/remote_job.sh', '--deadline', '60',
+    for other in (DRIVER, 'FORWARD_JUDGE_KEY=1 JUDGE_MAX_USD=50 ' + DRIVER, 'export FORWARD_JUDGE_KEY=1 JUDGE_MAX_USD=50; ' + DRIVER,
+                  'JUDGE_MAX_USD=50; FORWARD_JUDGE_KEY=1 ' + DRIVER):
+        assert problems(repo, other), other
+    done =subprocess.run([sys.executable, str(PROJECT / 'entrypoints' / 'gate.py'), 'ready', '--remote', 'ops/remote_job.sh', '--deadline', '60',
                            '--basis', '2x measured 30 min', '--line', 'gpt-oss-20b-gpu', '--hourly', '2.70'], capture_output=True, text=True)
     assert done.returncode == 2 and '--other-usd' in done.stderr
+
+
+@pytest.mark.parametrize('command', [
+    DRIVER + ' 2>&1 | tee driver.log',
+    DRIVER.replace('bash ', 'bash -x '),
+    DRIVER.replace('bash ', 'bash -eu '),
+    'caffeinate -i ' + DRIVER,
+    'if ' + DRIVER + '; then echo ok; fi',
+    'D=60; ' + DRIVER[:-2] + '$D',
+    'xargs ' + DRIVER,
+    'nohup ' + DRIVER + ' > driver.log 2>&1 &',
+])
+def test_the_launch_check_is_not_skipped_by_how_the_driver_is_invoked(repo, command):
+    assert problems(repo, command), command  # no record yet: every one of these must reach the check or be refused as unreadable
+    settle(repo)
+    still = problems(repo, command)
+    assert bool(still) == ('$D' in command or 'xargs' in command), still  # the two the gate cannot read stay refused
+
+
+def test_the_driver_is_asked_before_anything_is_deployed_and_the_grace_is_counted(repo):
+    assert 'LEAN_ISOLATION=required cannot work' in settle(repo, settings=dict(LEAN_ISOLATION='required'))[1][0]
+    assert 'not settings ops/drive_runpod.sh reads: SMOKE_steps' in settle(repo, settings=dict(SMOKE_steps='4'))[1][0]
+    assert 'at least 5 min' in settle(repo, deadline=4, basis='2x measured 2 min')[1][0]
+    record, refused = settle(repo, settings=dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='3600', SMOKE_STEPS='4'))
+    assert refused == [] and record['worst_case_minutes'] == 60 + 15 + 60
+    assert 'not the ones that were checked' in '\n'.join(problems(repo, 'LEAN_ISOLATION=none ' + DRIVER))
+    assert problems(repo, 'SMOKE_STEPS=4 AUTOSTOP_GRACE_SECONDS=3600 LEAN_ISOLATION=none KEEP_UNRELATED=1 ' + DRIVER) == []
+    (repo / 'ops' / 'drive_runpod.sh').write_text('exit 9\n')
+    assert 'has no DRIVE_CHECK_ONLY mode' in settle(repo)[1][0]
+
+
+def test_a_record_covers_one_launch(repo):
+    settle(repo)
+    launches = []
+    assert gates.command_problems(repo, DRIVER, str(repo), launches=launches) == [] and launches == ['ops/remote_runpod_smoke.sh']
+    gates.mark_launched(repo)  # what the hook does when it lets a driver command through
+    assert 'already started a launch' in problems(repo, DRIVER)[0]
+    reads = []
+    assert gates.command_problems(repo, 'cat ops/drive_runpod.sh; bash -n ops/drive_runpod.sh', str(repo), launches=reads) == [] and reads == []
 
 
 def test_the_record_stops_covering_a_changed_tree_commit_or_ledger(repo):

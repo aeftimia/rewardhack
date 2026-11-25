@@ -32,12 +32,19 @@ pod_self_test() {
 }
 
 # Wait for an OpenAI-compatible server we started. Ready means: our process is alive AND the port's model list names our
-# model. Usage: wait_for_server <pid> <port> <model> <tries of 5 s>; returns 1 if it died or never answered.
+# model. Usage: wait_for_server <pid> <port> <model> <seconds>; returns 1 if it died or did not answer in that time.
+# The time is elapsed time by the shell's clock, not a count of tries: a try is a 5 s sleep plus a request of up to 5 s, so
+# "180 tries of 5 s" was up to 30 minutes where its callers said 15. The last check starts before the time is up, so the
+# function can return up to 10 s after it.
 wait_for_server() {
-  local pid=$1 port=$2 model=$3 tries=$4
-  for _ in $(seq "$tries"); do
+  local pid=$1 port=$2 model=$3 seconds=$4 end listed
+  [[ $seconds =~ ^[1-9][0-9]*$ ]] || fail "wait_for_server: the wait must be a whole number of seconds, got '$seconds'"
+  end=$((SECONDS+seconds))
+  while ((SECONDS < end)); do
     kill -0 "$pid" || return 1
-    if curl -sf --max-time 5 "http://127.0.0.1:$port/v1/models" | grep -q "$model"; then return 0; fi
+    # The reply is captured and then searched. Piped, `grep -q` exits at the first match, curl can then fail on its closed
+    # pipe, and under pipefail the pipeline reports that failure for a server that had answered correctly.
+    if listed=$(curl -sf --max-time 5 "http://127.0.0.1:$port/v1/models") && grep -q "$model" <<< "$listed"; then return 0; fi
     sleep 5
   done
   return 1

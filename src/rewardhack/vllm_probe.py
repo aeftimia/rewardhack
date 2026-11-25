@@ -41,6 +41,11 @@ def run(args):
                   enable_prefix_caching=True, enforce_eager=True)
         summary['load_seconds'] = time.perf_counter()-t0
         tokenizer = llm.get_tokenizer()
+        # The same pinned date and the same refusal of an ignored reasoning switch as the training path, so a probe's
+        # prompts are the ones training would see.
+        from .hf_grpo import settle_template
+        settle_template(tokenizer, template_kwargs['reasoning_effort'] if 'reasoning_effort' in template_kwargs else None,
+                        ('on' if template_kwargs['enable_thinking'] else 'off') if 'enable_thinking' in template_kwargs else 'unsupported')
         prompts = [tokenizer.apply_chat_template(prompt(t['statement'], args.variant, report_mode), tokenize=False, add_generation_prompt=True, **template_kwargs)
                    for t in tasks]
         summary['template_kwargs'] = template_kwargs

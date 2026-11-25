@@ -197,7 +197,7 @@ def test_weights_that_were_not_asked_for_are_refused(monkeypatch):
     monkeypatch.setattr(transformers.AutoModelForCausalLM, 'from_pretrained', lambda *a, **kw: model)
     monkeypatch.setattr(transformers.AutoTokenizer, 'from_pretrained', lambda *a, **kw: tokenizer)
     args = SimpleNamespace(model='tiny', revision=None, attn_implementation='eager', quant='none', mxfp4='absent', experts_implementation=None, adapter=None, mode='train',
-                           reasoning_effort=None, thinking='unsupported')
+                           reasoning_effort=None, thinking='unsupported', prompt_variant='neutral', report_mode='prose')
     with pytest.raises(ValueError, match='--mxfp4 dequantize'):
         hf_grpo.load_model(args, {})
     model.is_quantized = False
