@@ -1,0 +1,5 @@
+Runpod config file not found, please run `runpodctl config` to create it
+ID            	NAME               	GPU           	IMAGE NAME                                     	STATUS  
+jxa4ipu4gl2k75	stale_crimson_tapir	1 RTX PRO 6000	runpod/pytorch:2.1.0-cu1320-torch280-ubuntu2404	RUNNING	
+2026-11-25T01:55:43Z armed: pod jxa4ipu4gl2k75 is removed at most 6630s from now
+2026-11-25T02:17:59Z job ended with 1; removing pod in 600s

@@ -1,0 +1,4 @@
+ID            	NAME               	GPU           	IMAGE NAME                                     	STATUS  
+jxa4ipu4gl2k75	stale_crimson_tapir	1 RTX PRO 6000	runpod/pytorch:2.1.0-cu1320-torch280-ubuntu2404	RUNNING	
+2026-11-25T02:18:34Z armed: pod jxa4ipu4gl2k75 is removed at most 4710s from now
+2026-11-25T02:30:40Z job ended with 1; removing pod in 600s

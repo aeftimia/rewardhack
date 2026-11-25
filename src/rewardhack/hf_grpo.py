@@ -103,7 +103,10 @@ def reasons(args):
     return args.thinking == 'on' or bool(args.reasoning_effort)
 
 
-def evaluate(model, tokenizer, tasks, args, stage, samples=None):
+def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
+    """Score `samples` completions per task. With `stop_at` (a `time.monotonic()` instant), stop between tasks
+    when the slowest task so far would no longer fit: whole groups are kept and the result says it is incomplete,
+    instead of the hard deadline discarding the summary of a probe that had already measured most of its tasks."""
     import torch
     device = next(model.parameters()).device
     rows, generated, t_gen, t_lean = [], 0, 0.0, 0.0
@@ -113,8 +116,12 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
     torch.manual_seed(31415)
     model.eval()
     path = args.out/f'{stage}-evaluation.jsonl'
+    completed, slowest = 0, 0.0
     with path.open('w') as sink:
         for task in tasks:
+            if stop_at is not None and completed and time.monotonic()+1.25*slowest > stop_at:
+                break
+            task_started = time.monotonic()
             inputs = tokenizer.apply_chat_template(prompt(task['statement'], args.prompt_variant, report_mode), tokenize=True, return_dict=True,
                                                    return_tensors='pt', add_generation_prompt=True, **template_kwargs(args)).to(device)
             t0 = time.perf_counter()
@@ -135,9 +142,10 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None):
                 rows.append(row)
                 sink.write(json.dumps(row, ensure_ascii=False)+'\n')
                 sink.flush()
+            completed, slowest = completed+1, max(slowest, time.monotonic()-task_started)
     training_rewards(rows, samples)  # probe variation must predict the signal the trainer will actually use
     grouped = reward_groups(rows, samples)
-    return dict(summarize(rows), report_mode=report_mode, verifier_retries_denied=retries.denied, generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
+    return dict(summarize(rows), tasks_planned=len(tasks), tasks_completed=completed, incomplete=completed < len(tasks), report_mode=report_mode, verifier_retries_denied=retries.denied, generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
                 samples_per_prompt=samples, reward_groups=grouped['groups'], mixed_reward_groups=grouped['mixed_groups'],
                 zero_advantage_groups=grouped['zero_advantage_groups'], per_group=grouped['per_group'],
                 tokens_per_second=generated/max(t_gen, 1e-9), completions_per_hour=len(rows)/max(t_gen+t_lean, 1e-9)*3600)
@@ -267,6 +275,7 @@ def run(args):
         raise TimeoutError('hard deadline')
     signal.signal(signal.SIGALRM, hard_stop)
     signal.alarm(args.max_seconds)
+    hard_deadline = time.monotonic()+args.max_seconds
     sampler = GpuSampler()
     sampler.start()
     try:
@@ -291,7 +300,8 @@ def run(args):
                        gpus=[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())])
         model, tokenizer = load_model(args, summary)
         if args.mode == 'probe':
-            summary['probe'] = evaluate(model, tokenizer, training, args, 'probe', samples=args.num_generations)
+            summary['probe'] = evaluate(model, tokenizer, training, args, 'probe', samples=args.num_generations, stop_at=hard_deadline-60)
+            print('probe tasks completed', summary['probe']['tasks_completed'], 'of', summary['probe']['tasks_planned'], flush=True)
             summary['probe_split'] = 'train'
             print('probe cut-off rate', summary['probe']['truncated_rate'], 'raise the token limit:', summary['probe']['raise_token_limit'], flush=True)
             print('probe undecided rate', summary['probe']['unverified_rate'], 'check the verifier:', summary['probe']['check_verifier'], flush=True)

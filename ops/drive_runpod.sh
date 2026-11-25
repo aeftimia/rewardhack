@@ -19,6 +19,12 @@ fi
 [[ ${JUDGE_KIND:-api} == api || ${JUDGE_KIND:-api} == pod ]] || exit 2
 [[ ${LEAN_ISOLATION:-required} == required || ${LEAN_ISOLATION:-} == none ]] || exit 2
 [[ ${JUDGE_MAX_USD:-1} =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo 'JUDGE_MAX_USD must be a number of dollars'; exit 2; }
+# SMOKE_* settings for the remote smoke script are passed through, and only if they are plain numbers.
+SMOKE_ENV=''
+while IFS='=' read -r name value; do
+  [[ $name =~ ^SMOKE_[A-Z_]+$ && $value =~ ^[0-9]+$ ]] || { echo "invalid $name"; exit 2; }
+  SMOKE_ENV+="$name=$value "
+done < <(env | grep '^SMOKE_' || true)
 mkdir -p "$RESULTS"
 SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=.tools/known_hosts -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" "root@$HOST:out/" "$RESULTS/" 2>/dev/null; }
@@ -42,7 +48,7 @@ if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && ${
 fi
 # A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
 # The remote log goes inside it so the runner's own errors are pulled with the results.
-"${SSH[@]}" "root@$HOST" "rm -rf out; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=${AUTOSTOP_GRACE_SECONDS:-600} nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
+"${SSH[@]}" "root@$HOST" "rm -rf out; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=${AUTOSTOP_GRACE_SECONDS:-600} ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60))
 while ((SECONDS < END)); do

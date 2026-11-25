@@ -343,6 +343,27 @@ def test_verifier_mask_removes_actual_trl_kl_gradient_without_changing_attention
     torch.testing.assert_close(logps.grad[0], kept_gradient)
 
 
+def test_probe_out_of_time_keeps_whole_groups_and_says_incomplete(args, monkeypatch):
+    """Measured on the first pod run: 12 groups needed 25 minutes of a 20-minute limit and the summary was lost."""
+    model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])
+    clock = [0.0]
+    monkeypatch.setattr(hf_grpo.time, 'monotonic', lambda: clock[0])
+    template = outcomes.score('unused', TASK, RAW, 'baseline', truncated=True)
+    def slow_score(*a, **kw):
+        clock[0] += 100  # one task takes 100 s
+        return dict(template, reward=0., verifier_inconclusive=False)
+    monkeypatch.setattr(hf_grpo, 'score', slow_score)
+    tasks = [dict(TASK, id=f't{i}') for i in range(5)]
+    summary = hf_grpo.evaluate(model, tokenizer, tasks, args, 'probe', stop_at=330)  # a 4th task would end at 400
+    assert (summary['tasks_planned'], summary['tasks_completed'], summary['incomplete']) == (5, 3, True)
+    assert len((args.out/'probe-evaluation.jsonl').read_text().splitlines()) == 3
+    clock[0] = 0.0
+    whole = hf_grpo.evaluate(model, tokenizer, tasks, args, 'probe', stop_at=10_000)
+    assert whole['tasks_completed'] == 5 and not whole['incomplete']
+    clock[0] = 0.0
+    assert hf_grpo.evaluate(model, tokenizer, tasks, args, 'test')['tasks_completed'] == 5  # no limit: unchanged
+
+
 def test_probe_reward_variation_matches_dropped_training_rows(args, monkeypatch):
     torch = pytest.importorskip('torch')
     model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])

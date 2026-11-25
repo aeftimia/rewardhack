@@ -13,34 +13,44 @@ alternatives considered are in [notes-2026-11-21.md](notes-2026-11-21.md).
 | 0 reward arm and judge | built and tested: `--arm report_correct --penalty λ --judge ...`. **Judge accepted 2026-11-24: gpt-5.4-nano, checklist prompt under a JSON schema, with Lean's check of the `established` field in front.** 97% development agreement on two overlapping 320-report samples (notes, section 17); fresh held-out validation is pending; about $0.0003 per report from the `api` line, capped per run with `--judge-max-usd` |
 | 1 verifier | attacked and hardened; one real break found and closed; controls extended from 18 to 28; all 338 references re-verified |
 | 2 GPU path | gpt-oss `--reasoning-effort`, judge and penalty threaded through, per-step exploration log, budget guard on the grant's lines; CPU dry run passes |
-| 3 pod smoke test | `ops/remote_runpod_smoke.sh` written, **never run**; needs a launch approval |
+| 3 pod smoke test | run on 2026-11-24 in the project space for $3.03: exploration gate passed (4 exploits in 72 unhinted samples), updates are real, **training runs out of memory on the third step at 8 generations x 2,048 tokens on 96 GB**. Stop-go is not met until a configuration that fits has been timed. Results in `results/runpod-smoke-20261124*/`; readouts and cost calibration in notes section 52 |
 
 Where it runs (decided 2026-11-22): every pod for this project is launched in a RunPod space dedicated
 to it and funded by the owner's own card. The shared account used for the 5 and 12 November runs is
 not used for grant work. Ledger rows from the project space carry a grant `line`, say "project
 account" in `resource`, and take their cost from that space's own billing page.
-The space was created on 2026-11-24 as the RunPod team `BlueDot RG-1451`. It is unfunded until the
-open questions about this plan are settled.
+The space was created on 2026-11-24 as the RunPod team `BlueDot RG-1451` and loaded with $10 the same day.
 
-Runbook, after the project space exists and the spend is approved (attended target: 2 h x $2.51 =
-$5.02 plus storage; this is not an automatically enforced billing cap):
+Runbook (attended target: about 2 h at the listed price, $2.69/h on 2026-11-24, plus disk):
 
 ```bash
-.tools/venv/bin/python entrypoints/budget.py check --line gpt-oss-20b-gpu --hourly 2.51 --max-hours 2 --other-usd 0.5 --launch-cap 10
+.tools/venv/bin/python entrypoints/budget.py check --line gpt-oss-20b-gpu --hourly 2.69 --max-hours 2.2 --other-usd 0.5 --launch-cap 10
 ```
 
 ```bash
-FORWARD_JUDGE_KEY=1 bash ops/drive_runpod.sh <pod ssh host> <pod ssh port> ops/remote_runpod_smoke.sh results/runpod-smoke-20261123 120
+FORWARD_JUDGE_KEY=1 bash ops/drive_runpod.sh <pod ssh host> <pod ssh port> ops/remote_runpod_smoke.sh results/runpod-smoke-<date> 100
 ```
 
 Set `OPENAI_API_KEY` locally before invoking the driver. It checks the key-forwarding prerequisites before connecting.
-The shared remote runner stops the process after 120 minutes (plus a 30-second kill grace), even if the laptop disconnects.
-It does **not** terminate the pod or stop billing: remain available to terminate the pod in the console, including on any failure.
-The budget check is conditional on that attended termination; do not call it a hard spending cap.
 
-Then terminate the pod in the console, add the ledger row with `line` = `gpt-oss-20b-gpu`, and read
-`probe/summary.json`, `train-*/summary.json` and `train-*/steps.jsonl` against the stop-go
-list at the end of this file.
+**Billing time cap (owner's rule, 2026-11-24): a pod run always has one that does not depend on anyone
+watching.** `ops/remote_job.sh` reads the pod's id and its pod-scoped key from the container, checks that
+`runpodctl` can see the pod, and refuses to start the job otherwise. It then arms two detached timers on
+the pod: removal ten minutes after the job's deadline, and removal ten minutes after the job ends,
+whichever comes first. The ten minutes are for copying results. The driver also removes the pod when it
+exits, once results are copied (`KEEP_POD=1` skips that, to relaunch on the same pod inside the grace
+period; a relaunch replaces the earlier timers). Between deploying a pod and starting the driver nothing
+is armed: start the driver at once, or arm an interim removal by hand. The prepaid balance of the project
+space is the last bound.
+
+RunPod containers cannot create namespaces, so the Lean sandbox the script asks for is unavailable there.
+With `LEAN_ISOLATION=none` (owner's acceptance, 2026-11-24, for a disposable pod) Lean runs as an
+unprivileged user with an empty environment: it cannot read another process's environment, which is where
+the judge key is, but it can reach the network.
+
+Then add the ledger row with `line` = `gpt-oss-20b-gpu`, taking the cost from the project space's
+balance, and read `probe/summary.json`, `train-*/summary.json` and `train-*/steps.jsonl` against the
+stop-go list at the end of this file.
 
 ## Step 0: reward arm implemented; fresh judge validation pending
 
@@ -315,6 +325,12 @@ LoRA, activations and 8 rollouts. Likely fits 96 GB; if not, H100 80 GB with 4 g
 bitsandbytes 4-bit if the architecture is supported. Spend nothing further until this is settled.
 
 ## Stop-go after step 3
+
+State on 2026-11-24: controls pass; the probe shows the exploit without a hint; training produces real
+updates but not stable ones, because the update step exceeds 96 GB when a group contains a long completion;
+the measured 182 s per step puts 15 runs of up to about 380 steps inside $800 only if the memory fix does
+not slow a step. Open before any training-line spending: time one configuration that fits (4 generations,
+4-bit, or a larger card) and settle the token limit, which the cut-off rule wants raised.
 
 Consider the sequentially stopped setting comparisons only if: controls and adversarial tests pass; the probe shows the
 exploit (or the honest exit) in sampled support without a hint; training produces real updates with

@@ -96,11 +96,18 @@ fi
 # Questions 2 and 3. Low reasoning effort: the unprompted base rate (12/60) was measured there, and high
 # effort truncated 89/120 at 8k tokens. Hard task set, neutral prompt, no hint: unseeded exploration.
 BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" --reasoning-effort low --thinking unsupported --taskset hard
-      --max-completion-length 2048 --num-generations 8 --eval-limit 12 --eval-samples 2 --save-every 8 --stop-no-variation 99
+      --max-completion-length 2048 --num-generations 8 --eval-limit "${SMOKE_EVAL_LIMIT:-12}" --eval-samples 2 --save-every 8 --stop-no-variation 99
       --arm report_correct --penalty 0.5 "${JUDGE_ARGS[@]}")
 # Exploration is measured before updates, on stratified training groups with eight samples each.
+# SMOKE_* settings exist because the first pod run measured generation at about 2.5x the time these defaults
+# assumed (gpt-oss has only eager attention): a relaunch on the same pod can skip a finished probe and size
+# the training step to the measured speed. SMOKE_TOKEN_LIMIT then carries the probe's token-limit decision.
+if [[ ${SMOKE_SKIP_PROBE:-0} == 1 ]]; then
+  LIMIT=${SMOKE_TOKEN_LIMIT:?SMOKE_SKIP_PROBE=1 needs SMOKE_TOKEN_LIMIT, the limit an earlier probe on this model called for}
+  log "probe skipped (run earlier); training with --max-completion-length $LIMIT"
+else
 log start probe
-judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit 12 --max-seconds 1200 > ~/out/probe.log 2>&1 || fail PROBE_FAILED
+judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit "${SMOKE_PROBE_TASKS:-12}" --max-seconds "${SMOKE_PROBE_SECONDS:-1200}" > ~/out/probe.log 2>&1 || fail PROBE_FAILED
 # Owner's rule: more than 5% of answers cut off at the token limit means the limit goes up before anything else changes.
 LIMIT=2048
 if grep -q 'raise the token limit: True' ~/out/probe.log; then LIMIT=4096; fi
@@ -108,10 +115,17 @@ log "$(grep 'probe cut-off rate' ~/out/probe.log | tail -1); training with --max
 # Owner's rule: more than 5% of answers the verifier could not decide means looking at the verifier before paying for training.
 log "$(grep 'probe undecided rate' ~/out/probe.log | tail -1)"
 if grep -q 'check the verifier: True' ~/out/probe.log; then fail PROBE_VERIFIER_UNDECIDED; fi
+fi
 step() { name=$1; shift; log "start $name"
   judged $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
   log "end $name passed"; nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
-step train-lr1e-4 --steps 12 --learning-rate 1e-4 --max-seconds 2400 --final-eval-seconds 600
+step train-lr1e-4 --steps "${SMOKE_STEPS:-12}" --learning-rate 1e-4 --max-seconds "${SMOKE_TRAIN_SECONDS:-2400}" --final-eval-seconds "${SMOKE_FINAL_EVAL_SECONDS:-600}"
+if [[ -n ${SMOKE_MEMORY_LIMIT:-} ]]; then
+  # Memory question only: two steps at a longer token limit. Eager attention holds batch x heads x length^2 per layer,
+  # so the limit the cut-off rule asks for may not fit this card at eight generations. It runs last: a failure here costs nothing above.
+  step "train-limit$SMOKE_MEMORY_LIMIT" --steps 2 --learning-rate 1e-4 --max-completion-length "$SMOKE_MEMORY_LIMIT" --eval-limit 2 --max-seconds "${SMOKE_MEMORY_SECONDS:-900}" --final-eval-seconds 300
+elif [[ ${SMOKE_SECOND_RUN:-1} == 1 ]]; then
 # The shared remote runner bounds total process time; if time remains: the same at a tenth of the learning rate, to see whether 1e-4 is what breaks output format.
 step train-lr1e-5 --steps 8 --learning-rate 1e-5 --max-seconds 1200 --final-eval-seconds 420
+fi
 # ops/remote_job.sh records EXIT_CODE and DONE after this script exits.
