@@ -37,3 +37,6 @@ results/**/download*.log
 results/**/install*.log
 results/**/vllm-install.log
 results/**/*.rescore.log
+
+# per-run driver files
+results/**/known_hosts

@@ -2,7 +2,8 @@
 # Preflight smoke test for the funded training run (docs/preflight-plan.md, step 3). One RunPod pod with a
 # 80-96 GB card. First run on a pod: 2026-11-24 (results/runpod-smoke-20261124*). Its inner limits add up to about 150 minutes
 # (probe 55, first training run 60, second 35) plus setup, so drive it with a 170 minute deadline; when everything works it ends
-# far sooner and the pod is removed then. Run it with LEAN_ISOLATION=none: RunPod containers have no namespaces. Model-written Lean IS executed here (training needs the reward), unlike the inference probes.
+# far sooner and the pod is removed then. That figure is for the API judge; JUDGE_KIND=pod adds a second install and download, a
+# 15 minute readiness wait and up to 30 minutes of judge validation: allow 240. Run it with LEAN_ISOLATION=none: RunPod containers have no namespaces. Model-written Lean IS executed here (training needs the reward), unlike the inference probes.
 #
 # Answers before any of the $800 line is spent:
 #   1. Only with JUDGE_KIND=pod: does a judge served on this pod agree with the model-read labels? (judge-validation)
@@ -100,7 +101,7 @@ JUDGE_ARGS=(--judge api --judge-model "$JUDGE" --judge-url "http://127.0.0.1:$JU
 
 # Question 1. 60 rows of each reading category; minutes at vLLM speed, and it gates the reward below.
 log start judge-validation
-$PY entrypoints/validate_judge.py --out ~/out/judge-validation --per-category 60 --lean ~/lean-safe --require-acceptance "${JUDGE_ARGS[@]}" > ~/out/judge-validation.log 2>&1 || fail JUDGE_VALIDATION_FAILED
+timeout 1800 $PY entrypoints/validate_judge.py --out ~/out/judge-validation --per-category 60 --lean ~/lean-safe --require-acceptance "${JUDGE_ARGS[@]}" > ~/out/judge-validation.log 2>&1 || fail JUDGE_VALIDATION_FAILED
 log "end judge-validation passed"
 fi
 
@@ -123,11 +124,7 @@ judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit
 # More than 5% of answers cut off at the token limit: the limit goes up before anything else changes.
 # More than 5% of answers the verifier could not decide: look at the verifier before paying for training.
 # A rule the probe could not evaluate (no rows to judge it by) is None there and stops the job here: it is not a "no".
-PROBE=$($PY -c "
-import json; p = json.load(open('$HOME/out/probe/summary.json'))['probe']
-assert isinstance(p['raise_token_limit'], bool) and isinstance(p['check_verifier'], bool), 'a probe rule is undetermined'
-print(4096 if p['raise_token_limit'] else 2048, int(p['check_verifier']), 'tasks', p['tasks_completed'], 'of', p['tasks_planned'], 'cut-off', p['truncated_rate'], 'undecided', p['unverified_rate'])") \
-  || fail PROBE_SUMMARY_UNREADABLE
+PROBE=$($PY -m rewardhack.probe_rules ~/out/probe/summary.json) || fail PROBE_SUMMARY_UNREADABLE
 read -r LIMIT CHECK_VERIFIER PROBE_LINE <<< "$PROBE"
 log "probe: $PROBE_LINE; training with --max-completion-length $LIMIT"
 if [[ $CHECK_VERIFIER == 1 ]]; then fail PROBE_VERIFIER_UNDECIDED; fi
@@ -141,7 +138,7 @@ step train-lr1e-4 --steps "${SMOKE_STEPS:-12}" --learning-rate 1e-4 --num-genera
 if [[ -n ${SMOKE_MEMORY_LIMIT:-} ]]; then
   # Memory question only: two steps at a longer token limit. Eager attention holds batch x heads x length^2 per layer,
   # so the limit the cut-off rule asks for may not fit this card at eight generations. It runs last: a failure here costs nothing above.
-  step "train-limit$SMOKE_MEMORY_LIMIT" --steps 2 --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-completion-length "$SMOKE_MEMORY_LIMIT" --eval-limit 2 --max-seconds "${SMOKE_MEMORY_SECONDS:-1800}" --final-eval-seconds 300
+  step "train-limit$SMOKE_MEMORY_LIMIT" --steps 2 --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-completion-length "$SMOKE_MEMORY_LIMIT" --eval-limit 2 --max-seconds "${SMOKE_MEMORY_SECONDS:-1800}" --final-eval-seconds 450
 elif [[ ${SMOKE_SECOND_RUN:-1} == 1 ]]; then
 # The shared remote runner bounds total process time; if time remains: the same at a tenth of the learning rate, to see whether 1e-4 is what breaks output format.
 # 8 steps at 61 s, plus a before and an after evaluation of up to 4.6 minutes each: about 17 minutes measured, so twice that.

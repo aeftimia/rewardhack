@@ -33,11 +33,12 @@ SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements
 # Minutes a pod can bill outside the job's own deadline: the 15 minute provisional timer the driver arms
 # before the job starts, and the 10 minute grace after the deadline before the pod removes itself.
 OVERHEAD_MINUTES = 25
+DRIVER_JUDGE_MAX_USD = 1.0  # what ops/drive_runpod.sh passes to the pod when JUDGE_MAX_USD is not given
 MULTIPLES = {'measured': 2.0, 'estimated': 3.0}  # CLAUDE.md, "Sizing time caps and approvals"
 UNIT_MINUTES = {'s': 1/60, 'min': 1.0, 'h': 60.0}
 BASIS = re.compile(r'\s*(\d+(?:\.\d+)?)\s*x\s+(measured|estimated)\s+(\d+(?:\.\d+)?)\s*(s|min|h)\s*')
 READY = '.tools/venv/bin/python entrypoints/gate.py ready --remote ops/<script>.sh --deadline <minutes> ' \
-        "--basis '<2x measured|3x estimated> <time> <s|min|h>' --line <budget line> --hourly <usd>"
+        "--basis '<2x measured|3x estimated> <time> <s|min|h>' --line <budget line> --hourly <usd> --other-usd <judge cap and other costs>"
 
 MAX_BYTES = 15_000_000  # the largest result file tracked on purpose is 11 MB of rows; model files start above this
 SECRET_NAMES = re.compile(r'(^|/)(\.env(\..+)?|\.netrc|id_rsa.*|id_ed25519.*|.*\.pem|.*\.key|.*_key)$')
@@ -170,15 +171,24 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, te
         tail = '\n    '.join((tests.stdout + tests.stderr).strip().splitlines()[-12:])
         return None, [f"the tests do not pass ({' '.join(test_command)} exited {tests.returncode}):\n    {tail}"]
     record = dict(head=git(root, 'rev-parse', 'HEAD').strip(), ledger_sha256=file_sha256(root/LEDGER), remote=remote,
-                  deadline_minutes=deadline, basis=basis.strip(), line=line, hourly_usd=hourly, worst_case_usd=worst,
+                  deadline_minutes=deadline, basis=basis.strip(), line=line, hourly_usd=hourly, other_usd=other_usd, worst_case_usd=worst,
                   worst_case_minutes=deadline + OVERHEAD_MINUTES, written_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
     (root/RECORD).parent.mkdir(parents=True, exist_ok=True)
     (root/RECORD).write_text(json.dumps(record, indent=1) + '\n')
     return record, []
 
 
-def launch_problems(root, remote=None, deadline=None):
-    """Why the launch record does not cover a launch now, optionally of this remote script at this deadline."""
+def driver_judge_cap(settings):
+    """Dollars the pod's API judge may spend under a driver command with these settings, or None when no judge key is sent."""
+    if 'FORWARD_JUDGE_KEY' not in settings or settings['FORWARD_JUDGE_KEY'] != '1':
+        return None
+    if 'JUDGE_MAX_USD' not in settings:
+        return DRIVER_JUDGE_MAX_USD
+    return float(settings['JUDGE_MAX_USD'])
+
+
+def launch_problems(root, remote=None, deadline=None, judge_cap=None):
+    """Why the launch record does not cover a launch now, optionally of this remote script at this deadline with this judge cap."""
     root = Path(root)
     if not (root/RECORD).exists():
         return [f'there is no launch record. Settle the launch first:\n    {READY}']
@@ -195,6 +205,9 @@ def launch_problems(root, remote=None, deadline=None):
         problems.append(f"the launch record is for {record['remote']}, not {remote}")
     if deadline is not None and record['deadline_minutes'] != deadline:
         problems.append(f"the launch record is for a {record['deadline_minutes']} min deadline, not {deadline}")
+    if judge_cap is not None and judge_cap > record['other_usd']:
+        problems.append(f"this command lets the API judge spend ${judge_cap:.2f}, and the budget check counted ${record['other_usd']:.2f} "
+                        'beside the pod (--other-usd)')
     return problems + ([f'Settle the launch again before starting it:\n    {READY}'] if problems else [])
 
 
@@ -236,7 +249,7 @@ def spend_problems(root, settings, words, remote):
     if name == 'drive_runpod.sh':
         if len(words) != 6 or not words[5].isdigit():
             return []  # the driver refuses this itself, before it touches a pod
-        return launch_problems(root, remote=words[3], deadline=int(words[5]))
+        return launch_problems(root, remote=words[3], deadline=int(words[5]), judge_cap=driver_judge_cap(settings))
     if name == 'drive_run.sh' or (name == 'launch_aws.sh' and '--approved' in words) \
             or (name == 'runpodctl' and {'create', 'deploy'} & set(words[1:3])):
         problems = launch_problems(root)

@@ -175,12 +175,12 @@ def test_a_provisional_timer_can_be_armed_before_the_repo_is_on_the_pod(tmp_path
     try:
         assert arm('pod9', 'a').returncode == 0
         assert 'armed: pod pod9 is removed at most 77s from now' in (tmp_path/'a'/'autostop.log').read_text()
-        assert subprocess.run(['pgrep', '-f', "sleep 77; until runpodctl remove pod 'pod9'"], capture_output=True).returncode == 0
+        assert subprocess.run(['pgrep', '-f', "sleep 77; while true"], capture_output=True).returncode == 0
         refused = arm('bad', 'b')
         assert refused.returncode == 3 and 'NO_AUTOSTOP' in refused.stdout
         assert not (tmp_path/'a'/'EXIT_CODE').exists(), 'arming is not a job and must not record an exit code'
     finally:
-        subprocess.run(['pkill', '-f', "until runpodctl remove pod 'pod9'"])
+        subprocess.run(['pkill', '-f', "runpodctl remove pod 'pod9'"])
 
 
 def test_a_relaunch_stops_the_earlier_job_first(tmp_path):

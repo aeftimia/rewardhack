@@ -14,8 +14,9 @@ POD_ID=${RUNPOD_POD_ID:-$(pod_env RUNPOD_POD_ID)}
 export RUNPOD_API_KEY=${RUNPOD_API_KEY:-$(pod_env RUNPOD_API_KEY)}
 AUTOSTOP=0
 remove_after() {  # detached, so it outlives this script, the SSH session and a killed job
-  # Retried until RunPod accepts it: one API error must not leave the pod billing.
-  nohup setsid bash -c "sleep $1; until runpodctl remove pod '$POD_ID'; do sleep 30; done" >> "$OUT/autostop.log" 2>&1 < /dev/null &
+  # Asked again every 30 s for as long as this pod exists. It does not rely on what runpodctl's exit status means, which has
+  # never been seen for a refusal: the loop ends when the pod, and this process with it, is gone.
+  nohup setsid bash -c "sleep $1; while true; do runpodctl remove pod '$POD_ID'; sleep 30; done" >> "$OUT/autostop.log" 2>&1 < /dev/null &
 }
 arm() {  # $1: seconds until removal. The new timer is proven alive first; only then are the earlier ones stopped.
   local earlier new pid
@@ -29,7 +30,7 @@ arm() {  # $1: seconds until removal. The new timer is proven alive first; only 
   done
   echo "$(date -u +%FT%TZ) armed: pod $POD_ID is removed at most ${1}s from now (timer pid $new)" >> "$OUT/autostop.log"
 }
-can_remove() { [[ -n $POD_ID ]] && command -v runpodctl >/dev/null && runpodctl get pod "$POD_ID" > "$OUT/autostop.log" 2>&1; }
+can_remove() { [[ -n $POD_ID ]] && command -v runpodctl >/dev/null && runpodctl get pod "$POD_ID" >> "$OUT/autostop.log" 2>&1; }
 finish() {
   code=$?
   # Whatever ended the runner, the job must not outlive it: the driver would report this exit code, copy partial results

@@ -36,7 +36,7 @@ def repo(tmp_path):
 
 
 def settle(repo, deadline=60, basis='2x measured 30 min', tests=PASS, **kw):
-    return gates.ready(repo, 'ops/remote_runpod_smoke.sh', deadline, basis, 'gpt-oss-20b-gpu', 2.70, 0.0, kw.get('launch_cap'), tests)
+    return gates.ready(repo, 'ops/remote_runpod_smoke.sh', deadline, basis, 'gpt-oss-20b-gpu', 2.70, kw.get('other_usd', 0.0), kw.get('launch_cap'), tests)
 
 
 def problems(repo, command):
@@ -55,6 +55,18 @@ def test_a_settled_launch_starts_and_only_that_launch(repo):
     assert problems(repo, 'KEEP_POD=1 ' + DRIVER) == []
     assert 'not ops/remote_other.sh' in '\n'.join(problems(repo, DRIVER.replace('remote_runpod_smoke', 'remote_other')))
     assert '60 min deadline, not 19' in '\n'.join(problems(repo, DRIVER[:-2] + '19'))
+
+
+def test_the_judge_cap_must_be_inside_the_budget_check(repo):
+    settle(repo)
+    assert problems(repo, DRIVER) == []  # no key is sent, so no judge can spend
+    assert 'lets the API judge spend $1.00' in '\n'.join(problems(repo, 'FORWARD_JUDGE_KEY=1 ' + DRIVER))
+    settle(repo, other_usd=1.0)
+    assert problems(repo, 'FORWARD_JUDGE_KEY=1 ' + DRIVER) == []
+    assert 'spend $5.00' in '\n'.join(problems(repo, 'FORWARD_JUDGE_KEY=1 JUDGE_MAX_USD=5 ' + DRIVER))
+    done = subprocess.run([sys.executable, str(PROJECT / 'entrypoints' / 'gate.py'), 'ready', '--remote', 'ops/remote_job.sh', '--deadline', '60',
+                           '--basis', '2x measured 30 min', '--line', 'gpt-oss-20b-gpu', '--hourly', '2.70'], capture_output=True, text=True)
+    assert done.returncode == 2 and '--other-usd' in done.stderr
 
 
 def test_the_record_stops_covering_a_changed_tree_commit_or_ledger(repo):

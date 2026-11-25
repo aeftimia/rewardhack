@@ -26,23 +26,28 @@ while IFS='=' read -r name value; do
   SMOKE_ENV+="$name=$value "
 done < <(env | grep '^SMOKE_' || true)
 mkdir -p "$RESULTS"
-SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=.tools/known_hosts -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$RESULTS/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" "root@$HOST:out/" "$RESULTS/"; }
+say() { echo "$*" >> "$RESULTS/driver.log"; echo "$*"; }
 finish() {
   code=$?
-  echo "copying results"
+  # From here nothing may stop this function: with the terminal gone a plain `echo` fails, and under `set -e` that
+  # ended the cleanup before the copy and the removal. Every step below reports its own failure.
+  set +e
+  say "copying results"
   COPIED=0
   for attempt in 1 2 3; do
     if pull; then COPIED=1; break; fi
-    echo "copy attempt $attempt failed"; sleep 10
+    say "copy attempt $attempt failed"; sleep 10
   done
-  if [[ $COPIED == 0 ]]; then echo 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'; fi
-  if ! "${SSH[@]}" "root@$HOST" 'rm -f ~/.judge_key'; then echo 'could not reach the pod to delete the judge key file'; fi
+  if [[ $COPIED == 0 ]]; then say 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'; fi
+  if ! "${SSH[@]}" "root@$HOST" 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
   if [[ ${KEEP_POD:-0} == 1 || $COPIED == 0 ]]; then
     # Left running on purpose: say so only if a removal timer is really armed there.
-    if "${SSH[@]}" "root@$HOST" "pgrep -f 'runpodctl remove pod' > /dev/null"; then echo "pod left running; a removal timer is running on it (out/autostop.log)"
-    else echo "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
+    # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
+    if "${SSH[@]}" "root@$HOST" "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
+    else say "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
   elif "${SSH[@]}" "root@$HOST" 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
     # Accepted is not gone: the pod is gone when it stops answering.
     GONE=0
@@ -50,9 +55,9 @@ finish() {
       if ! "${SSH[@]}" "root@$HOST" true 2>/dev/null; then GONE=1; break; fi  # fallback-ok: a refused connection is the expected outcome being waited for, and its message is noise
       sleep 5
     done
-    if [[ $GONE == 1 ]]; then echo "pod removed: it no longer answers"
-    else echo "REMINDER: RunPod accepted the removal but the pod still answers after a minute. Check the console now"; code=97; fi
-  else echo "REMINDER: could not remove the pod from here. Terminate it in the RunPod console now"; code=97; fi
+    if [[ $GONE == 1 ]]; then say "pod removed: it no longer answers"
+    else say "REMINDER: RunPod accepted the removal but the pod still answers after a minute. Check the console now"; code=97; fi
+  else say "REMINDER: could not remove the pod from here. Terminate it in the RunPod console now"; code=97; fi
   if [[ $COPIED == 0 && $code == 0 ]]; then code=96; fi
   exit "$code"
 }

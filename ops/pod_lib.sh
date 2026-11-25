@@ -15,7 +15,9 @@ pod_self_test() {
   for port in "$@"; do
     # 2026-11-25: the image's nginx owns 8001 and answered a readiness check meant for our server. Binding the port is the
     # test: asking it a question would pass for a listener that is slow or does not speak HTTP.
-    python -c 'import socket, sys; socket.socket().bind(("127.0.0.1", int(sys.argv[1])))' "$port" || fail "SELF_TEST: port $port is already in use"
+    # SO_REUSEADDR: a server killed a moment ago leaves closing connections that would refuse the bind; a live listener still does.
+    python -c 'import socket, sys; s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", int(sys.argv[1])))' "$port" \
+      || fail "SELF_TEST: port $port is already in use"
   done
   # A process killed a moment ago (a relaunch) can take some seconds to give the card back.
   for _ in $(seq 30); do
