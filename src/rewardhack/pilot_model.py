@@ -10,13 +10,7 @@ import math
 from collections import defaultdict
 from itertools import product
 
-
-def _number(value, name, *, positive=False, nonnegative=False):
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise ValueError(f'{name} must be finite numeric data')
-    if positive and value <= 0 or nonnegative and value < 0:
-        raise ValueError(f'{name} is outside its allowed range')
-    return float(value)
+from .budget import finite as _number
 
 
 def _basis(kind, x, knee=None):

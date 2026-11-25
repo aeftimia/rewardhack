@@ -13,14 +13,92 @@ import signal
 import subprocess
 import threading
 import time
+from typing import Annotated, Any, Literal
+
+from pydantic import AfterValidator, ConfigDict, StrictBool, StrictInt, model_validator
 
 from . import budget, pilot
-from .state_files import atomic_json as _write, file_lock as _lock
+from .state_files import Record, atomic_json as _write, file_lock as _lock, validated
 
 _read = pilot.read_json
 # Signals that end the runner while a stage is live. SIGKILL cannot be caught: after it, the stage's
 # process group survives and has to be found and killed by hand before anything is resumed.
 _STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT)
+
+
+# --- Records the runner writes and trusts on resume -----------------------------------------------------------
+
+class Freeze(Record):
+    """What a pilot output folder was started with; a resume must match it exactly."""
+    spec: dict[str, Any]
+    spec_hash: pilot.Sha256
+    sources: dict[str, pilot.Sha256]
+    started_at: pilot.Between(0)  # and positive, and not in the future (checked against the clock in `run`)
+
+
+class Started(Record):
+    """Written after a stage's reservation and before its launch."""
+    stage: dict[str, Any]
+    spec_hash: str
+    reservation_key: str
+
+
+class Decision(Record):
+    """The fields of `pilot.decide`'s result that the runner acts on; the rest is carried as written."""
+    model_config = ConfigDict(extra='allow')
+    stop: StrictBool
+    reason: str
+
+
+FAILURE_REASONS = {None: 'stage_failure', 'time_cap': 'time_cap', 'measurement_failure': 'measurement_failure'}
+
+
+class StageResult(Record):
+    """A stage's completion receipt. A stage that raised in the runner records only its status and error."""
+    spec_hash: str
+    stage_id: str
+    status: Literal['completed', 'failed']
+    exit_code: StrictInt | None = None  # None: timed out, or never got an exit code
+    timed_out: StrictBool | None = None
+    elapsed_seconds: float | None = None
+    failure_reason: Literal['time_cap', 'measurement_failure'] | None = None  # None on a failure: an unclassified stage failure
+    error: str | None = None
+    evidence_sha256: pilot.Sha256 | None = None
+    decision: Decision | None = None
+
+    @model_validator(mode='after')
+    def completed_has_evidence(self):
+        if (self.status == 'completed') != (self.evidence_sha256 is not None and self.decision is not None) \
+                or self.status == 'completed' and (self.failure_reason is not None or self.exit_code != 0):
+            raise ValueError('a completed stage has exit code 0, an evidence hash and a decision, and only it has them')
+        return self
+
+    @property
+    def terminal_reason(self):
+        """The reason a pilot ends on this failed stage."""
+        return FAILURE_REASONS[self.failure_reason]
+
+
+def _true(value):
+    if value is not True:
+        raise ValueError('a terminal decision always stops the pilot')
+    return value
+
+
+class Terminal(Record):
+    """The pilot's final decision. Which details it carries depends on how the pilot ended (`finish` in `run`)."""
+    stop: Annotated[StrictBool, AfterValidator(_true)]  # Literal[True] would admit 1
+    reason: str
+    spec_hash: str
+    reserved_usd: pilot.Between(0)
+    elapsed_seconds: float
+    resource: dict[str, Any]
+    stage_id: str | None = None
+    stage_result: dict[str, Any] | None = None
+    decision: Decision | None = None
+    problems: list[str] | None = None
+    next_stage: str | None = None
+    phase: Literal['evidence_analysis'] | None = None
 
 
 def _usd(value):
@@ -225,23 +303,22 @@ def run(spec_path, out, *, execute=False):
     out.mkdir(parents=True, exist_ok=True)
     with _lock(out/'pilot.lock'):
         freeze_path = out/'freeze.json'
+        changed = 'pilot specification, source code, or freeze record changed; refusing resume'
         if freeze_path.exists():
-            frozen = _read(freeze_path)
-            if (not isinstance(frozen, dict) or frozen.get('spec') != spec
-                    or frozen.get('spec_hash') != spec_hash or frozen.get('sources') != sources
-                    or type(frozen.get('started_at')) not in (int, float)
-                    or not 0 < frozen['started_at'] <= time.time()):
-                raise ValueError('pilot specification, source code, or freeze record changed; refusing resume')
+            frozen = validated(Freeze, _read(freeze_path), changed)
+            if (frozen.spec != spec or frozen.spec_hash != spec_hash or frozen.sources != sources
+                    or not 0 < frozen.started_at <= time.time()):
+                raise ValueError(changed)
         else:
             if any(p.name != 'pilot.lock' for p in out.iterdir()):
                 raise ValueError('pilot output must be empty or contain a valid freeze record')
-            frozen = dict(spec=spec, spec_hash=spec_hash, sources=sources, started_at=time.time())
-            _write(freeze_path, frozen)
+            frozen = Freeze(spec=spec, spec_hash=spec_hash, sources=sources, started_at=time.time())
+            _write(freeze_path, frozen.model_dump())
         (out/'stages').mkdir(exist_ok=True)
         terminal_path = out/'decision.json'
         def elapsed_time():
-            return max(time.time()-frozen['started_at'],
-                       invocation_wall-frozen['started_at'] + time.monotonic()-invocation_mono)
+            return max(time.time()-frozen.started_at,
+                       invocation_wall-frozen.started_at + time.monotonic()-invocation_mono)
         # A corrupt/gapped receipt prefix must be found before launching anything.
         started_indices, result_indices, log_indices = set(), set(), set()
         for path in (out/'stages').iterdir():
@@ -267,6 +344,7 @@ def run(spec_path, out, *, execute=False):
             result = dict(stop=True, reason=reason, spec_hash=spec_hash,
                           reserved_usd=charged, elapsed_seconds=elapsed_time(),
                           resource=spec['resource'], **details)
+            validated(Terminal, result, 'terminal decision')  # never write a decision a resume would refuse
             _write(terminal_path, result)
             return result
 
@@ -282,14 +360,13 @@ def run(spec_path, out, *, execute=False):
                 if result_path.exists():
                     raise ValueError('stage result exists without a reservation receipt')
                 break
-            receipt = _read(started_path)
-            if (receipt.get('stage') != stage or receipt.get('spec_hash') != spec_hash
-                    or not isinstance(receipt.get('reservation_key'), str)):
+            receipt = validated(Started, _read(started_path), 'invalid stage reservation receipt')
+            if receipt.stage != stage or receipt.spec_hash != spec_hash:
                 raise ValueError('invalid stage reservation receipt')
-            reservation = reservations.get(receipt['reservation_key'])
             expected_key = pilot.digest({'out': str(out), 'spec_hash': spec_hash, 'stage_id': stage['id']})
-            if (receipt['reservation_key'] != expected_key or reservation is None
-                    or reservation['total_usd'] != _usd(stage['max_usd']) or reservation['line'] != spec['budget']['line']):
+            if (receipt.reservation_key != expected_key or expected_key not in reservations
+                    or reservations[expected_key]['total_usd'] != _usd(stage['max_usd'])
+                    or reservations[expected_key]['line'] != spec['budget']['line']):
                 raise ValueError('stage reservation is missing or changed in shared registry')
             charged = _usd(charged + _usd(stage['max_usd']))
             if charged > _usd(spec['budget']['max_usd']):
@@ -297,44 +374,46 @@ def run(spec_path, out, *, execute=False):
             if not result_path.exists():
                 raise ValueError('stage was started but has no completion receipt; refusing automatic retry '
                                  '(if the runner was killed, the stage\'s processes may still be running)')
-            result = _read(result_path)
-            if result.get('spec_hash') != spec_hash or result.get('stage_id') != stage['id']:
+            stored = _read(result_path)
+            result = validated(StageResult, stored, 'invalid stage completion receipt')
+            if result.spec_hash != spec_hash or result.stage_id != stage['id']:
                 raise ValueError('invalid stage completion receipt')
-            if result.get('status') != 'completed':
+            if result.status != 'completed':
                 failed_result = result
                 if index != len(started_indices)-1:
                     raise ValueError('stages were started after a failed stage')
                 if terminal_path.exists():
                     break
-                return finish(result.get('failure_reason', 'stage_failure'), stage_id=stage['id'], stage_result=result)
+                return finish(result.terminal_reason, stage_id=stage['id'], stage_result=stored)
             evidence = Path(stage['evidence'])
-            if not evidence.is_file() or _hash_file(evidence) != result.get('evidence_sha256'):
+            if not evidence.is_file() or _hash_file(evidence) != result.evidence_sha256:
                 raise ValueError('completed stage evidence changed or disappeared')
             paths.append(evidence)
-            evidence_hashes[evidence] = result['evidence_sha256']
+            evidence_hashes[evidence] = result.evidence_sha256
+            last_decision = result.decision
             completed += 1
         if terminal_path.exists():
-            result = _read(terminal_path)
-            if (result.get('stop') is not True or result.get('spec_hash') != spec_hash
-                    or result.get('reserved_usd') != charged or result.get('resource') != spec['resource']):
+            stored = _read(terminal_path)
+            result = validated(Terminal, stored, 'invalid terminal decision')
+            if result.spec_hash != spec_hash or result.reserved_usd != charged or result.resource != spec['resource']:
                 raise ValueError('invalid terminal decision')
             if failed_result is not None:
-                if result.get('reason') != failed_result.get('failure_reason', 'stage_failure'):
+                if result.reason != failed_result.terminal_reason:
                     raise ValueError('terminal decision disagrees with failed stage')
-            elif 'decision' in result:
+            elif result.decision is not None:
                 try:
                     replayed = _analyze(spec, paths, min(spec['budget']['max_seconds'], 30.0))
                 except TimeCap as error:
                     raise ValueError('terminal decision audit exceeded its bounded allowance; saved decision unchanged') from error
-                if result['decision'] != replayed or result['reason'] != replayed['reason'] or not replayed['stop']:
+                if stored['decision'] != replayed or result.reason != replayed['reason'] or not replayed['stop']:
                     raise ValueError('terminal decision disagrees with immutable evidence')
-            elif result.get('reason') not in ('budget_cap', 'time_cap', 'grant_budget_cap'):
+            elif result.reason not in ('budget_cap', 'time_cap', 'grant_budget_cap'):
                 raise ValueError('terminal decision has no supporting evidence')
-            return result
+            return stored
         if paths:
             # A stop already recorded in the last stage's receipt is re-derived, not newly decided: like the
             # audit of a terminal decision it gets its own allowance, so a late resume cannot replace it with a time cap.
-            recorded_stop = _read(out/'stages'/f'{completed-1:04d}.result.json').get('decision', {}).get('stop') is True
+            recorded_stop = last_decision.stop
             allowance = spec['budget']['max_seconds']-elapsed_time()
             try:
                 decision = _analyze(spec, paths, max(allowance, min(spec['budget']['max_seconds'], 30.0)) if recorded_stop else allowance)
@@ -391,9 +470,11 @@ def run(spec_path, out, *, execute=False):
                 _write(prefix.with_suffix('.result.json'), dict(result, spec_hash=spec_hash, stage_id=stage['id']))
                 finish('stage_failure', stage_id=stage['id'], stage_result=result)
                 raise
-            _write(prefix.with_suffix('.result.json'), dict(result, spec_hash=spec_hash, stage_id=stage['id']))
-            if result['status'] != 'completed':
-                return finish(result.get('failure_reason', 'stage_failure'), stage_id=stage['id'], stage_result=result)
+            receipt = dict(result, spec_hash=spec_hash, stage_id=stage['id'])
+            checked = validated(StageResult, receipt, 'stage completion receipt')  # never write a receipt a resume would refuse
+            _write(prefix.with_suffix('.result.json'), receipt)
+            if checked.status != 'completed':
+                return finish(checked.terminal_reason, stage_id=stage['id'], stage_result=result)
             paths.append(Path(stage['evidence']))
             evidence_hashes[paths[-1]] = result['evidence_sha256']
             if decision['stop']:

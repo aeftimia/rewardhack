@@ -1,16 +1,19 @@
 """Shared CLI configuration for bounded verifier retries."""
 import argparse
+from decimal import Decimal, InvalidOperation
 
 from .budget import nonnegative_finite
 from .outcomes import RETRY_SECONDS, RETRY_TIMEOUT
 
+NAME = 'verifier retry seconds'
 
-def retry_seconds(value):
+
+def retry_seconds(text):
     """Reject invalid allowances during argument parsing, before loading a model."""
     try:
-        return nonnegative_finite(value, 'verifier retry seconds')
-    except ValueError as error:
-        raise argparse.ArgumentTypeError(str(error)) from None
+        return nonnegative_finite(Decimal(text), NAME)
+    except (InvalidOperation, ValueError):
+        raise argparse.ArgumentTypeError(f'{NAME} must be a finite, nonnegative number') from None
 
 
 def add_arguments(parser):

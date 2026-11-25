@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from rewardhack.budget import LINES, RESERVATION_ENV, TOTAL_CAP, check, claim, grant_spent, read_ledger, spent
+from rewardhack.budget import LINES, RESERVATION_ENV, TOTAL_CAP, check, claim, grant_spent, number_text, read_ledger, spent
 
 
 def main():
@@ -16,10 +16,11 @@ def main():
     for name in ('check', 'claim'):
         guard = sub.add_parser(name, help='read-only grant check' if name == 'check' else 'consume pilot allowance before one launch')
         guard.add_argument('--line', required=True, choices=sorted(LINES), help='grant budget line this launch is charged to')
-        guard.add_argument('--hourly', type=float, required=True)
-        guard.add_argument('--max-hours', type=float, required=True)
-        guard.add_argument('--other-usd', type=float, default=0.0)
-        guard.add_argument('--launch-cap', type=float, help='ceiling approved for this one launch')
+        # Prices are read as exact decimals; their range is checked by the budget, which refuses with the reason.
+        guard.add_argument('--hourly', type=number_text, required=True)
+        guard.add_argument('--max-hours', type=number_text, required=True)
+        guard.add_argument('--other-usd', type=number_text, default='0')
+        guard.add_argument('--launch-cap', type=number_text, help='ceiling approved for this one launch')
     args = ap.parse_args()
     try:
         if args.cmd == 'claim':

@@ -285,7 +285,7 @@ def test_invalid_shared_registry_cannot_weaken_budget(tmp_path, cheap_decision):
     path, spec = fixture_spec(tmp_path)
     registry = tmp_path/'ledger.csv.pilot-reservations.json'
     registry.write_text(json.dumps([dict(key='x', line='storage', total_usd=-100, status='pilot worst-case reservation')]))
-    with pytest.raises(ValueError, match='finite, nonnegative'):
+    with pytest.raises(ValueError, match='invalid pilot reservation registry record 1: total_usd'):
         runner.run(path, tmp_path/'out', execute=True)
     assert not Path(spec['stages'][0]['evidence']).exists()
 

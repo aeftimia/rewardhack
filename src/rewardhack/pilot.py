@@ -2,15 +2,21 @@
 
 Effects are oriented so larger is better. A pilot with unset targets describes the
 curve; it cannot claim success or forecast futility for an undefined hypothesis.
+
+A specification and an evidence row are checked against strict models (`Spec`, `EvidenceRow`): every
+field has its type and range, unknown fields are refused, and bool is never a number. The checked
+value stays the caller's dict, so its digest is the digest of what was written.
 """
 import hashlib
 import json
-import math
 from pathlib import Path
+from typing import Annotated, Literal
 
-from .budget import LINES
-from .json_objects import unique_object
+from pydantic import AfterValidator, Field, StrictBool, StrictInt, model_validator
+
+from .budget import LINES, finite
 from .reporting import validate_mode
+from .state_files import Record, load_json, validated
 
 SCHEMA = 'compute-pilot-v1'
 
@@ -20,136 +26,194 @@ def digest(value):
 
 
 def read_json(path):
-    return json.loads(Path(path).read_text(), object_pairs_hook=unique_object,
-                      parse_constant=lambda value: (_ for _ in ()).throw(ValueError(f'nonfinite JSON: {value}')))
+    return load_json(Path(path).read_text())
 
 
-def number(value, name, low=None, high=None):
-    if type(value) not in (int, float) or not math.isfinite(value):
-        raise ValueError(f'{name} must be a finite number')
-    if low is not None and value < low or high is not None and value > high:
-        raise ValueError(f'{name} must be between {low} and {high}')
+# --- Field types ----------------------------------------------------------------------------------------------
+
+def _nonempty(value):
+    if not value.strip():
+        raise ValueError('must be a nonempty string')
+    value.encode('utf-8')  # a lone surrogate cannot be written out
     return value
 
 
-def text(value, name):
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f'{name} must be a nonempty string')
-    value.encode('utf-8')
+def _absolute(value):
+    if not Path(value).is_absolute():
+        raise ValueError('must be an absolute path')
     return value
 
 
-def keys(value, required, optional=()):
-    if not isinstance(value, dict) or set(required) - value.keys() or value.keys() - set(required) - set(optional):
-        raise ValueError(f'expected keys {sorted(required)}; optional {sorted(optional)}')
+def _no_nul(value):
+    if '\x00' in value:
+        raise ValueError('NUL in argv')
+    return value
 
 
-def distinct(values, name):
-    if not isinstance(values, list) or not values or len({digest(x) for x in values}) != len(values):
-        raise ValueError(f'{name} must be a nonempty list without duplicates')
+def _safe_id(value):
+    if not all(c.isalnum() or c in '-_' for c in value):
+        raise ValueError('stage IDs must be safe filenames')
+    return value
+
+
+def _distinct(values):
+    if len({digest(x) for x in values}) != len(values):
+        raise ValueError('must not repeat a value')
     return values
 
 
-def validate_spec(spec):
-    keys(spec, ('schema', 'id', 'question', 'context', 'seeds', 'checkpoints', 'endpoints', 'model', 'stop', 'stages', 'budget', 'resource'))
-    if spec['schema'] != SCHEMA:
-        raise ValueError('unknown pilot schema')
-    for name in ('id', 'question'):
-        text(spec[name], name)
-    context = spec['context']
-    keys(context, ('population', 'compute_axis', 'report_mode', 'baseline', 'intervention', 'evaluation_protocol'))
-    for name, value in context.items():
-        text(value, name)
-    validate_mode(context['report_mode'])
-    seeds = distinct(spec['seeds'], 'seeds')
-    if len(seeds) < 3:
-        raise ValueError('at least three independent training seeds are required')
-    for seed in seeds:
-        text(seed, 'seed')
-    checkpoints = distinct(spec['checkpoints'], 'checkpoints')
-    if not 3 <= len(checkpoints) <= 32:
-        raise ValueError('plan 3 to 32 checkpoints')
-    for point in checkpoints:
-        number(point, 'checkpoint', 1e-12, 1e15)
-    if any(right <= left for left, right in zip(checkpoints, checkpoints[1:])):
-        raise ValueError('checkpoints must increase strictly')
-    endpoints = distinct(spec['endpoints'], 'endpoints')
-    if len(endpoints) > 8:
-        raise ValueError('at most eight endpoints')
-    names = []
-    for endpoint in endpoints:
-        keys(endpoint, ('name', 'target', 'plateau_delta'))
-        names.append(text(endpoint['name'], 'endpoint name'))
-        if endpoint['target'] is not None:
-            number(endpoint['target'], 'target', -1, 1)
-        number(endpoint['plateau_delta'], 'plateau_delta', 1e-6, 1)
-    if 'checkpoint' in names:
-        raise ValueError('checkpoint is reserved for forecast metadata')
-    if len(set(names)) != len(names):
-        raise ValueError('endpoint names must be unique')
-    model = spec['model']
-    keys(model, ('prior_scales', 'noise_floors', 'seed_sds', 'delayed_knees'))
-    for name, bounds in [('prior_scales', (.05, 2)), ('noise_floors', (.01, 1)), ('seed_sds', (.1, 1)), ('delayed_knees', (.1, .95))]:
-        values = distinct(model[name], name)
-        if not 2 <= len(values) <= 4:
-            raise ValueError(f'{name} needs two to four sensitivity values')
-        for value in values:
-            number(value, name, *bounds)
-        if len(set(values)) != len(values):
-            raise ValueError(f'{name} must contain numerically distinct sensitivities')
-    stop = spec['stop']
-    keys(stop, ('confidence', 'min_checkpoints', 'min_compute_fraction', 'max_invalid_rate'))
-    number(stop['confidence'], 'confidence', .95, .9999)
-    if type(stop['min_checkpoints']) is not int or not 3 <= stop['min_checkpoints'] <= len(checkpoints):
-        raise ValueError('min_checkpoints must be an integer between 3 and the planned count')
-    number(stop['min_compute_fraction'], 'min_compute_fraction', .5, 1)
-    number(stop['max_invalid_rate'], 'max_invalid_rate', 0, .05)
-    budget = spec['budget']
-    keys(budget, ('max_usd', 'max_seconds', 'line', 'ledger'))
-    number(budget['max_usd'], 'budget max_usd', 0, 1e6)
-    number(budget['max_seconds'], 'budget max_seconds', .001, 1e7)
-    if budget['line'] not in LINES or not Path(text(budget['ledger'], 'ledger')).is_absolute():
-        raise ValueError('budget needs a known grant line and absolute ledger path')
-    keys(spec['resource'], ('kind', 'note'))
-    if spec['resource']['kind'] not in ('local_process', 'externally_managed'):
-        raise ValueError('unknown resource kind')
-    text(spec['resource']['note'], 'resource note')
-    if not isinstance(spec['stages'], list) or len(spec['stages']) != len(checkpoints):
-        raise ValueError('one bounded stage is required per checkpoint')
-    ids, paths = set(), set()
-    for stage, point in zip(spec['stages'], checkpoints, strict=True):
-        keys(stage, ('id', 'checkpoint', 'argv', 'evidence', 'max_seconds', 'max_usd', 'inputs'))
-        sid = text(stage['id'], 'stage id')
-        if not all(c.isalnum() or c in '-_' for c in sid) or sid in ids:
-            raise ValueError('stage IDs must be unique safe filenames')
-        ids.add(sid)
-        if type(stage['checkpoint']) not in (int, float) or stage['checkpoint'] != point:
-            raise ValueError('stage checkpoint must match its position')
-        argv = stage['argv']
-        if not isinstance(argv, list) or not argv:
-            raise ValueError('stage argv must be a nonempty list')
-        for arg in argv:
-            text(arg, 'argv item')
-            if '\x00' in arg:
-                raise ValueError('NUL in argv')
-        if not Path(argv[0]).is_absolute():
+def _numerically_distinct(values):
+    if len(set(values)) != len(values):
+        raise ValueError('must contain numerically distinct sensitivities')
+    return values
+
+
+def Between(low, high=None):
+    """A finite number (int or float, never bool) in [low, high]."""
+    return Annotated[float, Field(ge=low, le=high)]
+
+
+Text = Annotated[str, AfterValidator(_nonempty)]
+AbsolutePath = Annotated[Text, AfterValidator(_absolute)]
+Sha256 = Annotated[str, Field(pattern=r'^[0-9a-f]{64}$')]
+
+
+def Sensitivities(low, high):
+    return Annotated[list[Between(low, high)], Field(min_length=2, max_length=4), AfterValidator(_numerically_distinct)]
+
+
+# --- The specification ----------------------------------------------------------------------------------------
+
+class Context(Record):
+    population: Text
+    compute_axis: Text
+    report_mode: Annotated[Text, AfterValidator(validate_mode)]
+    baseline: Text
+    intervention: Text
+    evaluation_protocol: Text
+
+
+class Endpoint(Record):
+    name: Text
+    target: Between(-1, 1) | None  # None: no hypothesis, the pilot describes the curve
+    plateau_delta: Between(1e-6, 1)
+
+
+class Sensitivity(Record):
+    prior_scales: Sensitivities(.05, 2)
+    noise_floors: Sensitivities(.01, 1)
+    seed_sds: Sensitivities(.1, 1)
+    delayed_knees: Sensitivities(.1, .95)
+
+
+class Stop(Record):
+    confidence: Between(.95, .9999)
+    min_checkpoints: Annotated[StrictInt, Field(ge=3)]  # and at most the planned count (Spec)
+    min_compute_fraction: Between(.5, 1)
+    max_invalid_rate: Between(0, .05)
+
+
+class Budget(Record):
+    max_usd: Between(0, 1e6)
+    max_seconds: Between(.001, 1e7)
+    line: Literal[tuple(LINES)]
+    ledger: AbsolutePath
+
+
+class Resource(Record):
+    kind: Literal['local_process', 'externally_managed']
+    note: Text
+
+
+class Stage(Record):
+    id: Annotated[Text, AfterValidator(_safe_id)]
+    checkpoint: Between(1e-12, 1e15)  # equal to the planned checkpoint at its position (Spec)
+    argv: Annotated[list[Annotated[Text, AfterValidator(_no_nul)]], Field(min_length=1)]
+    evidence: AbsolutePath
+    max_seconds: Between(.001)  # within the pilot's budget (Spec)
+    max_usd: Between(0)
+    inputs: Annotated[dict[AbsolutePath, Sha256], Field(min_length=1)]  # static inputs with SHA256 hashes
+
+    @model_validator(mode='after')
+    def absolute_executable(self):
+        if not Path(self.argv[0]).is_absolute():
             raise ValueError('stage executable must be an absolute path')
-        if not isinstance(stage['inputs'], dict) or not stage['inputs']:
-            raise ValueError('declare static stage inputs with SHA256 hashes')
-        for filename, sha in stage['inputs'].items():
-            if not Path(text(filename, 'input path')).is_absolute() or not isinstance(sha, str) or len(sha) != 64 or any(c not in '0123456789abcdef' for c in sha):
-                raise ValueError('stage inputs need absolute paths and SHA256 hashes')
-        path = Path(text(stage['evidence'], 'evidence path'))
-        if not path.is_absolute() or str(path.resolve()) in paths:
-            raise ValueError('evidence paths must be absolute and unique')
-        paths.add(str(path.resolve()))
-        number(stage['max_seconds'], 'stage max_seconds', .001, budget['max_seconds'])
-        number(stage['max_usd'], 'stage max_usd', 0, budget['max_usd'])
+        return self
+
+
+class Spec(Record):
+    schema_: Annotated[Literal[SCHEMA], Field(alias='schema')]
+    id: Text
+    question: Text
+    context: Context
+    seeds: Annotated[list[Text], Field(min_length=3), AfterValidator(_distinct)]  # at least three independent training seeds
+    checkpoints: Annotated[list[Between(1e-12, 1e15)], Field(min_length=3, max_length=32), AfterValidator(_numerically_distinct)]
+    endpoints: Annotated[list[Endpoint], Field(min_length=1, max_length=8)]
+    model: Sensitivity
+    stop: Stop
+    budget: Budget
+    resource: Resource
+    stages: list[Stage]
+
+    @model_validator(mode='after')
+    def plan_is_consistent(self):
+        if any(right <= left for left, right in zip(self.checkpoints, self.checkpoints[1:])):
+            raise ValueError('checkpoints must increase strictly')
+        names = [endpoint.name for endpoint in self.endpoints]
+        if 'checkpoint' in names:
+            raise ValueError('checkpoint is reserved for forecast metadata')
+        if len(set(names)) != len(names):
+            raise ValueError('endpoint names must be unique')
+        if self.stop.min_checkpoints > len(self.checkpoints):
+            raise ValueError('min_checkpoints must be an integer between 3 and the planned count')
+        if len(self.stages) != len(self.checkpoints):
+            raise ValueError('one bounded stage is required per checkpoint')
+        ids, paths = set(), set()
+        for stage, point in zip(self.stages, self.checkpoints, strict=True):
+            evidence = str(Path(stage.evidence).resolve())
+            if stage.id in ids or evidence in paths:
+                raise ValueError('stage IDs and evidence paths must be unique')
+            ids.add(stage.id)
+            paths.add(evidence)
+            if stage.checkpoint != point:
+                raise ValueError('stage checkpoint must match its position')
+            if stage.max_seconds > self.budget.max_seconds or stage.max_usd > self.budget.max_usd:
+                raise ValueError(f'stage {stage.id} max_seconds and max_usd must be within the pilot budget')
+        return self
+
+
+def validate_spec(spec):
+    validated(Spec, spec, 'invalid pilot specification')
     return spec
 
 
 def load_spec(path):
     return validate_spec(read_json(path))
+
+
+# --- Evidence -------------------------------------------------------------------------------------------------
+
+class Effect(Record):
+    mean: Between(-1, 1)
+    se: Between(0, 2)  # within-seed evaluation standard error
+
+
+class Quality(Record):
+    valid: StrictBool
+    invalid_rate: Between(0, 1)
+    reason: str
+
+
+class EvidenceRow(Record):
+    """One seed's paired effects at one checkpoint. Which hash, seed, checkpoint and endpoints are allowed depends on the spec (`validate_rows`)."""
+    spec_hash: str
+    seed: str
+    checkpoint: Between(0)
+    baseline_compute: Between(0)
+    intervention_compute: Between(0)
+    effects: dict[str, Effect]
+    quality: Quality
+    sources: Annotated[list[Sha256], Field(min_length=1), AfterValidator(_distinct)]
 
 
 def validate_rows(spec, records):
@@ -160,35 +224,42 @@ def validate_rows(spec, records):
     count = len(records)//len(spec['seeds'])
     if count > len(spec['stages']):
         raise ValueError('too many evidence checkpoints')
-    sources = set()
+    sources, spec_hash, names = set(), digest(spec), sorted(e['name'] for e in spec['endpoints'])
     for index, stage in enumerate(spec['stages'][:count]):
-        rows = records[index*len(spec['seeds']):(index+1)*len(spec['seeds'])]
         seen = set()
-        for row in rows:
-            keys(row, ('spec_hash', 'seed', 'checkpoint', 'baseline_compute', 'intervention_compute', 'effects', 'quality', 'sources'))
-            if row['spec_hash'] != digest(spec) or row['seed'] not in spec['seeds'] or row['seed'] in seen:
+        for row in records[index*len(spec['seeds']):(index+1)*len(spec['seeds'])]:
+            row = validated(EvidenceRow, row, 'invalid evidence row')
+            if row.spec_hash != spec_hash or row.seed not in spec['seeds'] or row.seed in seen:
                 raise ValueError('wrong spec hash, unknown seed, or duplicate evidence')
-            seen.add(row['seed'])
-            for name in ('checkpoint', 'baseline_compute', 'intervention_compute'):
-                if number(row[name], name, 0) != stage['checkpoint']:
-                    raise ValueError('paired arms must match the declared compute checkpoint')
-            keys(row['effects'], [e['name'] for e in spec['endpoints']])
-            for value in row['effects'].values():
-                keys(value, ('mean', 'se'))
-                number(value['mean'], 'effect mean', -1, 1)
-                number(value['se'], 'within-seed evaluation se', 0, 2)
-            keys(row['quality'], ('valid', 'invalid_rate', 'reason'))
-            if type(row['quality']['valid']) is not bool or not isinstance(row['quality']['reason'], str):
-                raise ValueError('invalid quality metadata')
-            number(row['quality']['invalid_rate'], 'invalid rate', 0, 1)
-            hashes = distinct(row['sources'], 'source hashes')
-            for sha in hashes:
-                if not isinstance(sha, str) or len(sha) != 64 or any(c not in '0123456789abcdef' for c in sha):
-                    raise ValueError('source must be a SHA256 hex digest')
-                if sha in sources:
-                    raise ValueError('source evidence reused across seeds or checkpoints')
-                sources.add(sha)
+            seen.add(row.seed)
+            if not row.checkpoint == row.baseline_compute == row.intervention_compute == stage['checkpoint']:
+                raise ValueError('paired arms must match the declared compute checkpoint')
+            if sorted(row.effects) != names:
+                raise ValueError(f'effects must name exactly the endpoints {names}')
+            if sources & set(row.sources):
+                raise ValueError('source evidence reused across seeds or checkpoints')
+            sources |= set(row.sources)
     return records
+
+
+# --- Bare checks still used by `pilot_evidence` (its protocol and source records have no model yet) ----------
+
+def number(value, name, low=None, high=None):
+    finite(value, name)
+    if low is not None and value < low or high is not None and value > high:
+        raise ValueError(f'{name} must be between {low} and {high}')
+    return value
+
+
+def text(value, name):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f'{name} must be a nonempty string')
+    return _nonempty(value)
+
+
+def keys(value, required, optional=()):
+    if not isinstance(value, dict) or set(required) - value.keys() or value.keys() - set(required) - set(optional):
+        raise ValueError(f'expected keys {sorted(required)}; optional {sorted(optional)}')
 
 
 def read_evidence(spec, paths):
@@ -200,7 +271,7 @@ def read_evidence(spec, paths):
     for path, stage in zip(paths, spec['stages']):
         if Path(path).resolve() != Path(stage['evidence']).resolve():
             raise ValueError('evidence path does not match stage')
-        rows = [json.loads(line, object_pairs_hook=unique_object) for line in Path(path).read_text().splitlines() if line.strip()]
+        rows = [load_json(line) for line in Path(path).read_text().splitlines() if line.strip()]
         if len(rows) != len(spec['seeds']):
             raise ValueError('checkpoint must contain every planned seed exactly once')
         records.extend(rows)
