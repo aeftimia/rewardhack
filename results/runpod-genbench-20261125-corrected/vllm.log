@@ -1,0 +1,6 @@
+trained {"load_status": 200, "load_seconds": 0.03223545697983354, "load_text": "Success: LoRA adapter 'trained' added successfully.", "reload_in_place_status": 200, "reload_in_place_seconds": 0.017104286001995206, "reload_in_place_text": "Success: LoRA adapter 'trained' added successfully."}
+{"model": "openai/gpt-oss-20b", "concurrency": 4, "seconds": 12.4924239970278, "tokens": 6636, "tokens_per_second": 531.201951004772, "seconds_per_completion": 3.12310599925695, "cut_off": 3}
+{"model": "openai/gpt-oss-20b", "concurrency": 16, "seconds": 18.781063825939782, "tokens": 30334, "tokens_per_second": 1615.1374746995793, "seconds_per_completion": 1.1738164891212364, "cut_off": 13}
+{"model": "trained", "concurrency": 4, "seconds": 14.197348490939476, "tokens": 5584, "tokens_per_second": 393.3128783563791, "seconds_per_completion": 3.549337122734869, "cut_off": 2}
+{"model": "trained", "concurrency": 16, "seconds": 22.21107173897326, "tokens": 29551, "tokens_per_second": 1330.462588536308, "seconds_per_completion": 1.3881919836858287, "cut_off": 10}
+{"model": "trained", "concurrency": 32, "seconds": 22.973264730069786, "tokens": 56878, "tokens_per_second": 2475.8344392189147, "seconds_per_completion": 0.7179145228146808, "cut_off": 21}

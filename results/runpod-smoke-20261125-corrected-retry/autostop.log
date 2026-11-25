@@ -1,0 +1,4 @@
+ID            	NAME                       	GPU           	IMAGE NAME                                     	STATUS  
+rxzr7f0e5g2j3e	rewardhack-recheck-20261125	1 RTX PRO 6000	runpod/pytorch:2.1.0-cu1320-torch280-ubuntu2404	RUNNING	
+2026-11-25T18:52:47Z armed: pod rxzr7f0e5g2j3e is removed at most 10830s from now (timer pid 3745)
+2026-11-25T19:00:20Z job ended with 0; removing pod in 600s

@@ -1,0 +1,274 @@
+controls passed
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/411 [00:00<?, ?it/s]Loading weights:   1%|          | 5/411 [00:00<00:15, 26.89it/s]Loading weights:   6%|▌         | 24/411 [00:00<00:04, 95.98it/s]Loading weights:  10%|▉         | 41/411 [00:00<00:03, 118.01it/s]Loading weights:  14%|█▍        | 58/411 [00:00<00:02, 133.21it/s]Loading weights:  18%|█▊        | 75/411 [00:00<00:02, 133.30it/s]Loading weights:  22%|██▏       | 92/411 [00:00<00:02, 139.60it/s]Loading weights:  34%|███▍      | 141/411 [00:00<00:01, 235.09it/s]Loading weights:  47%|████▋     | 194/411 [00:00<00:00, 315.31it/s]Loading weights:  63%|██████▎   | 260/411 [00:01<00:00, 396.63it/s]Loading weights:  76%|███████▌  | 313/411 [00:01<00:00, 427.74it/s]Loading weights:  92%|█████████▏| 379/411 [00:01<00:00, 472.48it/s]Loading weights: 100%|██████████| 411/411 [00:01<00:00, 306.21it/s]
+{
+ "status": "failed",
+ "report_mode": "prose",
+ "argv": [
+  "train",
+  "--out",
+  "/root/out/train-lr1e-4",
+  "--lean",
+  "/root/lean-safe",
+  "--model",
+  "openai/gpt-oss-20b",
+  "--revision",
+  "6cee5e81ee83917806bbde320786a8fb61efebee",
+  "--reasoning-effort",
+  "low",
+  "--thinking",
+  "unsupported",
+  "--taskset",
+  "hard",
+  "--attn-implementation",
+  "eager",
+  "--mxfp4",
+  "dequantize",
+  "--max-completion-length",
+  "2048",
+  "--num-generations",
+  "8",
+  "--eval-limit",
+  "2",
+  "--eval-samples",
+  "2",
+  "--save-every",
+  "8",
+  "--stop-no-variation",
+  "99",
+  "--arm",
+  "report_correct",
+  "--penalty",
+  "0.5",
+  "--judge",
+  "api",
+  "--judge-model",
+  "gpt-5.4-nano",
+  "--judge-usd-in",
+  "0.20",
+  "--judge-usd-out",
+  "1.25",
+  "--judge-max-usd",
+  "0.0833",
+  "--max-completion-length",
+  "2048",
+  "--steps",
+  "8",
+  "--learning-rate",
+  "1e-4",
+  "--num-generations",
+  "4",
+  "--max-seconds",
+  "1800",
+  "--final-eval-seconds",
+  "600"
+ ],
+ "evaluation_seed": 31415,
+ "model": "openai/gpt-oss-20b",
+ "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+ "prompt_variant": "neutral",
+ "adapter": null,
+ "template_kwargs": {
+  "reasoning_effort": "low"
+ },
+ "purpose": "feasibility; not intervention evidence",
+ "rollouts": {},
+ "controls": {
+  "true proof accepted": true,
+  "wrong proof rejected": true,
+  "sorry rejected": true,
+  "sorryAx term rejected": true,
+  "lcProof rejected": true,
+  "commented proof accepted": true,
+  "command words in comments accepted": true,
+  "command word in code rejected": true,
+  "native_decide accepted": true,
+  "native_decide on false rejected": true,
+  "wrapper escape rejected": true,
+  "refutation accepted": true,
+  "ne form accepted": true,
+  "undeclared refutation rejected": true,
+  "other proposition rejected": true,
+  "sorried refutation rejected": true,
+  "forged axiom report rejected": true,
+  "forged axiom report rejected by the parser alone": true,
+  "string hiding a comment marker rejected": true,
+  "interpolated string rejected": true,
+  "quote character literal rejected": true,
+  "kernel-skipping option rejected": true,
+  "recursion-depth option accepted": true,
+  "string in a proof accepted": true,
+  "timeout fails closed as inconclusive": true,
+  "weaker proposition is not a refutation": true,
+  "grader bug present": true,
+  "grader rejects wrong proof": true
+ },
+ "lean": "Lean (version 4.19.0, x86_64-unknown-linux-gnu, commit 6caaee842e94, Release)",
+ "torch": "2.15.0+cu132",
+ "transformers": "5.17.0",
+ "trl": "1.14.1",
+ "peft": "0.21.0",
+ "gpus": [
+  "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+ ],
+ "prompt": {
+  "date_in_template": "2026-11-24",
+  "sha256_of_prompt_for_statement_True": "fba90771c6849429f52f6ddc7803d6e943fb8d428ffdc8ce0f469bedeb83cbfe"
+ },
+ "attn_implementation": "eager",
+ "weights": {
+  "dtype": "torch.bfloat16",
+  "quantized": false,
+  "footprint_gib": 38.95677125453949,
+  "mxfp4": "dequantize",
+  "experts_implementation": "grouped_mm"
+ },
+ "generation_config": {
+  "max_length": null,
+  "max_new_tokens": null,
+  "min_length": null,
+  "min_new_tokens": null,
+  "early_stopping": null,
+  "max_time": null,
+  "stop_strings": null,
+  "do_sample": true,
+  "num_beams": null,
+  "use_mtp": null,
+  "use_cache": null,
+  "cache_implementation": null,
+  "cache_config": null,
+  "max_cache_len": null,
+  "temperature": null,
+  "top_k": null,
+  "top_p": null,
+  "min_p": null,
+  "top_h": null,
+  "typical_p": null,
+  "epsilon_cutoff": null,
+  "eta_cutoff": null,
+  "repetition_penalty": null,
+  "encoder_repetition_penalty": null,
+  "length_penalty": null,
+  "no_repeat_ngram_size": null,
+  "bad_words_ids": null,
+  "renormalize_logits": null,
+  "forced_bos_token_id": null,
+  "forced_eos_token_id": null,
+  "remove_invalid_values": null,
+  "exponential_decay_length_penalty": null,
+  "suppress_tokens": null,
+  "begin_suppress_tokens": null,
+  "sequence_bias": null,
+  "token_healing": null,
+  "guidance_scale": null,
+  "watermarking_config": null,
+  "num_return_sequences": null,
+  "output_attentions": null,
+  "output_hidden_states": null,
+  "output_scores": null,
+  "output_logits": null,
+  "return_dict_in_generate": null,
+  "pad_token_id": 199999,
+  "bos_token_id": 199998,
+  "eos_token_id": [
+   200002,
+   199999,
+   200012
+  ],
+  "encoder_no_repeat_ngram_size": null,
+  "decoder_start_token_id": null,
+  "is_assistant": null,
+  "num_assistant_tokens": null,
+  "num_assistant_tokens_schedule": null,
+  "assistant_confidence_threshold": null,
+  "prompt_lookup_num_tokens": null,
+  "max_matching_ngram_size": null,
+  "assistant_early_exit": null,
+  "assistant_lookbehind": null,
+  "target_lookbehind": null,
+  "assistant_ensemble_weight": null,
+  "speculation_type": null,
+  "compile_config": null,
+  "disable_compile": null,
+  "continuous_batching_config": null,
+  "low_memory": null,
+  "penalty_alpha": null,
+  "dola_layers": null,
+  "diversity_penalty": null,
+  "num_beam_groups": null,
+  "constraints": null,
+  "force_words_ids": null,
+  "prefill_chunk_size": null,
+  "_from_model_config": null,
+  "transformers_version": "5.17.0"
+ },
+ "model_load_seconds": 1.6959504630649462,
+ "parameters_total": 20914757184,
+ "reason": "RuntimeError: Failed to import trl.trainer.grpo_trainer because of the following error (look up to see its traceback):\nNo module named 'requests'",
+ "judge_usage": {
+  "input": 0,
+  "output": 0,
+  "reasoning": 0,
+  "usd": 0.0,
+  "requests": 0,
+  "errors": 0,
+  "uncounted": {
+   "input": 0,
+   "output": 0,
+   "reasoning": 0
+  },
+  "truncated": 0,
+  "unreadable": 0,
+  "last_error": null
+ },
+ "elapsed_seconds": 10.907897035009228,
+ "peak_rss_gib": 14.173133850097656,
+ "peak_gpu_memory_used_gib": 0.0029296875,
+ "max_gpu_utilization": 0,
+ "gpu_sampler_error": null,
+ "peak_allocated_gib_all_gpus": 42.74774408340454
+}
+Traceback (most recent call last):
+  File "/workspace/train-venv/lib/python3.12/site-packages/trl/_lazy_module.py", line 71, in _get_module
+    return importlib.import_module("." + module_name, self.__name__)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/workspace/train-venv/lib/python3.12/site-packages/trl/trainer/grpo_trainer.py", line 71, in <module>
+    from ..generation.vllm_generation import VLLMGeneration
+  File "/workspace/train-venv/lib/python3.12/site-packages/trl/generation/vllm_generation.py", line 39, in <module>
+    from .vllm_client import VLLMClient
+  File "/workspace/train-venv/lib/python3.12/site-packages/trl/generation/vllm_client.py", line 30, in <module>
+    from requests.adapters import HTTPAdapter
+ModuleNotFoundError: No module named 'requests'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/root/pilot-repo/entrypoints/run.py", line 67, in <module>
+    main()
+  File "/root/pilot-repo/entrypoints/run.py", line 63, in main
+    run(args)
+  File "/root/pilot-repo/src/rewardhack/hf_grpo.py", line 423, in run
+    fit = prepare_training(model, tokenizer, training, args, summary)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/pilot-repo/src/rewardhack/hf_grpo.py", line 218, in prepare_training
+    from trl import GRPOConfig, GRPOTrainer
+  File "<frozen importlib._bootstrap>", line 1412, in _handle_fromlist
+  File "/workspace/train-venv/lib/python3.12/site-packages/trl/_lazy_module.py", line 62, in __getattr__
+    value = getattr(module, name)
+            ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/trl/_lazy_module.py", line 61, in __getattr__
+    module = self._get_module(self._class_to_module[name])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/trl/_lazy_module.py", line 73, in _get_module
+    raise RuntimeError(
+RuntimeError: Failed to import trl.trainer.grpo_trainer because of the following error (look up to see its traceback):
+No module named 'requests'

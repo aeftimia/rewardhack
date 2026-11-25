@@ -1,0 +1,5 @@
+2026-11-25T19:01:30Z self-test passed: NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 57 GB free
+2026-11-25T19:01:30Z start install
+2026-11-25T19:03:18Z start vllm serve at 0.30 of the card
+2026-11-25T19:06:09Z vllm ready; card memory in use 28649 MiB
+2026-11-25T19:07:40Z vllm bench exit 0; card memory in use 29113 MiB
