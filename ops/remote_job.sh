@@ -17,15 +17,24 @@ remove_after() {  # detached, so it outlives this script, the SSH session and a 
   # Retried until RunPod accepts it: one API error must not leave the pod billing.
   nohup setsid bash -c "sleep $1; until runpodctl remove pod '$POD_ID'; do sleep 30; done" >> "$OUT/autostop.log" 2>&1 < /dev/null &
 }
-arm() {  # $1: seconds until removal. Replaces earlier timers, then proves the new one is running before saying so.
-  pkill -f 'runpodctl remove pod'; [[ $? -le 1 ]] || { echo 'could not replace earlier removal timers' | tee -a "$OUT/autostop.log"; exit 3; }  # 1: none were running
+arm() {  # $1: seconds until removal. The new timer is proven alive first; only then are the earlier ones stopped.
+  local earlier new pid
+  earlier=$(pgrep -f 'runpodctl remove pod')  # empty when none are running; pgrep's status 1 for that is not an error here
   remove_after "$1"
-  pgrep -f 'runpodctl remove pod' > /dev/null || { echo 'NO_AUTOSTOP: the removal timer did not start' | tee -a "$OUT/autostop.log"; exit 3; }
-  echo "$(date -u +%FT%TZ) armed: pod $POD_ID is removed at most ${1}s from now" >> "$OUT/autostop.log"
+  new=$!
+  sleep 1
+  kill -0 "$new" || { echo 'NO_AUTOSTOP: the removal timer did not start; earlier timers were left running' | tee -a "$OUT/autostop.log"; exit 3; }
+  for pid in $earlier; do
+    if kill -0 "$pid"; then kill "$pid"; fi
+  done
+  echo "$(date -u +%FT%TZ) armed: pod $POD_ID is removed at most ${1}s from now (timer pid $new)" >> "$OUT/autostop.log"
 }
 can_remove() { [[ -n $POD_ID ]] && command -v runpodctl >/dev/null && runpodctl get pod "$POD_ID" > "$OUT/autostop.log" 2>&1; }
 finish() {
   code=$?
+  # Whatever ended the runner, the job must not outlive it: the driver would report this exit code, copy partial results
+  # and remove the pod while the job still ran.
+  if [[ -n ${JOB:-} ]] && kill -0 -- "-$JOB"; then kill -9 -- "-$JOB"; fi
   rm -f "$HOME/.judge_key"  # never outlives the job, whichever remote script ran and however it ended
   printf '%s\n' "$code" > "$OUT/EXIT_CODE.tmp"
   mv "$OUT/EXIT_CODE.tmp" "$OUT/EXIT_CODE"
@@ -43,6 +52,7 @@ if [[ ${1:-} == --arm-only ]]; then  # the driver's first act on a new pod: a ca
   exit 0
 fi
 trap finish EXIT
+trap 'exit 143' TERM  # nohup covers only a hang-up; a TERM must end through `finish`, not skip it
 [[ $# == 2 && $2 =~ ^[1-9][0-9]*$ && $GRACE =~ ^[0-9]+$ ]] || { echo 'need a job script and a whole number of seconds; AUTOSTOP_GRACE_SECONDS must be a number'; exit 2; }
 command -v timeout >/dev/null || { echo 'GNU timeout is required'; exit 2; }
 command -v setsid >/dev/null || { echo 'setsid is required'; exit 2; }
@@ -53,6 +63,11 @@ if [[ -s $PIDS ]]; then
   read -r OLD_RUNNER OLD_GROUP < "$PIDS"
   if kill -0 "$OLD_RUNNER"; then echo "stopping earlier runner $OLD_RUNNER"; kill -9 "$OLD_RUNNER"; fi
   if kill -0 -- "-$OLD_GROUP"; then echo "stopping earlier job group $OLD_GROUP"; kill -9 -- "-$OLD_GROUP"; fi
+  # A killed 60 GB process takes a moment to give the card back; the new job's self-test reads the card's memory.
+  for _ in $(seq 30); do
+    kill -0 -- "-$OLD_GROUP" || break
+    sleep 1
+  done
 fi
 if can_remove; then
   AUTOSTOP=1

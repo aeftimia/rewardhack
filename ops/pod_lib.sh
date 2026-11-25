@@ -11,13 +11,19 @@ pod_self_test() {
   for tool in runpodctl timeout setsid pkill pgrep curl tar zstd nvidia-smi python; do
     command -v "$tool" > /dev/null || fail "SELF_TEST: $tool is not on this pod"
   done
-  python -c 'import sys, venv; assert sys.version_info >= (3, 12), sys.version' || fail 'SELF_TEST: python 3.12 with venv is required'
+  python -c 'import sys, venv, ensurepip; assert sys.version_info >= (3, 12), sys.version' || fail 'SELF_TEST: python 3.12 with venv and ensurepip is required'
   for port in "$@"; do
-    # 2026-11-25: the image's nginx owns 8001 and answered a readiness check meant for our server.
-    if curl -s -o /dev/null --max-time 5 "http://127.0.0.1:$port/"; then fail "SELF_TEST: something already answers on port $port"; fi
+    # 2026-11-25: the image's nginx owns 8001 and answered a readiness check meant for our server. Binding the port is the
+    # test: asking it a question would pass for a listener that is slow or does not speak HTTP.
+    python -c 'import socket, sys; socket.socket().bind(("127.0.0.1", int(sys.argv[1])))' "$port" || fail "SELF_TEST: port $port is already in use"
   done
-  used_mib=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
-  [[ $used_mib -lt 1024 ]] || fail "SELF_TEST: the card already has ${used_mib} MiB in use (an earlier job's process?)"
+  # A process killed a moment ago (a relaunch) can take some seconds to give the card back.
+  for _ in $(seq 30); do
+    used_mib=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+    [[ $used_mib -ge 1024 ]] || break
+    sleep 1
+  done
+  [[ $used_mib -lt 1024 ]] || fail "SELF_TEST: the card still has ${used_mib} MiB in use after 30 s (an earlier job's process?)"
   free_gb=$(df --output=avail -BG /workspace | tail -1 | tr -dc 0-9)
   [[ $free_gb -ge $need_gb ]] || fail "SELF_TEST: /workspace has ${free_gb} GB free, the job needs $need_gb"
   log "self-test passed: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader), ${free_gb} GB free"

@@ -133,7 +133,18 @@ def test_remote_runner_arms_pod_removal_or_refuses_to_start(tmp_path):
     while 'remove pod pod1' not in calls.read_text() and time.monotonic() < deadline:
         time.sleep(.2)
     assert 'remove pod pod1 key=pod-scoped' in calls.read_text()  # after the job ended, with nobody connected
-    assert 'pkill -f runpodctl remove pod' in calls.read_text()  # an earlier job's timers are replaced, not left to fire mid-run
+    # A relaunch proves its new timer alive and only then stops the earlier ones: the first run's deadline timer is gone,
+    # and the log names the pid of the timer that replaced it.
+    first = subprocess.run(['pgrep', '-f', "sleep 41; until runpodctl remove pod 'pod1'"], capture_output=True, text=True).stdout.split()
+    assert first, 'the deadline timer of the first run should still be waiting'
+    assert run('pod1', 'rearmed').returncode == 0
+    for _ in range(50):
+        if not any(subprocess.run(['kill', '-0', pid], capture_output=True).returncode == 0 for pid in first):
+            break
+        time.sleep(.1)
+    assert not any(subprocess.run(['kill', '-0', pid], capture_output=True).returncode == 0 for pid in first), 'the earlier timer was left to fire mid-run'
+    assert 'timer pid' in (tmp_path/'rearmed'/'autostop.log').read_text()
+    subprocess.run(['pkill', '-f', "until runpodctl remove pod 'pod1'"])  # this test's own timers: nothing should outlive it
     now = subprocess.run(['bash', 'ops/remote_job.sh', '--remove-now'], capture_output=True, text=True,
                          env=dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'], RUNPOD_POD_ID='pod2', REMOTE_JOB_OUT=str(tmp_path/'now')))
     assert now.returncode == 0 and 'remove pod pod2' in calls.read_text() and not (tmp_path/'now'/'EXIT_CODE').exists()

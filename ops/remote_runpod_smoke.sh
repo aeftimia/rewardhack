@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Preflight smoke test for the funded training run (docs/preflight-plan.md, step 3). One RunPod pod with a
-# 80-96 GB card, about two hours. NOT YET RUN ON A POD: written on 2026-11-21 from the earlier probe scripts,
-# so expect the first launch to find environment problems; every step logs and failures stop the run. Model-written Lean IS executed here (training needs the reward), unlike the inference probes.
+# 80-96 GB card. First run on a pod: 2026-11-24 (results/runpod-smoke-20261124*). Its inner limits add up to about 150 minutes
+# (probe 55, first training run 60, second 35) plus setup, so drive it with a 170 minute deadline; when everything works it ends
+# far sooner and the pod is removed then. Run it with LEAN_ISOLATION=none: RunPod containers have no namespaces. Model-written Lean IS executed here (training needs the reward), unlike the inference probes.
 #
 # Answers before any of the $800 line is spent:
 #   1. Only with JUDGE_KIND=pod: does a judge served on this pod agree with the model-read labels? (judge-validation)
@@ -37,11 +38,8 @@ if [[ $JUDGE_KIND == api ]]; then
 fi
 judged() { OPENAI_API_KEY=${JUDGE_KEY:-} "$@"; }
 
-# --- Lean, isolated. Proof bodies are model-written, so Lean runs with an empty environment and no network.
-log start lean
-mkdir -p /workspace/lean && curl -fsSL https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst | tar --zstd -xf - -C /workspace/lean \
-  || fail LEAN_DOWNLOAD_FAILED
-LEAN_BIN=/workspace/lean/lean-4.19.0-linux/bin/lean
+# --- How Lean will be isolated, decided before anything is downloaded: this image has had no namespaces, and finding that
+# out after the installs wasted a pod on 2026-11-24.
 if unshare -rnpf --mount-proc true 2>/dev/null; then ISOLATE='unshare -rnpf --mount-proc'
 elif unshare -rn true 2>/dev/null; then ISOLATE='unshare -rn'; log 'WARNING: no private /proc for Lean; relying on the syntax screen to keep proofs from reading process environments'
 elif [[ ${LEAN_ISOLATION:-} == none ]] && setpriv --reuid=65534 --regid=65534 --clear-groups true 2>/dev/null; then
@@ -52,6 +50,12 @@ elif [[ ${LEAN_ISOLATION:-} == none ]] && setpriv --reuid=65534 --regid=65534 --
 elif [[ ${LEAN_ISOLATION:-} == none ]]; then ISOLATE=''; log 'WARNING: no network namespace; running Lean with an empty environment only (LEAN_ISOLATION=none)'
 else fail 'NO_NETWORK_NAMESPACE: this container cannot unshare. Rerun with LEAN_ISOLATION=none only if running model-written Lean on a disposable pod without network isolation is acceptable.'
 fi
+
+# --- Lean, isolated. Proof bodies are model-written, so Lean runs with an empty environment and no network.
+log start lean
+mkdir -p /workspace/lean && curl -fsSL https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst | tar --zstd -xf - -C /workspace/lean \
+  || fail LEAN_DOWNLOAD_FAILED
+LEAN_BIN=/workspace/lean/lean-4.19.0-linux/bin/lean
 # The verifier writes each source into a private temporary folder; the unprivileged user needs to read that one file.
 OPEN=''; [[ ${READABLE:-0} == 1 ]] && OPEN='for a in "$@"; do [[ -f $a ]] && chmod a+rx "$(dirname "$a")" && chmod a+r "$a"; done'
 mkdir -p /workspace/bin
@@ -118,9 +122,13 @@ judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit
 # The two owner's rules below are read from the probe's summary, not from its log text: a reworded log line must not switch a rule off.
 # More than 5% of answers cut off at the token limit: the limit goes up before anything else changes.
 # More than 5% of answers the verifier could not decide: look at the verifier before paying for training.
-read -r LIMIT CHECK_VERIFIER PROBE_LINE < <($PY -c "
+# A rule the probe could not evaluate (no rows to judge it by) is None there and stops the job here: it is not a "no".
+PROBE=$($PY -c "
 import json; p = json.load(open('$HOME/out/probe/summary.json'))['probe']
-print(4096 if p['raise_token_limit'] else 2048, int(p['check_verifier']), 'tasks', p['tasks_completed'], 'of', p['tasks_planned'], 'cut-off', p['truncated_rate'], 'undecided', p['unverified_rate'])")
+assert isinstance(p['raise_token_limit'], bool) and isinstance(p['check_verifier'], bool), 'a probe rule is undetermined'
+print(4096 if p['raise_token_limit'] else 2048, int(p['check_verifier']), 'tasks', p['tasks_completed'], 'of', p['tasks_planned'], 'cut-off', p['truncated_rate'], 'undecided', p['unverified_rate'])") \
+  || fail PROBE_SUMMARY_UNREADABLE
+read -r LIMIT CHECK_VERIFIER PROBE_LINE <<< "$PROBE"
 log "probe: $PROBE_LINE; training with --max-completion-length $LIMIT"
 if [[ $CHECK_VERIFIER == 1 ]]; then fail PROBE_VERIFIER_UNDECIDED; fi
 fi
@@ -129,11 +137,11 @@ step() { name=$1; shift; log "start $name"
   log "end $name passed"; nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
 # Eight generations at 2,048 tokens ran out of memory on a 96 GB card (2026-11-24); four fit (2026-11-25). Every training step below uses this.
 GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
-step train-lr1e-4 --steps "${SMOKE_STEPS:-12}" --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-seconds "${SMOKE_TRAIN_SECONDS:-2400}" --final-eval-seconds "${SMOKE_FINAL_EVAL_SECONDS:-600}"
+step train-lr1e-4 --steps "${SMOKE_STEPS:-12}" --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-seconds "${SMOKE_TRAIN_SECONDS:-3600}" --final-eval-seconds "${SMOKE_FINAL_EVAL_SECONDS:-600}"
 if [[ -n ${SMOKE_MEMORY_LIMIT:-} ]]; then
   # Memory question only: two steps at a longer token limit. Eager attention holds batch x heads x length^2 per layer,
   # so the limit the cut-off rule asks for may not fit this card at eight generations. It runs last: a failure here costs nothing above.
-  step "train-limit$SMOKE_MEMORY_LIMIT" --steps 2 --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-completion-length "$SMOKE_MEMORY_LIMIT" --eval-limit 2 --max-seconds "${SMOKE_MEMORY_SECONDS:-900}" --final-eval-seconds 300
+  step "train-limit$SMOKE_MEMORY_LIMIT" --steps 2 --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-completion-length "$SMOKE_MEMORY_LIMIT" --eval-limit 2 --max-seconds "${SMOKE_MEMORY_SECONDS:-1800}" --final-eval-seconds 300
 elif [[ ${SMOKE_SECOND_RUN:-1} == 1 ]]; then
 # The shared remote runner bounds total process time; if time remains: the same at a tenth of the learning rate, to see whether 1e-4 is what breaks output format.
 # 8 steps at 61 s, plus a before and an after evaluation of up to 4.6 minutes each: about 17 minutes measured, so twice that.

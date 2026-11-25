@@ -30,16 +30,20 @@ SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=.t
 pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" "root@$HOST:out/" "$RESULTS/"; }
 finish() {
   code=$?
-  COPIED=1
   echo "copying results"
-  if ! pull; then COPIED=0; echo 'FINAL COPY FAILED: the results are only on the pod, so it is not removed from here'; fi
+  COPIED=0
+  for attempt in 1 2 3; do
+    if pull; then COPIED=1; break; fi
+    echo "copy attempt $attempt failed"; sleep 10
+  done
+  if [[ $COPIED == 0 ]]; then echo 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'; fi
   if ! "${SSH[@]}" "root@$HOST" 'rm -f ~/.judge_key'; then echo 'could not reach the pod to delete the judge key file'; fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
   if [[ ${KEEP_POD:-0} == 1 || $COPIED == 0 ]]; then
     # Left running on purpose: say so only if a removal timer is really armed there.
-    if "${SSH[@]}" "root@$HOST" 'grep -q "armed:" out/autostop.log'; then echo "pod left running; its own timer removes it (out/autostop.log)"
+    if "${SSH[@]}" "root@$HOST" "pgrep -f 'runpodctl remove pod' > /dev/null"; then echo "pod left running; a removal timer is running on it (out/autostop.log)"
     else echo "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
-  elif "${SSH[@]}" "root@$HOST" 'bash pilot-repo/ops/remote_job.sh --remove-now'; then
+  elif "${SSH[@]}" "root@$HOST" 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
     # Accepted is not gone: the pod is gone when it stops answering.
     GONE=0
     for _ in $(seq 12); do
@@ -67,7 +71,7 @@ if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && ${
 fi
 # A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
 # The remote log goes inside it so the runner's own errors are pulled with the results.
-"${SSH[@]}" "root@$HOST" "rm -rf out; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=${AUTOSTOP_GRACE_SECONDS:-600} ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
+"${SSH[@]}" "root@$HOST" "if [ -e out ]; then mv out out.prev.\$(date +%s); fi; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=${AUTOSTOP_GRACE_SECONDS:-600} ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60+90))  # the remote timeout is DEADLINE; the extra time is for it to write EXIT_CODE
 while ((SECONDS < END)); do

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# vLLM generation benchmark for gpt-oss-20b on one pod (docs/notes-2026-11-21.md, sections 54 to 56). About 13 minutes.
+# vLLM generation benchmark for gpt-oss-20b on one pod (docs/notes-2026-11-21.md, sections 54 to 56). About 13 minutes if it goes as estimated; its inner limits add up to
+# about 55 (install, a 15 minute readiness wait, a 35 minute benchmark limit), so drive it with a 60 minute deadline.
 # No Lean, no judge, no key, no training. A vLLM server holds the base model in 30% of the card, the share left beside a
 # trainer that peaks at 62 GiB. Questions: does it load the trainer's LoRA adapter, can it replace it in place, and how
 # fast does it generate at 4 to 32 concurrent answers.
@@ -42,8 +43,9 @@ refuse_ignored_settings ~/out/vllm-serve.log
 log "vllm ready; card memory in use $(gpu_used)"
 # The client is standard library plus this package's task list, so the server's own Python runs it from the source tree.
 STATUS=0
-# 25 minutes: five measurements, each bounded by the client's own 300 s per request. Never timed, so the limit is the worst case.
-PYTHONPATH=src timeout 1500 /workspace/vllm-venv/bin/python entrypoints/bench_generation.py server --out ~/out/vllm --model "$MODEL" --url "http://127.0.0.1:$PORT/v1" \
+# 35 minutes: five measurements bounded by the client's own 300 s per request, plus adapter loads of up to 120 s each.
+# Never timed, so the limit is the worst case, not an estimate.
+PYTHONPATH=src timeout 2100 /workspace/vllm-venv/bin/python entrypoints/bench_generation.py server --out ~/out/vllm --model "$MODEL" --url "http://127.0.0.1:$PORT/v1" \
   --adapter trained="$ADAPTER" --concurrency 4,16,32 --base-concurrency 4,16 --template-kwargs '{"reasoning_effort": "low"}' > ~/out/vllm.log 2>&1 || STATUS=$?
 log "vllm bench exit $STATUS; card memory in use $(gpu_used)"
 exit "$STATUS"

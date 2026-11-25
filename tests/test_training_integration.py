@@ -44,7 +44,7 @@ def tiny(kind):
     return model, tokenizer
 
 
-def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, **overrides):
+def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None, extra=None, **overrides):
     """Run `hf_grpo.train` with `reward_of(position in batch, completion text, step)` in place of Lean and the judge.
 
     None from `reward_of` is a rollout the verifier could not decide. Returns the adapter's change, TRL's log,
@@ -61,9 +61,10 @@ def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, **override
         value = reward_of(position, raw, step[0])
         handed[-1].append(value)
         return dict(template, task_id=task['id'], group=task['group'], raw=raw, truncated=False, format_valid=True, arm=arm,
-                    verifier_inconclusive=value is None, reward=0.0 if value is None else float(value))
+                    verifier_inconclusive=value is None, reward=0.0 if value is None else float(value),
+                    **(extra(position, step[0]) if extra else {}))
     monkeypatch.setattr(hf_grpo, 'score', score)
-    model, tokenizer = tiny(kind)
+    model, tokenizer = built or tiny(kind)
     out = tmp_path/f'run{len(list(tmp_path.iterdir()))}'
     out.mkdir()
     args = SimpleNamespace(out=out, lean='unused', arm='report_correct', penalty=0.5, judge_fn=None, report_mode='prose', num_generations=GENERATIONS,
@@ -74,6 +75,7 @@ def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, **override
     summary = dict(rollouts={})
     fit = hf_grpo.prepare_training(model, tokenizer, TASKS, args, summary)
     start = {name: p.detach().clone() for name, p in model.named_parameters() if p.requires_grad}
+    torch.manual_seed(31415)  # what the before-evaluation does between building the trainer and training
     fit()
     change = torch.cat([(p.detach()-start[name]).flatten() for name, p in model.named_parameters() if name in start])
     log = [row for row in json.loads((out/'training-log.json').read_text()) if 'loss' in row]
