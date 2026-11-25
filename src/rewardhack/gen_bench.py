@@ -32,8 +32,8 @@ def run_hf(args):
         (args.out/'summary.json').write_text(json.dumps(summary, indent=1)+'\n')
 
     model, tokenizer = load_model(SimpleNamespace(model=args.model, revision=args.revision, attn_implementation=args.attn_implementation,
-                                                  quant='none', mode='probe', adapter=None), summary)
-    summary['experts_implementation'] = model.config._experts_implementation
+                                                  quant='none', mode='probe', adapter=None, mxfp4=args.mxfp4,
+                                                  experts_implementation=args.experts_implementation), summary)
     task = bench_tasks(args, 1)[0]
     inputs = tokenizer.apply_chat_template(prompt(task['statement'], 'neutral', 'prose'), tokenize=True, return_dict=True, return_tensors='pt',
                                            add_generation_prompt=True, **template_kwargs(args)).to(next(model.parameters()).device)
@@ -59,9 +59,6 @@ def run_hf(args):
         save()
         print(json.dumps(row), flush=True)
 
-    if args.experts_implementation:
-        model.config._experts_implementation = args.experts_implementation  # read at every forward, so this takes effect without a reload
-    summary['experts_implementation_used'] = model.config._experts_implementation
     model.eval()
     decode('warm-up', 1, 8)
     for batch in args.batches:

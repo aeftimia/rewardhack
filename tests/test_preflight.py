@@ -89,12 +89,16 @@ def test_remote_runner_propagates_failure(tmp_path):
     timeout = bin_dir/'timeout'
     timeout.write_text('#!/bin/bash\nshift 3\nexec "$@"\n')
     timeout.chmod(0o755)
+    setsid = bin_dir/'setsid'  # the job runs in its own session so a relaunch can stop all of it; macOS has no setsid
+    setsid.write_text('#!/bin/bash\nexec "$@"\n')
+    setsid.chmod(0o755)
     job = tmp_path/'fail.sh'
     job.write_text('exit 7\n')
     import os
-    env = dict(os.environ, REMOTE_JOB_OUT=str(tmp_path/'out'), PATH=str(bin_dir)+':'+os.environ['PATH'])
+    env = dict(os.environ, REMOTE_JOB_OUT=str(tmp_path/'out'), REMOTE_JOB_PIDS=str(tmp_path/'pids'), PATH=str(bin_dir)+':'+os.environ['PATH'])
     result = subprocess.run(['bash', 'ops/remote_job.sh', str(job), '10'], env=env)
     assert result.returncode == 7
+    assert len((tmp_path/'pids').read_text().split()) == 2  # runner and job group, for a relaunch to stop
     assert (tmp_path/'out'/'EXIT_CODE').read_text().strip() == '7'
     assert (tmp_path/'out'/'DONE').exists()
 
@@ -113,7 +117,7 @@ def test_remote_runner_arms_pod_removal_or_refuses_to_start(tmp_path):
     job = tmp_path/'job.sh'
     job.write_text(f'touch {tmp_path}/job-ran\nexit 0\n')
     def run(pod, out, grace='1', require='1'):
-        env = dict(os.environ, REMOTE_JOB_OUT=str(tmp_path/out), PATH=str(bin_dir)+':'+os.environ['PATH'],
+        env = dict(os.environ, REMOTE_JOB_OUT=str(tmp_path/out), REMOTE_JOB_PIDS=str(tmp_path/(out+'.pids')), PATH=str(bin_dir)+':'+os.environ['PATH'],
                    RUNPOD_POD_ID=pod, RUNPOD_API_KEY='pod-scoped', AUTOSTOP_GRACE_SECONDS=grace, REQUIRE_AUTOSTOP=require)
         return subprocess.run(['bash', 'ops/remote_job.sh', str(job), '10'], env=env, capture_output=True, text=True)
     refused = run('bad', 'refused')  # the pod's key cannot even read the pod: no cap, no job

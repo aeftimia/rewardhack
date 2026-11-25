@@ -21,6 +21,7 @@ def main():
     ap.add_argument('--thinking', choices=['on', 'off', 'unsupported'], default='unsupported')
     # hf
     ap.add_argument('--revision')
+    ap.add_argument('--mxfp4', choices=['absent', 'dequantize'], default='absent')
     ap.add_argument('--attn-implementation', choices=['sdpa', 'eager'], default='sdpa')
     ap.add_argument('--adapters', type=Path, help='hf: folder to save the untrained adapters in')
     ap.add_argument('--lora-rank', type=int, default=16)

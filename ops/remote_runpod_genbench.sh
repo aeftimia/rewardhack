@@ -11,6 +11,7 @@
 # check; then the server spent 268 s fetching weights itself and came up after the 3 minute wait had given up.
 set -euo pipefail
 cd ~/pilot-repo
+# VLLM_USE_FLASHINFER_SAMPLER=0: confirmed honoured by 0.34.0 ("sampling disabled via" in the 25 Nov serve log).
 export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True
 export PATH="/workspace/vllm-venv/bin:/usr/local/cuda/bin:$PATH" CUDA_HOME=/usr/local/cuda
 mkdir -p ~/out /workspace/hf
@@ -21,34 +22,28 @@ MODEL=openai/gpt-oss-20b; REV=6cee5e81ee83917806bbde320786a8fb61efebee
 PORT=8011
 ADAPTER=~/pilot-repo/payload/adapter
 gpu_used() { nvidia-smi --query-gpu=memory.used --format=csv,noheader; }
+source ops/pod_lib.sh
+pod_self_test 40 "$PORT"
 [[ -s $ADAPTER/adapter_model.safetensors && -s $ADAPTER/adapter_config.json ]] || fail 'NO_ADAPTER: copy the trained adapter to payload/adapter before driving'
 
 log start install
-python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm ninja > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
+python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm==0.34.0 ninja > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
+/workspace/vllm-venv/bin/pip freeze > ~/out/pip-freeze-vllm.txt
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
 
 log 'start vllm serve at 0.30 of the card'
 /workspace/vllm-venv/bin/vllm serve "$MODEL" --revision "$REV" --port "$PORT" --host 127.0.0.1 --max-model-len 4096 \
   --gpu-memory-utilization 0.30 --enable-lora --max-lora-rank 16 --max-loras 2 > ~/out/vllm-serve.log 2>&1 &
 SERVER=$!
-READY=0
-# Up to 10 minutes: the server fetches the 13 GB of weights itself (268 s last time) and then compiles and warms up (about 90 s).
-for _ in $(seq 120); do
-  # The answer has to name the model: another service on the port would also answer.
-  if curl -sf "http://127.0.0.1:$PORT/v1/models" | grep -q "$MODEL"; then READY=1; break; fi
-  kill -0 "$SERVER" || break
-  sleep 5
-done
-if [[ $READY != 1 ]]; then
-  # SIGKILL: the server ignored SIGTERM while it was still fetching weights, and waiting on it hung the last run.
-  if kill -0 "$SERVER"; then kill -9 "$SERVER"; fi
-  fail 'VLLM_NOT_READY'
-fi
+trap 'if kill -0 "$SERVER"; then stop_server "$SERVER"; fi' EXIT
+# Up to 15 minutes, twice the 6.5 it took the one time it was timed: the server fetches the 13 GB of weights itself (268 s last time) and then compiles and warms up (about 90 s).
+wait_for_server "$SERVER" "$PORT" "$MODEL" 180 || fail 'VLLM_NOT_READY'
+refuse_ignored_settings ~/out/vllm-serve.log
 log "vllm ready; card memory in use $(gpu_used)"
 # The client is standard library plus this package's task list, so the server's own Python runs it from the source tree.
 STATUS=0
-PYTHONPATH=src timeout 270 /workspace/vllm-venv/bin/python entrypoints/bench_generation.py server --out ~/out/vllm --model "$MODEL" --url "http://127.0.0.1:$PORT/v1" \
+# 25 minutes: five measurements, each bounded by the client's own 300 s per request. Never timed, so the limit is the worst case.
+PYTHONPATH=src timeout 1500 /workspace/vllm-venv/bin/python entrypoints/bench_generation.py server --out ~/out/vllm --model "$MODEL" --url "http://127.0.0.1:$PORT/v1" \
   --adapter trained="$ADAPTER" --concurrency 4,16,32 --base-concurrency 4,16 --template-kwargs '{"reasoning_effort": "low"}' > ~/out/vllm.log 2>&1 || STATUS=$?
 log "vllm bench exit $STATUS; card memory in use $(gpu_used)"
-kill -9 "$SERVER"
 exit "$STATUS"

@@ -23,6 +23,9 @@ def main():
     ap.add_argument('--quant', choices=['none', '8bit', '4bit'], default='none')
     ap.add_argument('--attn-implementation', choices=['sdpa', 'eager'], default='sdpa',
                     help='attention path to load the model with; gpt-oss supports only eager, which holds batch x heads x length^2 per layer')
+    ap.add_argument('--mxfp4', choices=['absent', 'dequantize'], default='absent',
+                    help='gpt-oss ships 4-bit expert weights: dequantize expands them to bf16, which training needs; absent is for every other model')
+    ap.add_argument('--experts-implementation', help='mixture-of-experts layer implementation; unset keeps the loaded default, which the summary records')
     ap.add_argument('--thinking', choices=['on', 'off', 'unsupported'], default='off')
     ap.add_argument('--reasoning-effort', choices=['low', 'medium', 'high'], help='gpt-oss: passed to the chat template instead of --thinking')
     ap.add_argument('--arm', choices=ARMS, default='baseline')
@@ -35,6 +38,9 @@ def main():
     ap.add_argument('--prompts-per-step', type=int, default=1)
     ap.add_argument('--num-generations', type=int, default=8)
     ap.add_argument('--learning-rate', type=float, default=1e-4)
+    ap.add_argument('--lr-schedule', choices=['constant', 'linear'], default='constant', help='linear decays the rate to zero over --steps')
+    ap.add_argument('--router-aux-loss-coef', type=float, default=0.0,
+                    help="weight of a mixture-of-experts model's router load-balancing loss; 0 trains on the reward alone")
     ap.add_argument('--lora-rank', type=int, default=16)
     ap.add_argument('--max-completion-length', type=int, default=512)
     ap.add_argument('--eval-samples', type=int, default=4)

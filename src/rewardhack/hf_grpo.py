@@ -6,12 +6,12 @@ reward differs. Entrypoint: `entrypoints/run.py`.
 import hashlib
 import json
 import resource
-import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+from . import deadline
 from .gpu import GpuSampler
 from .outcomes import NO_VARIATION, RETRY_SECONDS, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
@@ -67,6 +67,14 @@ def load_model(args, summary):
     elif args.quant == '4bit':
         kwargs['quantization_config'] = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type='nf4',
                                                            bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True)
+    if args.mxfp4 == 'dequantize':
+        # gpt-oss ships 4-bit (MXFP4) expert weights. Left to itself the loader keeps them when the `kernels` package is
+        # installed and expands them to bf16 when it is not, with one warning line: 13 GiB or 39 GiB, trainable or not,
+        # decided by what happens to be installed. Training needs the expanded weights, so that is asked for by name.
+        if args.quant != 'none':
+            raise ValueError('--mxfp4 dequantize cannot be combined with --quant')
+        from transformers import Mxfp4Config
+        kwargs['quantization_config'] = Mxfp4Config(dequantize=True)
     if cuda:
         kwargs['device_map'] = 'auto'
     t0 = time.perf_counter()
@@ -74,6 +82,14 @@ def load_model(args, summary):
     # only `eager`), and the caller names the right one. Eager attention costs memory, so it must be a decision.
     model = AutoModelForCausalLM.from_pretrained(args.model, **kwargs)
     summary['attn_implementation'] = args.attn_implementation
+    if args.experts_implementation:
+        model.config._experts_implementation = args.experts_implementation  # read at every forward of a mixture-of-experts layer
+    # What was actually loaded, so a library default that changed memory or speed can be seen in the summary afterwards.
+    quantized = bool(getattr(model, 'is_quantized', False))  # fallback-ok: transformers sets this attribute only on models a quantizer touched; absent means none did
+    summary['weights'] = {'dtype': str(next(model.parameters()).dtype), 'quantized': quantized, 'footprint_gib': model.get_memory_footprint()/2**30,
+                          'mxfp4': args.mxfp4, 'experts_implementation': model.config._experts_implementation}
+    if quantized and args.mode == 'train' and args.quant == 'none':
+        raise ValueError('the model loaded with quantized weights that were not asked for; pass --mxfp4 dequantize for gpt-oss')
     if args.quant != 'none' and args.mode == 'train':
         from peft import prepare_model_for_kbit_training
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
@@ -232,7 +248,11 @@ def train(model, tokenizer, tasks, args, summary):
                         gradient_accumulation_steps=1, num_generations=args.num_generations, max_completion_length=args.max_completion_length,
                         learning_rate=args.learning_rate, bf16=torch.cuda.is_available(), use_cpu=not torch.cuda.is_available(), gradient_checkpointing=True,
                         beta=args.beta, temperature=1.0, top_p=0.95, top_k=20, chat_template_kwargs=template_kwargs(args), logging_steps=1, save_strategy='no',
-                        report_to='none', seed=args.seed, dataloader_num_workers=0, loss_type='grpo')
+                        report_to='none', seed=args.seed, dataloader_num_workers=0, loss_type='grpo',
+                        # Two library defaults that changed the objective until 2026-11-25. Left unset, TRL takes the model's own
+                        # router load-balancing coefficient (0.9 for gpt-oss), which made the logged loss 0.9 x that term; and the
+                        # learning rate decays linearly to zero over --steps, so a run's rate depended on its length.
+                        router_aux_loss_coef=args.router_aux_loss_coef, lr_scheduler_type=args.lr_schedule)
     dataset = Dataset.from_list([{'prompt': prompt(t['statement'], args.prompt_variant, report_mode), 'statement': t['statement']} for t in tasks])
     class VerifiedTrainer(VerifierMaskMixin, GRPOTrainer):
         pass
@@ -242,13 +262,20 @@ def train(model, tokenizer, tasks, args, summary):
                                                                            target_modules='all-linear', lora_dropout=0.0))
     before = {n: p.detach().cpu().clone() for n, p in trainer.model.named_parameters() if p.requires_grad}
     summary['trainable_parameters'] = sum(p.numel() for p in before.values())
+    summary['trainer'] = {'lr_schedule': trainer.args.lr_scheduler_type, 'router_aux_loss_coef': trainer.router_aux_loss_coef,
+                          'aux_loss_enabled': trainer.aux_loss_enabled,
+                          'lora_target_modules': sorted({name.split('.')[-1] for name, module in trainer.model.named_modules() if hasattr(module, 'lora_A')})}
     t0 = time.perf_counter()
-    trainer.train()
+    try:
+        trainer.train()
+    finally:
+        # Paid for whether or not training finished: the per-step log, and what each step's time went on.
+        (args.out/'training-log.json').write_text(json.dumps(trainer.state.log_history, indent=1)+'\n')
+        (args.out/'step-seconds.json').write_text(json.dumps({k: timing[k] for k in ('rollout', 'lean', 'update')}, indent=1)+'\n')
     summary.update(training_seconds=time.perf_counter()-t0, global_step=trainer.state.global_step, mixed_reward_groups=sum(groups), reward_groups=len(groups),
                    adapter_max_abs_change=max(float((p.detach().cpu()-before[n]).abs().max()) for n, p in trainer.model.named_parameters() if n in before),
                    mean_seconds={k: sum(timing[k])/max(len(timing[k]), 1) for k in ('rollout', 'lean', 'update')})
     trainer.save_model(str(args.out/'adapter'))
-    (args.out/'training-log.json').write_text(json.dumps(trainer.state.log_history, indent=1)+'\n')
     sink.close()
     steps.close()
     return trainer.model
@@ -265,10 +292,7 @@ def run(args):
                'adapter': str(args.adapter) if args.adapter else None, 'template_kwargs': template_kwargs(args), 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
                'script_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(__file__).parent.glob('*.py')}}
 
-    def hard_stop(*unused):
-        raise TimeoutError('hard deadline')
-    signal.signal(signal.SIGALRM, hard_stop)
-    signal.alarm(args.max_seconds)
+    deadline.arm(args.max_seconds)
     hard_deadline = time.monotonic()+args.max_seconds
     sampler = GpuSampler()
     sampler.start()
@@ -304,13 +328,14 @@ def run(args):
         summary['before'] = evaluate(model, tokenizer, evaluation, args, 'before')
         print('before', summary['before'], flush=True)
         model = train(model, tokenizer, training, args, summary)
-        summary['after'] = evaluate(model, tokenizer, evaluation, args, 'after')
+        # Stops between tasks if training ran into its reserve: a shorter after-evaluation is kept, a killed one loses its summary.
+        summary['after'] = evaluate(model, tokenizer, evaluation, args, 'after', stop_at=hard_deadline-60)
         summary['status'] = 'completed'
     except BaseException as error:
         summary.update(status='failed', reason=f'{type(error).__name__}: {str(error)[:800]}')
         raise
     finally:
-        signal.alarm(0)
+        deadline.disarm()
         gpu = sampler.summary()
         meter = getattr(getattr(args, 'judge_fn', None), 'meter', None)
         summary['judge_usage'] = meter.totals if meter else None

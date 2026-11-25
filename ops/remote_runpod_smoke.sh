@@ -9,15 +9,19 @@
 #   3. What does a step cost? seconds per step -> dollars per run -> 15 runs against $800.
 set -euo pipefail
 cd ~/pilot-repo
-export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_ATTENTION_BACKEND=TRITON_ATTN
+# VLLM_ATTENTION_BACKEND was set here until 25 Nov: vLLM has reported it as an unknown variable since the 5 Nov probes, so it never did anything.
+export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMPLER=0
 export PATH="/usr/local/cuda/bin:$PATH" CUDA_HOME=/usr/local/cuda
 mkdir -p ~/out /workspace/hf
 rm -f ~/out/DONE
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
 fail() { log "$1"; exit 1; }
 JUDGE_PID=
-cleanup() { rm -f ~/.judge_key; if [[ -n $JUDGE_PID ]]; then kill "$JUDGE_PID" 2>/dev/null || true; fi; }
+source ops/pod_lib.sh
+JUDGE_PORT=8011
+cleanup() { rm -f ~/.judge_key; if [[ -n $JUDGE_PID ]] && kill -0 "$JUDGE_PID"; then stop_server "$JUDGE_PID"; fi; }
 trap cleanup EXIT
+pod_self_test 40 "$JUDGE_PORT"
 MODEL=openai/gpt-oss-20b; REV=6cee5e81ee83917806bbde320786a8fb61efebee
 JUDGE=${JUDGE_MODEL:-Qwen/Qwen3-8B}; JUDGE_REV=${JUDGE_REV:-b968826d9c46dd6066d109eabc6255188de91218}
 # The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
@@ -58,9 +62,11 @@ ln -sf /workspace/bin/lean-safe ~/lean-safe
 # --- Python: the pinned training stack, and vLLM in its own environment for the judge server.
 log start install
 python -m venv /workspace/train-venv && /workspace/train-venv/bin/pip install -q torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED
-/workspace/train-venv/bin/pip install -q 'huggingface_hub[cli]' > ~/out/install-hf.log 2>&1 || fail HF_CLI_INSTALL_FAILED
+# The `hf` command comes with huggingface_hub itself; the `[cli]` extra asked for until 25 Nov does not exist, and pip stepped back through versions looking for it.
 HF=/workspace/train-venv/bin/hf
-if [[ $JUDGE_KIND == pod ]]; then python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED; fi
+[[ -x $HF ]] || fail 'NO_HF_COMMAND: huggingface_hub did not install its hf command'
+/workspace/train-venv/bin/pip freeze > ~/out/pip-freeze-train.txt
+if [[ $JUDGE_KIND == pod ]]; then python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm==0.34.0 ninja > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED; fi
 PY=/workspace/train-venv/bin/python
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
 $PY entrypoints/run.py controls --out ~/out/controls --lean ~/lean-safe > ~/out/controls.log 2>&1 || fail VERIFIER_CONTROLS_FAILED
@@ -79,13 +85,14 @@ JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano --judge-usd-in 0.20 --judge-u
 else
 # --- Judge server: a small model in a fixed slice of the card, OpenAI-compatible on localhost.
 log start judge-server
-/workspace/vllm-venv/bin/vllm serve "$JUDGE" --revision "$JUDGE_REV" --port 8001 --host 127.0.0.1 --max-model-len 3072 \
+PATH="/workspace/vllm-venv/bin:$PATH" /workspace/vllm-venv/bin/vllm serve "$JUDGE" --revision "$JUDGE_REV" --port "$JUDGE_PORT" --host 127.0.0.1 --max-model-len 3072 \
   --gpu-memory-utilization "${JUDGE_GPU_FRACTION:-0.22}" > ~/out/judge-server.log 2>&1 &
 JUDGE_PID=$!
-for _ in $(seq 90); do curl -sf http://127.0.0.1:8001/v1/models > /dev/null && break; sleep 5; done
-curl -sf http://127.0.0.1:8001/v1/models > /dev/null || fail JUDGE_SERVER_DID_NOT_START
+# 15 minutes: vLLM's first start took 6.5 on this pod type, with its own fetch of the weights.
+wait_for_server "$JUDGE_PID" "$JUDGE_PORT" "$JUDGE" 180 || fail JUDGE_SERVER_DID_NOT_START
+refuse_ignored_settings ~/out/judge-server.log
 export NO_KEY=none
-JUDGE_ARGS=(--judge api --judge-model "$JUDGE" --judge-url http://127.0.0.1:8001/v1 --judge-key-env NO_KEY --judge-extra '{"chat_template_kwargs": {"enable_thinking": false}}')
+JUDGE_ARGS=(--judge api --judge-model "$JUDGE" --judge-url "http://127.0.0.1:$JUDGE_PORT/v1" --judge-key-env NO_KEY --judge-extra '{"chat_template_kwargs": {"enable_thinking": false}}')
 
 # Question 1. 60 rows of each reading category; minutes at vLLM speed, and it gates the reward below.
 log start judge-validation
@@ -95,7 +102,7 @@ fi
 
 # Questions 2 and 3. Low reasoning effort: the unprompted base rate (12/60) was measured there, and high
 # effort truncated 89/120 at 8k tokens. Hard task set, neutral prompt, no hint: unseeded exploration.
-BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" --reasoning-effort low --thinking unsupported --taskset hard --attn-implementation eager
+BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" --reasoning-effort low --thinking unsupported --taskset hard --attn-implementation eager --mxfp4 dequantize
       --max-completion-length 2048 --num-generations 8 --eval-limit "${SMOKE_EVAL_LIMIT:-12}" --eval-samples 2 --save-every 8 --stop-no-variation 99
       --arm report_correct --penalty 0.5 "${JUDGE_ARGS[@]}")
 # Exploration is measured before updates, on stratified training groups with eight samples each.
@@ -107,26 +114,29 @@ if [[ ${SMOKE_SKIP_PROBE:-0} == 1 ]]; then
   log "probe skipped (run earlier); training with --max-completion-length $LIMIT"
 else
 log start probe
-judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit "${SMOKE_PROBE_TASKS:-12}" --max-seconds "${SMOKE_PROBE_SECONDS:-1200}" > ~/out/probe.log 2>&1 || fail PROBE_FAILED
-# Owner's rule: more than 5% of answers cut off at the token limit means the limit goes up before anything else changes.
-LIMIT=2048
-if grep -q 'raise the token limit: True' ~/out/probe.log; then LIMIT=4096; fi
-log "$(grep 'probe cut-off rate' ~/out/probe.log | tail -1); training with --max-completion-length $LIMIT"
-# Owner's rule: more than 5% of answers the verifier could not decide means looking at the verifier before paying for training.
-log "$(grep 'probe undecided rate' ~/out/probe.log | tail -1)"
-if grep -q 'check the verifier: True' ~/out/probe.log; then fail PROBE_VERIFIER_UNDECIDED; fi
+judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" --train-limit "${SMOKE_PROBE_TASKS:-12}" --max-seconds "${SMOKE_PROBE_SECONDS:-3300}" > ~/out/probe.log 2>&1 || fail PROBE_FAILED
+# The two owner's rules below are read from the probe's summary, not from its log text: a reworded log line must not switch a rule off.
+# More than 5% of answers cut off at the token limit: the limit goes up before anything else changes.
+# More than 5% of answers the verifier could not decide: look at the verifier before paying for training.
+read -r LIMIT CHECK_VERIFIER PROBE_LINE < <($PY -c "
+import json; p = json.load(open('$HOME/out/probe/summary.json'))['probe']
+print(4096 if p['raise_token_limit'] else 2048, int(p['check_verifier']), 'tasks', p['tasks_completed'], 'of', p['tasks_planned'], 'cut-off', p['truncated_rate'], 'undecided', p['unverified_rate'])")
+log "probe: $PROBE_LINE; training with --max-completion-length $LIMIT"
+if [[ $CHECK_VERIFIER == 1 ]]; then fail PROBE_VERIFIER_UNDECIDED; fi
 fi
 step() { name=$1; shift; log "start $name"
   judged $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
   log "end $name passed"; nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
-# SMOKE_TRAIN_GENERATIONS: eight generations at 2,048 tokens ran out of memory on a 96 GB card (2026-11-24); the plan's first fallback is four.
-step train-lr1e-4 --steps "${SMOKE_STEPS:-12}" --learning-rate 1e-4 --num-generations "${SMOKE_TRAIN_GENERATIONS:-8}" --max-seconds "${SMOKE_TRAIN_SECONDS:-2400}" --final-eval-seconds "${SMOKE_FINAL_EVAL_SECONDS:-600}"
+# Eight generations at 2,048 tokens ran out of memory on a 96 GB card (2026-11-24); four fit (2026-11-25). Every training step below uses this.
+GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
+step train-lr1e-4 --steps "${SMOKE_STEPS:-12}" --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-seconds "${SMOKE_TRAIN_SECONDS:-2400}" --final-eval-seconds "${SMOKE_FINAL_EVAL_SECONDS:-600}"
 if [[ -n ${SMOKE_MEMORY_LIMIT:-} ]]; then
   # Memory question only: two steps at a longer token limit. Eager attention holds batch x heads x length^2 per layer,
   # so the limit the cut-off rule asks for may not fit this card at eight generations. It runs last: a failure here costs nothing above.
-  step "train-limit$SMOKE_MEMORY_LIMIT" --steps 2 --learning-rate 1e-4 --max-completion-length "$SMOKE_MEMORY_LIMIT" --eval-limit 2 --max-seconds "${SMOKE_MEMORY_SECONDS:-900}" --final-eval-seconds 300
+  step "train-limit$SMOKE_MEMORY_LIMIT" --steps 2 --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-completion-length "$SMOKE_MEMORY_LIMIT" --eval-limit 2 --max-seconds "${SMOKE_MEMORY_SECONDS:-900}" --final-eval-seconds 300
 elif [[ ${SMOKE_SECOND_RUN:-1} == 1 ]]; then
 # The shared remote runner bounds total process time; if time remains: the same at a tenth of the learning rate, to see whether 1e-4 is what breaks output format.
-step train-lr1e-5 --steps 8 --learning-rate 1e-5 --max-seconds 1200 --final-eval-seconds 420
+# 8 steps at 61 s, plus a before and an after evaluation of up to 4.6 minutes each: about 17 minutes measured, so twice that.
+step train-lr1e-5 --steps 8 --learning-rate 1e-5 --num-generations "$GENERATIONS" --max-seconds 2100 --final-eval-seconds 600
 fi
 # ops/remote_job.sh records EXIT_CODE and DONE after this script exits.

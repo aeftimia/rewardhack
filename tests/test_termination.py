@@ -17,7 +17,7 @@ def args(tmp_path):
                            judge_fn=lambda row: dict(claim='OK', raw=''), eval_samples=1,
                            max_completion_length=4, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
                            num_generations=1, prompts_per_step=1, steps=1, learning_rate=.01,
-                           beta=0, seed=0, adapter=True, lora_rank=1)
+                           beta=0, seed=0, adapter=True, lora_rank=1, lr_schedule='constant', router_aux_loss_coef=0.0)
 
 
 def stub_model_tokenizer(tokens):
@@ -29,6 +29,8 @@ def stub_model_tokenizer(tokens):
             self.weight = torch.nn.Parameter(torch.ones(1))
         def parameters(self):
             return iter([self.weight])
+        def named_modules(self):
+            return iter([])
         def named_parameters(self):
             return iter([('weight', self.weight)])
         def eval(self):
@@ -70,6 +72,8 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
         def __init__(self, model, reward_funcs, **kwargs):
             self.model, self.reward = model, reward_funcs
             self.state = SimpleNamespace(global_step=1, log_history=[])
+            self.args = SimpleNamespace(lr_scheduler_type='constant')  # what the real trainer reports back, recorded in the summary
+            self.router_aux_loss_coef, self.aux_loss_enabled = 0.0, False
         def train(self):
             with pytest.raises(ValueError, match='completion_ids'):
                 self.reward([RAW], ['True'])
@@ -387,6 +391,8 @@ def trl_stub(monkeypatch, drive):
         def __init__(self, model, reward_funcs, callbacks, **kwargs):
             self.model, self.reward, self.callbacks = model, reward_funcs, callbacks
             self.state = SimpleNamespace(global_step=1, log_history=[])
+            self.args = SimpleNamespace(lr_scheduler_type='constant')  # what the real trainer reports back, recorded in the summary
+            self.router_aux_loss_coef, self.aux_loss_enabled = 0.0, False
         def train(self):
             drive(self.reward, self.callbacks[0])
         def save_model(self, path):
