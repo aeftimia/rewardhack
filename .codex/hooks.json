@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/ops/gate.sh\" hook",
+            "timeout": 60,
+            "statusMessage": "Checking spend gate"
+          }
+        ]
+      },
+      {
+        "matcher": "^(Bash|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/ops/gate.sh\" codex-hook",
+            "timeout": 180,
+            "statusMessage": "Checking for silent fallbacks"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -9,6 +9,8 @@
         launch with the driver settings in this environment, and marks the record used.
     gate.py hook
         Claude Code PreToolUse hook on Bash: the tool call on stdin; exit 2 refuses the command.
+    gate.py codex-hook
+        Codex PreToolUse adapter for the shared no-silent-fallbacks checker.
     gate.py pre-commit | commit-msg <file> | pre-push <remote> <url>
         The commit gate, run by git through ops/githooks; exit 1 refuses.
     gate.py install-hooks [--repo <path>]
@@ -49,6 +51,11 @@ def launch(args):
                   'gate: ops/drive_runpod.sh refuses to start: the launch record does not cover this launch.')
 
 
+def codex_hook(args):
+    from rewardhack.codex_hooks import main as check_codex_call
+    return check_codex_call()
+
+
 def commit_gate(args):
     # Git runs its hooks at the top of the working tree being committed to, which may be a linked worktree or another clone.
     return refuse(HOOK_CHECKS[args.cmd](Path.cwd(), *args.hook_args(args)), 1, f'gate: git {args.cmd} refuses: this would publish what must not be.')
@@ -80,6 +87,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('hook').set_defaults(run=hook)
+    sub.add_parser('codex-hook').set_defaults(run=codex_hook)
     sub.add_parser('pre-commit').set_defaults(run=commit_gate, hook_args=lambda args: ())
     message = sub.add_parser('commit-msg')
     message.add_argument('message_file', help='the file git holds the commit message in')
