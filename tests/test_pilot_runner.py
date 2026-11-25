@@ -524,6 +524,10 @@ def test_analysis_result_errors_and_deadline_cross_the_process_boundary(tmp_path
     assert time.monotonic()-started<3
     with pytest.raises(runner.TimeCap):
         runner._analyze(spec,[],0)
+    # The child's own alarm ending it (the parent was suspended across the deadline) is the time cap, not a crash.
+    monkeypatch.setattr(pilot,'decide',lambda *a:os.kill(os.getpid(),signal.SIGALRM))
+    with pytest.raises(runner.TimeCap):
+        runner._analyze(spec,[],5)
 
 
 def test_pilot_off_the_main_thread_is_refused_before_any_reservation(tmp_path):

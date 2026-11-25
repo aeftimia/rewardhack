@@ -42,7 +42,6 @@ if ((APPROVED == 0)); then
   echo 'not launched: rerun with --approved after explicit approval'
   exit 0
 fi
-[[ -z ${REWARDHACK_PILOT_RESERVATION:-} ]] || python3 entrypoints/budget.py claim "${GUARD_ARGS[@]}"
 KEY=rewardhack; KEY_FILE=.tools/$KEY.pem
 if [[ ! -f $KEY_FILE ]]; then
   aws ec2 create-key-pair --region "$REGION" --key-name "$KEY" --query KeyMaterial --output text > "$KEY_FILE"; chmod 600 "$KEY_FILE"
@@ -53,6 +52,8 @@ if [[ $SG == None ]]; then
 fi
 MYIP=$(curl -fsS https://checkip.amazonaws.com)
 aws ec2 authorize-security-group-ingress --region "$REGION" --group-id "$SG" --protocol tcp --port 22 --cidr "$MYIP/32" >/dev/null 2>&1 || true
+# The claim is the last step before the paid request: a setup step failing above must not spend the allowance.
+[[ -z ${REWARDHACK_PILOT_RESERVATION:-} ]] || python3 entrypoints/budget.py claim "${GUARD_ARGS[@]}"
 ID=$(aws ec2 run-instances "${COMMON[@]}" --key-name "$KEY" --security-group-ids "$SG" --query 'Instances[0].InstanceId' --output text)
 aws ec2 wait instance-running --region "$REGION" --instance-ids "$ID"
 IP=$(aws ec2 describe-instances --region "$REGION" --instance-ids "$ID" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)

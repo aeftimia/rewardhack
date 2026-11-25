@@ -163,12 +163,16 @@ def _analyze(spec, paths, seconds):
         try:
             kind, value = receiver.recv()
         except EOFError:
-            raise RuntimeError('pilot analysis process ended without a result') from None
+            kind, value = 'ended', None
     finally:
         if child.is_alive():
             child.kill()
         child.join()
         receiver.close()
+    if kind == 'ended':
+        if child.exitcode == -signal.SIGALRM:  # its own alarm: this process was suspended across the deadline
+            raise TimeCap('pilot evidence analysis reached its wall-time cap')
+        raise RuntimeError('pilot analysis process ended without a result')
     if kind == 'ok':
         return value
     if kind == 'invalid':
