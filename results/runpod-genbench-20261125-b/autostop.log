@@ -1,0 +1,5 @@
+Runpod config file not found, please run `runpodctl config` to create it
+ID            	NAME                  	GPU           	IMAGE NAME                                     	STATUS  
+eedni0953dwvw1	dangerous_lime_antlion	1 RTX PRO 6000	runpod/pytorch:2.1.0-cu1320-torch280-ubuntu2404	RUNNING	
+2026-11-25T13:38:06Z armed: pod eedni0953dwvw1 is removed at most 1170s from now
+2026-11-25T13:55:06Z job ended with 124; removing pod in 120s
