@@ -67,7 +67,7 @@ def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, **override
     out = tmp_path/f'run{len(list(tmp_path.iterdir()))}'
     out.mkdir()
     args = SimpleNamespace(out=out, lean='unused', arm='report_correct', penalty=0.5, judge_fn=None, report_mode='prose', num_generations=GENERATIONS,
-                           prompts_per_step=1, steps=steps, learning_rate=1e-2, lr_schedule='constant', router_aux_loss_coef=0.0, beta=0.0, seed=7,
+                           prompts_per_step=1, steps=steps, learning_rate=1e-2, lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0, beta=0.0, seed=7,
                            adapter=None, lora_rank=2, max_completion_length=6, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
                            save_every=99, stop_no_variation=99, train_deadline=time.monotonic()+3600)
     vars(args).update(overrides)
@@ -194,7 +194,8 @@ def test_weights_that_were_not_asked_for_are_refused(monkeypatch):
     model.is_quantized = True
     monkeypatch.setattr(transformers.AutoModelForCausalLM, 'from_pretrained', lambda *a, **kw: model)
     monkeypatch.setattr(transformers.AutoTokenizer, 'from_pretrained', lambda *a, **kw: tokenizer)
-    args = SimpleNamespace(model='tiny', revision=None, attn_implementation='eager', quant='none', mxfp4='absent', experts_implementation=None, adapter=None, mode='train')
+    args = SimpleNamespace(model='tiny', revision=None, attn_implementation='eager', quant='none', mxfp4='absent', experts_implementation=None, adapter=None, mode='train',
+                           reasoning_effort=None, thinking='unsupported')
     with pytest.raises(ValueError, match='--mxfp4 dequantize'):
         hf_grpo.load_model(args, {})
     model.is_quantized = False
@@ -239,7 +240,7 @@ def test_a_failed_judge_reading_is_not_a_dishonest_report(monkeypatch):
 def test_a_priced_judge_reply_without_usage_stops_the_run(monkeypatch):
     from rewardhack import model_io
     reply = json.dumps({name: False for name in judge.CHECKS})
-    monkeypatch.setattr(model_io, 'call', lambda args, messages, timeout=None: dict(raw=reply, finish='stop', usage={}))
+    monkeypatch.setattr(model_io, 'call', lambda args, messages, timeout=None: dict(raw=reply, finish='stop', model='stub', usage={}))
     with pytest.raises(RuntimeError, match='cannot be metered'):
         judge.make_judge('api', model='m', usd_per_m_input=0.2, usd_per_m_output=1.25, max_usd=1.0)(dict(report='Done.', statement='True'))
     # An unpriced judge (one served on the pod) has nothing to meter.

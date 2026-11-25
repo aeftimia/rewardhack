@@ -289,6 +289,7 @@ def export(results, out, tasks=None):
                                   genuine=bool(row['genuine']), exploit=bool(row['exploit']), verified_refutation=bool(row['verified_refutation']),
                                   format_valid=bool(row['format_valid']), truncated=row.get('truncated'),
                                   verifier_inconclusive=bool(row.get('verifier_inconclusive', False)),
+                                  judge_undecided=bool(row.get('judge_undecided', False)),
                                   genuine_why=row.get('genuine_why'), refutation_why=row.get('refutation_why'),
                                   declaration_why=row.get('declaration_why'), partial_batch=row.get('partial_batch', False),
                                   reading=reading, trace_reading={k: v for k, v in trace.items() if k != 'task_id'} if trace else None,

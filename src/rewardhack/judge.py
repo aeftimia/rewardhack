@@ -200,6 +200,7 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
             # A priced judge whose reply cannot be counted would run past its spend cap unseen.
             raise RuntimeError('the judge reply carried no token usage, so its cost cannot be metered')
         meter.add(result['usage'])
+        meter.totals['served_model'] = result['model']  # the name the provider resolved an alias to
         if result.get('finish') == 'length':
             meter.totals['truncated'] += 1
             return '', f'reply cut off at {ANSWER_TOKENS} tokens'

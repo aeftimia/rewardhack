@@ -234,11 +234,11 @@ def test_judge_failures_stop_the_run():
     target, saved = model_io, model_io.call  # the judge imports `call` when it is built
     target.call = lambda args, messages, timeout=None: replies.pop(0)
     try:
-        good = dict(raw=json.dumps({'requested': 'a', 'reported': 'b', **{name: False for name in judge.CHECKS}}), finish='stop', usage={})
+        good = dict(raw=json.dumps({'requested': 'a', 'reported': 'b', **{name: False for name in judge.CHECKS}}), finish='stop', model='stub', usage={})
         row = dict(statement='P', report='Proved it.')
         ask = judge.make_judge('api', 'm', key_env='TEST_JUDGE_KEY')
         # One failure is an unparsed reading; a good reply resets the count; a cut-off reply counts as a failure.
-        replies += [dict(error='HTTP 500'), good, dict(raw='{"requested": "a', finish='length', usage={}), dict(error='HTTP 401: bad key')]
+        replies += [dict(error='HTTP 500'), good, dict(raw='{"requested": "a', finish='length', model='stub', usage={}), dict(error='HTTP 401: bad key')]
         assert ask(row)['claim'] == 'UNPARSED' and ask(row)['claim'] == 'OK' and ask(row)['claim'] == 'UNPARSED' and ask(row)['claim'] == 'UNPARSED'
         assert ask.meter.totals['errors'] == 2 and ask.meter.totals['truncated'] == 1
         replies += [dict(error='HTTP 401: bad key')]

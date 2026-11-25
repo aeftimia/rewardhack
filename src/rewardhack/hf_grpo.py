@@ -5,6 +5,7 @@ reward differs. Entrypoint: `entrypoints/run.py`.
 """
 import hashlib
 import json
+import math
 import resource
 import subprocess
 import sys
@@ -13,7 +14,7 @@ from pathlib import Path
 
 from . import deadline
 from .gpu import GpuSampler
-from .outcomes import NO_VARIATION, RETRY_SECONDS, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
+from .outcomes import JUDGE_ROWS_BEFORE_STOP, judge_advice, NO_VARIATION, RETRY_SECONDS, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
@@ -51,6 +52,30 @@ class VerifierMaskMixin:
         return loss * (keep.numel() * self.accelerator.num_processes / count.clamp(min=1))
 
 
+PROMPT_DATE = '2026-11-24'  # the day of the first unhinted probe; every prompt since carries it
+
+
+def settle_template(tokenizer, args):
+    """Make the chat template say the same thing on every day and refuse a reasoning switch it would ignore.
+
+    The gpt-oss template writes "Current date: <today>" into the system message, so the prompt changed at midnight,
+    between runs, and when transcripts were rebuilt later. It also falls back to "Reasoning: medium" when no effort
+    is passed, and ignores Qwen's `enable_thinking` without a word.
+    """
+    template = tokenizer.chat_template or ''
+    if 'strftime_now' in template:
+        pinned = template.replace('strftime_now("%Y-%m-%d")', f'"{PROMPT_DATE}"')
+        if 'strftime_now' in pinned:
+            raise ValueError('the chat template reads the clock in a form this code does not pin')
+        tokenizer.chat_template = pinned
+    if ('reasoning_effort' in template) != bool(args.reasoning_effort):
+        raise ValueError('--reasoning-effort must be given exactly when the model\'s chat template takes one (gpt-oss); '
+                         'unset, that template silently uses medium')
+    if args.thinking != 'unsupported' and 'enable_thinking' not in template:
+        raise ValueError('--thinking on/off needs a chat template with enable_thinking; pass --thinking unsupported for this model')
+    return 'strftime_now' in template
+
+
 def load_model(args, summary):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -59,6 +84,10 @@ def load_model(args, summary):
     tokenizer.padding_side = 'left'
     if not tokenizer.chat_template and args.model.startswith('hf-internal-testing/'):
         tokenizer.chat_template = "{% for m in messages %}{{ m['role'] }}: {{ m['content'] }}\n{% endfor %}assistant:"  # CPU dry run only
+    reads_clock = settle_template(tokenizer, args)
+    rendered = tokenizer.apply_chat_template(prompt('True', 'neutral', 'prose'), tokenize=False, add_generation_prompt=True, **template_kwargs(args))
+    summary['prompt'] = {'date_in_template': PROMPT_DATE if reads_clock else None,
+                         'sha256_of_reference_prompt': hashlib.sha256(rendered.encode()).hexdigest()}
     kwargs = {'revision': args.revision, 'attn_implementation': args.attn_implementation}
     cuda = torch.cuda.is_available()
     kwargs['dtype'] = torch.bfloat16 if cuda else torch.float32
@@ -93,8 +122,18 @@ def load_model(args, summary):
     if args.quant != 'none' and args.mode == 'train':
         from peft import prepare_model_for_kbit_training
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    placed = getattr(model, 'hf_device_map', {})  # fallback-ok: the map exists only when accelerate placed the model; without it everything is on one device
+    if any(str(device) in ('cpu', 'disk') for device in placed.values()):
+        raise ValueError(f'part of the model was placed off the GPU ({sorted(set(map(str, placed.values())))}); it does not fit this card as loaded')
+    summary['generation_config'] = model.generation_config.to_dict()  # what generation inherits wherever our arguments are silent
     if args.adapter:
         from peft import PeftModel
+        saved = json.loads((args.adapter/'adapter_config.json').read_text())
+        # A continuation takes rank, alpha and target modules from the saved adapter, whatever the command line says.
+        if args.mode == 'train' and (saved['r'], saved['lora_alpha']) != (args.lora_rank, 2*args.lora_rank):
+            raise ValueError(f"--adapter was trained at rank {saved['r']}, alpha {saved['lora_alpha']}; --lora-rank {args.lora_rank} would be ignored")
+        if saved['base_model_name_or_path'] != args.model:
+            raise ValueError(f"--adapter belongs to {saved['base_model_name_or_path']}, not {args.model}")
         summary['initial_adapter_sha256'] = hashlib.sha256((args.adapter/'adapter_model.safetensors').read_bytes()).hexdigest()
         model = PeftModel.from_pretrained(model, str(args.adapter), is_trainable=args.mode == 'train')
     summary['model_load_seconds'] = time.perf_counter()-t0
@@ -166,7 +205,7 @@ def prepare_training(model, tokenizer, tasks, args, summary):
     import torch
     from datasets import Dataset
     from peft import LoraConfig
-    from transformers import TrainerCallback
+    from transformers import TrainerCallback, set_seed
     from trl import GRPOConfig, GRPOTrainer
     by_statement = {t['statement']: t for t in tasks}
     report_mode = getattr(args, 'report_mode', 'prose')
@@ -201,8 +240,14 @@ def prepare_training(model, tokenizer, tasks, args, summary):
                 raise
         rewards = training_rewards(rows, args.num_generations)
         trainer._verifier_keep = [training_keep(row) for row in rows]
-        undecided.extend({'verifier_inconclusive': row['verifier_inconclusive']} for row in rows)
-        summary['training_verifier'] = dict(verifier_advice(undecided), retries_denied=retries.denied)
+        undecided.extend({key: row.get(key) for key in ('verifier_inconclusive', 'claim', 'format_valid', 'judge_undecided')} for row in rows)
+        judging = judge_advice(undecided)
+        summary['training_verifier'] = dict(verifier_advice(undecided), retries_denied=retries.denied, **judging)
+        if judging['check_judge'] and judging['judged_or_tried'] >= JUDGE_ROWS_BEFORE_STOP:
+            # Stops a paid run whose rollouts are being dropped by an unreliable judge; this batch is already saved below.
+            sink.write(''.join(json.dumps(row, ensure_ascii=False)+'\n' for row in rows))
+            sink.flush()
+            raise RuntimeError(f"the judge failed on {judging['judge_undecided_rate']:.0%} of {judging['judged_or_tried']} readings, above the 5% limit")
         sink.write(''.join(json.dumps(row, ensure_ascii=False)+'\n' for row in rows))
         sink.flush()
         step = len(timing['lean'])+1
@@ -231,13 +276,16 @@ def prepare_training(model, tokenizer, tasks, args, summary):
 
         def on_step_end(self, args, state, control, **kwargs):
             timing['update'].append(time.perf_counter()-timing['reward_end'])
+            losses = [row['loss'] for row in state.log_history[-1:] if 'loss' in row]
+            if losses and not math.isfinite(losses[0]):
+                raise FloatingPointError(f'the loss is {losses[0]} at step {state.global_step}')
             (run_args.out/'live.json').write_text(json.dumps({'step': state.global_step, **summary['rollouts'], **summary.get('training_verifier', {}), 'mixed_groups': sum(groups)}))
             if state.global_step % run_args.save_every == 0:
                 kwargs['model'].save_pretrained(str(run_args.out/f'adapter-step{state.global_step}'))
             if state.global_step >= run_args.stop_no_variation and not any(groups):
                 verifier = summary.setdefault('training_verifier', {})
                 verifier['variation_lost_groups'] = sum(lost)
-                summary['early_stop'] = VERIFIER_UNDECIDED if verifier.get('unverified_rate') else NO_VARIATION
+                summary['early_stop'] = VERIFIER_UNDECIDED if sum(lost) else NO_VARIATION  # rollouts left out for any reason, the judge's failures included
                 control.should_training_stop = True
             if time.monotonic() > run_args.train_deadline:
                 summary['early_stop'] = 'deadline'
@@ -252,7 +300,13 @@ def prepare_training(model, tokenizer, tasks, args, summary):
                         # Two library defaults that changed the objective until 2026-11-25. Left unset, TRL takes the model's own
                         # router load-balancing coefficient (0.9 for gpt-oss), which made the logged loss 0.9 x that term; and the
                         # learning rate decays linearly to zero over --steps, so a run's rate depended on its length.
-                        router_aux_loss_coef=args.router_aux_loss_coef, lr_scheduler_type=args.lr_schedule)
+                        router_aux_loss_coef=args.router_aux_loss_coef, lr_scheduler_type=args.lr_schedule,
+                        # More defaults that shape the update, now arguments or stated here so that nothing is inherited unseen.
+                        # `scale_rewards`: 'group' divides each prompt group's advantages by that group's reward spread, so the
+                        # size of a reward gap is invisible within a group; 'none' keeps it. See --scale-rewards.
+                        scale_rewards=args.scale_rewards, max_grad_norm=args.max_grad_norm, optim='adamw_torch', weight_decay=0.0,
+                        warmup_steps=0, adam_beta1=0.9, adam_beta2=0.999, adam_epsilon=1e-8,
+                        logging_nan_inf_filter=False)  # a NaN loss is logged as NaN, and stops the run below
     dataset = Dataset.from_list([{'prompt': prompt(t['statement'], args.prompt_variant, report_mode), 'statement': t['statement']} for t in tasks])
     class VerifiedTrainer(VerifierMaskMixin, GRPOTrainer):
         pass
@@ -263,10 +317,14 @@ def prepare_training(model, tokenizer, tasks, args, summary):
     before = {n: p.detach().cpu().clone() for n, p in trainer.model.named_parameters() if p.requires_grad}
     summary['trainable_parameters'] = sum(p.numel() for p in before.values())
     summary['trainer'] = {'lr_schedule': trainer.args.lr_scheduler_type, 'router_aux_loss_coef': trainer.router_aux_loss_coef,
-                          'aux_loss_enabled': trainer.aux_loss_enabled,
+                          'aux_loss_enabled': trainer.aux_loss_enabled, 'scale_rewards': args.scale_rewards, 'max_grad_norm': args.max_grad_norm,
+                          'arguments_in_effect': trainer.args.to_dict(),
                           'lora_target_modules': sorted({name.split('.')[-1] for name, module in trainer.model.named_modules() if hasattr(module, 'lora_A')})}
     def fit():
         t0 = time.perf_counter()
+        # TRL seeds once, when the trainer is built; the before-evaluation then reseeds with its own constant. Without this,
+        # every --seed sampled its training rollouts from the same random stream.
+        set_seed(args.seed)
         try:
             trainer.train()
         except BaseException:
@@ -344,6 +402,11 @@ def run(args):
         model = fit()
         # Stops between tasks if training ran into its reserve: a shorter after-evaluation is kept, a killed one loses its summary.
         summary['after'] = evaluate(model, tokenizer, evaluation, args, 'after', stop_at=hard_deadline-60)
+        if summary['after']['incomplete']:
+            # A shortened after-evaluation covers fewer tasks; beside the full before-evaluation its rates would compare different task sets.
+            done = {json.loads(line)['task_id'] for line in (args.out/'after-evaluation.jsonl').read_text().splitlines()}
+            matched = [row for row in map(json.loads, (args.out/'before-evaluation.jsonl').read_text().splitlines()) if row['task_id'] in done]
+            summary['before_on_after_tasks'] = summarize(matched)
         summary['status'] = 'completed'
     except BaseException as error:
         summary.update(status='failed', reason=f'{type(error).__name__}: {str(error)[:800]}')

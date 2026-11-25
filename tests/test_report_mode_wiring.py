@@ -153,7 +153,7 @@ def test_hf_training_routes_typed_prompt_and_reward(monkeypatch, tmp_path):
         def __init__(self, model, reward_funcs, **kw):
             self.model, self.reward = model, reward_funcs
             self.state = SimpleNamespace(global_step=1, log_history=[])
-            self.args = SimpleNamespace(lr_scheduler_type='constant')  # what the real trainer reports back, recorded in the summary
+            self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
             self.router_aux_loss_coef, self.aux_loss_enabled = 0.0, False
         def train(self):
             assert self.reward(['{}'], ['True'], completion_ids=[[2, 9]]) == [0.]
@@ -161,7 +161,7 @@ def test_hf_training_routes_typed_prompt_and_reward(monkeypatch, tmp_path):
     for name, attrs in {
         'datasets': dict(Dataset=SimpleNamespace(from_list=lambda rows: rows)),
         'peft': dict(LoraConfig=lambda **kw: kw),
-        'transformers': dict(TrainerCallback=object),
+        'transformers': dict(TrainerCallback=object, set_seed=lambda seed: None),
         'trl': dict(GRPOTrainer=Trainer, GRPOConfig=lambda **kw: kw),
     }.items():
         module = ModuleType(name); module.__dict__.update(attrs)
@@ -171,7 +171,7 @@ def test_hf_training_routes_typed_prompt_and_reward(monkeypatch, tmp_path):
     args = SimpleNamespace(report_mode='typed', out=tmp_path, arm='baseline', lean='stub', penalty=0,
                            judge_fn=None, num_generations=1, max_completion_length=8, adapter=True,
                            steps=1, prompts_per_step=1, learning_rate=.01, beta=0, seed=0,
-                           thinking='on', reasoning_effort='low', prompt_variant='neutral', lr_schedule='constant', router_aux_loss_coef=0.0)
+                           thinking='on', reasoning_effort='low', prompt_variant='neutral', lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0)
     summary = dict(rollouts={})
     hf_grpo.train(model, SimpleNamespace(eos_token_id=9), [TASK], args, summary)
     assert modes == scored == ['typed'] and summary['report_mode'] == 'typed'

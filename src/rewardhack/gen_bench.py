@@ -33,6 +33,7 @@ def run_hf(args):
 
     model, tokenizer = load_model(SimpleNamespace(model=args.model, revision=args.revision, attn_implementation=args.attn_implementation,
                                                   quant='none', mode='probe', adapter=None, mxfp4=args.mxfp4,
+                                                  reasoning_effort=args.reasoning_effort, thinking=args.thinking,
                                                   experts_implementation=args.experts_implementation), summary)
     task = bench_tasks(args, 1)[0]
     inputs = tokenizer.apply_chat_template(prompt(task['statement'], 'neutral', 'prose'), tokenize=True, return_dict=True, return_tensors='pt',

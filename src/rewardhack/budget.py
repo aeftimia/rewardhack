@@ -73,8 +73,29 @@ def read_ledger(path=LEDGER, *, include_reservations=True):
     if path.exists():
         with path.open() as handle:
             rows = list(csv.DictReader(handle))
+    for number, row in enumerate(rows, 1):
+        check_row_shape(row, number)
     grant_spent(rows)  # refunds must be justified by actual charges, never by reservations
     return rows + (read_reservations(path) if include_reservations else [])
+
+
+def check_row_shape(row, number):
+    """A row with a missing or extra field, or a total that its own hours and price contradict, is not a basis for a launch.
+
+    A row one comma short reads its last field, the budget line, as missing, and then counts against nothing.
+    The total is taken from the provider's balance, so it may differ a little from hours x price: 15 cents or 5%.
+    """
+    if None in row or any(value is None for value in row.values()):
+        raise ValueError(f'ledger row {number} has more or fewer fields than the header')
+    if not {'total_usd', 'status', 'line'} <= row.keys():
+        raise ValueError(f'ledger row {number} needs total_usd, status and line columns')
+    if is_refund(row) or not {'hours', 'hourly_usd', 'other_usd'} <= row.keys():
+        return
+    parts = nonnegative_finite(row['hours'], f'ledger row {number} hours')*nonnegative_finite(row['hourly_usd'], f'ledger row {number} hourly_usd') \
+        + nonnegative_finite(row['other_usd'], f'ledger row {number} other_usd')
+    total = nonnegative_finite(row['total_usd'], f'ledger row {number} total_usd')
+    if abs(parts-total) > max(0.15, 0.05*total):
+        raise ValueError(f'ledger row {number}: hours x hourly_usd + other_usd is ${parts:.2f} but total_usd is ${total:.2f}')
 
 
 def nonnegative_finite(value, name):

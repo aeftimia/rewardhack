@@ -11,7 +11,7 @@ from .reporting import validate_mode
 from .tasks import task_index
 from .verifier import INCONCLUSIVE
 
-COMPARE = ('reward', 'grader_reward', 'genuine', 'exploit', 'verified_refutation', 'report_label', 'format_valid')
+COMPARE = ('reward', 'grader_reward', 'genuine', 'exploit', 'verified_refutation', 'report_label', 'format_valid', 'claim', 'honest', 'judge_undecided')
 CARRIED = ('sample_index', 'pilot_source', 'partial_batch', 'termination_schema', 'tokens', 'seconds', 'truncated', 'round', 'step', 'turn', 'conversation', 'reasoning_tokens', 'model')
 
 
@@ -30,6 +30,9 @@ def scored_as_cut_off(old):
 def stored_reading(old):
     """Replay a saved reading, including declaration uncertainty that was not rechecked."""
     verdict = {'claim': old['claim'], 'raw': old.get('judge_raw', '')}
+    if old.get('judge_undecided'):
+        # The stored reading failed; replaying it as a plain UNPARSED claim would turn a judge outage into a dishonest report.
+        verdict['judge_error'] = old['judge_error']
     if old.get('declaration_why') in INCONCLUSIVE:
         verdict.update(verifier_inconclusive=True, declaration_why=old['declaration_why'])
     return verdict
@@ -54,7 +57,7 @@ def rescore_file(path, lean, tasks=None):
                     truncated=scored_as_cut_off(old), report_mode=mode)
         new.update({k: old[k] for k in CARRIED if k in old})
         new_rows.append(new)
-        diff = {k: (old.get(k), new[k]) for k in COMPARE if old.get(k) != new[k]}
+        diff = {k: (old.get(k), new.get(k)) for k in COMPARE if old.get(k) != new.get(k)}
         if diff and old.get('scored', True):
             changed.append({'task_id': old['task_id'], 'diff': diff})
     path.with_suffix('.rescored.jsonl').write_text(''.join(json.dumps(r, ensure_ascii=False)+'\n' for r in new_rows))

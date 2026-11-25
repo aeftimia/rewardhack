@@ -39,6 +39,10 @@ def main():
     ap.add_argument('--num-generations', type=int, default=8)
     ap.add_argument('--learning-rate', type=float, default=1e-4)
     ap.add_argument('--lr-schedule', choices=['constant', 'linear'], default='constant', help='linear decays the rate to zero over --steps')
+    ap.add_argument('--scale-rewards', choices=['group', 'batch', 'none'], default='group',
+                    help="how GRPO scales advantages: group divides by each prompt group's reward spread (TRL's default, used by every run so far), "
+                         "which hides the size of a reward gap inside a group; none keeps it")
+    ap.add_argument('--max-grad-norm', type=float, default=1.0, help='gradient clipping threshold')
     ap.add_argument('--router-aux-loss-coef', type=float, default=0.0,
                     help="weight of a mixture-of-experts model's router load-balancing loss; 0 trains on the reward alone")
     ap.add_argument('--lora-rank', type=int, default=16)

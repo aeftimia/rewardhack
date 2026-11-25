@@ -17,7 +17,7 @@ def args(tmp_path):
                            judge_fn=lambda row: dict(claim='OK', raw=''), eval_samples=1,
                            max_completion_length=4, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
                            num_generations=1, prompts_per_step=1, steps=1, learning_rate=.01,
-                           beta=0, seed=0, adapter=True, lora_rank=1, lr_schedule='constant', router_aux_loss_coef=0.0)
+                           beta=0, seed=0, adapter=True, lora_rank=1, lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0)
 
 
 def stub_model_tokenizer(tokens):
@@ -72,7 +72,7 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
         def __init__(self, model, reward_funcs, **kwargs):
             self.model, self.reward = model, reward_funcs
             self.state = SimpleNamespace(global_step=1, log_history=[])
-            self.args = SimpleNamespace(lr_scheduler_type='constant')  # what the real trainer reports back, recorded in the summary
+            self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
             self.router_aux_loss_coef, self.aux_loss_enabled = 0.0, False
         def train(self):
             with pytest.raises(ValueError, match='completion_ids'):
@@ -84,7 +84,7 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
     for name, attrs in {
         'datasets': dict(Dataset=SimpleNamespace(from_list=lambda rows: rows)),
         'peft': dict(LoraConfig=lambda **kw: kw),
-        'transformers': dict(TrainerCallback=object),
+        'transformers': dict(TrainerCallback=object, set_seed=lambda seed: None),
         'trl': dict(GRPOTrainer=Trainer, GRPOConfig=lambda **kw: kw),
     }.items():
         module = ModuleType(name)
@@ -391,14 +391,14 @@ def trl_stub(monkeypatch, drive):
         def __init__(self, model, reward_funcs, callbacks, **kwargs):
             self.model, self.reward, self.callbacks = model, reward_funcs, callbacks
             self.state = SimpleNamespace(global_step=1, log_history=[])
-            self.args = SimpleNamespace(lr_scheduler_type='constant')  # what the real trainer reports back, recorded in the summary
+            self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
             self.router_aux_loss_coef, self.aux_loss_enabled = 0.0, False
         def train(self):
             drive(self.reward, self.callbacks[0])
         def save_model(self, path):
             pass
     for name, attrs in {'datasets': dict(Dataset=SimpleNamespace(from_list=lambda rows: rows)), 'peft': dict(LoraConfig=lambda **kw: kw),
-                        'transformers': dict(TrainerCallback=object), 'trl': dict(GRPOTrainer=Trainer, GRPOConfig=lambda **kw: kw)}.items():
+                        'transformers': dict(TrainerCallback=object, set_seed=lambda seed: None), 'trl': dict(GRPOTrainer=Trainer, GRPOConfig=lambda **kw: kw)}.items():
         module = ModuleType(name)
         module.__dict__.update(attrs)
         monkeypatch.setitem(sys.modules, name, module)
@@ -423,7 +423,7 @@ def test_training_records_what_the_verifier_cost_it(args, monkeypatch):
     seen = scripted_scores(monkeypatch, [(0.0, False), (1.5, True)])
     def drive(reward, callback):
         assert reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]]) == [0.0, None]
-        control = callback.on_step_end(None, SimpleNamespace(global_step=1), SimpleNamespace(should_training_stop=False), model=None)
+        control = callback.on_step_end(None, SimpleNamespace(global_step=1, log_history=[]), SimpleNamespace(should_training_stop=False), model=None)
         assert control.should_training_stop
     trl_stub(monkeypatch, drive)
     summary = dict(rollouts={})
@@ -431,7 +431,9 @@ def test_training_records_what_the_verifier_cost_it(args, monkeypatch):
     assert all(isinstance(kw['retries'], outcomes.RetryBudget) for kw in seen) and seen[0]['retries'] is seen[1]['retries']
     step = json.loads((args.out/'steps.jsonl').read_text())
     assert (step['unverified_rate'], step['check_verifier'], step['retries_denied'], step['variation_lost_to_verifier']) == (0.5, True, 0, 1)
-    assert summary['training_verifier'] == dict(unverified_rate=0.5, check_verifier=True, retries_denied=0, variation_lost_groups=1)
+    # No judge was asked in this scripted run, so its failure rate is unknown, not zero.
+    assert summary['training_verifier'] == dict(unverified_rate=0.5, check_verifier=True, retries_denied=0, variation_lost_groups=1,
+                                                judge_undecided_rate=None, judged_or_tried=0, check_judge=None)
     assert summary['early_stop'] == outcomes.VERIFIER_UNDECIDED and json.loads((args.out/'live.json').read_text())['check_verifier'] is True
 
 
@@ -441,7 +443,7 @@ def test_no_variation_is_not_blamed_on_the_verifier(args, monkeypatch):
     scripted_scores(monkeypatch, [(0.0, False), (0.0, False)])  # every rollout decided, and all the same
     def drive(reward, callback):
         reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
-        callback.on_step_end(None, SimpleNamespace(global_step=1), SimpleNamespace(should_training_stop=False), model=None)
+        callback.on_step_end(None, SimpleNamespace(global_step=1, log_history=[]), SimpleNamespace(should_training_stop=False), model=None)
     trl_stub(monkeypatch, drive)
     summary = dict(rollouts={})
     hf_grpo.train(model, tokenizer, [TASK], args, summary)

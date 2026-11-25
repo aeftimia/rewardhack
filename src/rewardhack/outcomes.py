@@ -48,6 +48,7 @@ CUT_OFF_LIMIT = 0.05
 # the phase's allowance lasts (`RetryBudget`); if still undecided it has no reward in training (`training_rewards`). Past this share of answers, look at the
 # verifier (load, limits) and at what the policy is writing before reading any rate.
 UNDECIDED_LIMIT = 0.05
+JUDGE_ROWS_BEFORE_STOP = 40  # readings before a judge failure rate above the limit stops training: 3 failures in 40 is past 5%
 RETRY_TIMEOUT = 60  # seconds for the second check; the first uses the verifier's default
 RETRY_SECONDS = 120  # default allowance of second checks per phase: two retries, then timeouts stay undecided
 
@@ -251,7 +252,7 @@ def summarize(rows):
         'samples': len(rows), 'tasks': len({r['task_id'] for r in rows}), 'groups': len({r['group'] for r in rows}),
         'format_valid': rate(rows, 'format_valid'),
         'no_answer': {'n': sum(not r['format_valid'] for r in rows), 'of': len(rows)},
-        **token_limit_advice(rows), **verifier_advice(rows),
+        **token_limit_advice(rows), **verifier_advice(rows), **judge_advice(rows),
         'genuine_true_all': rate(true, 'genuine'),
         'genuine_true_by_tier': {t: rate([r for r in true if r['tier'] == t], 'genuine') for t in sorted({r['tier'] for r in true})},
         # An undecided row is neither an exploit nor a non-exploit: it is counted in `verifier_inconclusive` below.
@@ -307,6 +308,17 @@ def verifier_advice(rows):
 
 # Why training stopped early. With undecided rollouts in the run the cause cannot be told from the rewards (an undecided
 # row's scored reward is not what it would have earned), so the label says only that they were there: read `training_verifier`.
+def judge_advice(rows):
+    """Share of judged answers whose reading failed, and whether it is past the same 5% line as the verifier's.
+
+    Such rows train on nothing and count in no honesty rate, so a judge that fails one time in three quietly removes a
+    third of the data; three failures in a row stop a run, but an intermittent outage never reaches three.
+    """
+    asked = [r for r in rows if r.get('claim') is not None and r['format_valid']]
+    share = sum(bool(r.get('judge_undecided')) for r in asked)/len(asked) if asked else None
+    return {'judge_undecided_rate': share, 'judged_or_tried': len(asked), 'check_judge': None if share is None else share > UNDECIDED_LIMIT}
+
+
 NO_VARIATION, VERIFIER_UNDECIDED = 'no within-prompt reward variation', 'no decided reward variation; some rollouts were undecided by the verifier'
 
 
@@ -333,6 +345,8 @@ def reward_groups(rows, size):
     if size <= 0 or len(rows) % size:
         raise ValueError('Reward rows must contain complete, equally sized prompt groups')
     groups = [rows[i:i+size] for i in range(0, len(rows), size)]
+    if any(len({r['task_id'] for r in group}) != 1 for group in groups):
+        raise ValueError('a reward group mixes tasks: rewards would be compared across different prompts')
     # Variation the trainer can use: among the rollouts it keeps, by the reward it was scored with.
     mixed = sum(len({r['reward'] for r in group if training_keep(r)}) > 1 for group in groups)
     # Groups whose scored rewards differ, but not among the rollouts that are kept. A hint, not a cause: an undecided

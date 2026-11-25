@@ -13,7 +13,7 @@ from rewardhack import budget, judge, model_io
                                  json.dumps(dict.fromkeys(judge.CHECKS, 'false')),
                                  json.dumps(dict.fromkeys(judge.CHECKS, False))[:-1]])
 def test_invalid_checklists_stop_after_consecutive_failures(monkeypatch, raw):
-    monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=raw, finish='stop', usage={'completion_tokens': 10}))
+    monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=raw, finish='stop', model='stub', usage={'completion_tokens': 10}))
     reader = judge.make_judge('api', model='stub', usd_per_m_output=1)
     row = dict(statement='True', report='Proved it.')
     for _ in range(judge.MAX_STREAK - 1):
@@ -28,7 +28,7 @@ def test_invalid_checklists_stop_after_consecutive_failures(monkeypatch, raw):
 def test_valid_checklist_resets_failure_streak(monkeypatch):
     good = json.dumps(dict.fromkeys(judge.CHECKS, False))
     replies = iter(['', '', good, '', '', ''])
-    monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=next(replies), finish='stop', usage={}))
+    monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=next(replies), finish='stop', model='stub', usage={}))
     reader = judge.make_judge('api', model='stub')
     row = dict(statement='True', report='Proved it.')
     assert [reader(row)['claim'] for _ in range(5)] == ['UNPARSED', 'UNPARSED', 'OK', 'UNPARSED', 'UNPARSED']
@@ -105,7 +105,7 @@ def test_backend_failure_streak_and_recovery(monkeypatch, kind):
     good = json.dumps(GOOD)
     replies = iter(['', '', good, '', '', ''])
     monkeypatch.setattr(model_io, 'local_reader', lambda *a: lambda prompt: next(replies))
-    monkeypatch.setattr(model_io, 'call', lambda *a, **kw: dict(raw=next(replies), finish='stop', usage={}))
+    monkeypatch.setattr(model_io, 'call', lambda *a, **kw: dict(raw=next(replies), finish='stop', model='stub', usage={}))
     reader = judge.make_judge(kind, model='stub')
     row = dict(statement='True', report='Proved it.')
     assert [reader(row)['claim'] for _ in range(5)] == ['UNPARSED', 'UNPARSED', 'OK', 'UNPARSED', 'UNPARSED']
@@ -212,7 +212,7 @@ def test_an_unreadable_reply_records_no_kinds(monkeypatch):
     # The first 200 characters of an unreadable reply can be a clean checklist whose contradiction came later.
     reply = FLAGGED + ' Wait, on reflection the report is fine, so the answer is: '.ljust(100) + EXAMPLE
     assert len(FLAGGED) < 200 and judge.claim_of(reply) == 'UNPARSED' and judge.claim_of(judge.compact(reply)) == 'ERROR'
-    monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=reply, finish='stop', usage={}))
+    monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=reply, finish='stop', model='stub', usage={}))
     verdict = judge.make_judge('api', model='stub')(dict(statement='True', report='Proved it.'))
     assert verdict['claim'] == 'UNPARSED' and judge.kinds_for(verdict) == []
     from rewardhack import outcomes
@@ -251,7 +251,7 @@ def test_status_shows_a_refund_booked_to_no_line(tmp_path):
     root = Path(__file__).resolve().parents[1]
     def status(rows):
         (tmp_path/'ledger.csv').write_text(','.join(budget.FIELDS)+'\n'+''.join(
-            ','.join(str(dict(total_usd=total, status=state, line=line).get(field, '')) for field in budget.FIELDS)+'\n' for total, state, line in rows))
+            ','.join(str(dict(total_usd=total, hours=0, hourly_usd=0, other_usd=max(total, 0), status=state, line=line).get(field, '')) for field in budget.FIELDS)+'\n' for total, state, line in rows))
         return subprocess.run([sys.executable, str(root/'entrypoints/budget.py'), '--ledger', str(tmp_path/'ledger.csv'), 'status'],
                               cwd=root, capture_output=True, text=True).stdout
     assert 'other funds): $-3.00' in status([(5, 'completed', 'api'), (-3, 'refund: console', '')])
@@ -263,7 +263,7 @@ def test_status_shows_a_refund_booked_to_no_line(tmp_path):
 def test_duplicate_check_keys_are_unreadable_and_stop_judging(monkeypatch, kind, first, last):
     raw = json.dumps(dict(GOOD, says_false=first))[:-1] + ', "says_false": ' + json.dumps(last) + '}'
     monkeypatch.setattr(model_io, 'local_reader', lambda *a: lambda prompt: raw)
-    monkeypatch.setattr(model_io, 'call', lambda *a, **kw: dict(raw=raw, finish='stop', usage={}))
+    monkeypatch.setattr(model_io, 'call', lambda *a, **kw: dict(raw=raw, finish='stop', model='stub', usage={}))
     assert judge.claim_of(raw) == 'UNPARSED'
     assert judge.compact(raw) == raw[:200]
     reader = judge.make_judge(kind, model='stub')
@@ -325,3 +325,17 @@ def test_asides_come_before_the_answer(final):
     assert judge.claim_of(EXAMPLE + '\nFinal: ' + final) == 'UNPARSED'
     assert judge.claim_of(EXAMPLE + ' {note} Final: ' + final + ' {end}') == 'UNPARSED'
     assert judge.claim_of(EXAMPLE + ' (see {note})') == 'OK'  # a span that names no check is still an aside
+
+
+def test_a_malformed_ledger_row_is_refused(tmp_path):
+    """A row one comma short loses its budget line and would count against nothing; a total its own parts contradict is a typo."""
+    header = ','.join(budget.FIELDS)+'\n'
+    good = '2026-11-25,runpod,m,p,r,1,2.70,0,2.70,completed,e,gpt-oss-20b-gpu\n'
+    ledger = tmp_path/'ledger.csv'
+    ledger.write_text(header+good)
+    assert budget.spent(budget.read_ledger(ledger, include_reservations=False), line='gpt-oss-20b-gpu') == 2.70
+    for bad, message in ((good.rsplit(',', 1)[0]+'\n', 'fields'), (good.replace(',2.70,completed', ',0.27,completed'), 'total_usd is'),
+                         (good.rstrip('\n')+',extra\n', 'fields')):
+        ledger.write_text(header+bad)
+        with pytest.raises(ValueError, match=message):
+            budget.read_ledger(ledger, include_reservations=False)
