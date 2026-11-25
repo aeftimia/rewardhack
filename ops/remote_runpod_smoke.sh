@@ -119,7 +119,8 @@ fi
 step() { name=$1; shift; log "start $name"
   judged $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
   log "end $name passed"; nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
-step train-lr1e-4 --steps "${SMOKE_STEPS:-12}" --learning-rate 1e-4 --max-seconds "${SMOKE_TRAIN_SECONDS:-2400}" --final-eval-seconds "${SMOKE_FINAL_EVAL_SECONDS:-600}"
+# SMOKE_TRAIN_GENERATIONS: eight generations at 2,048 tokens ran out of memory on a 96 GB card (2026-11-24); the plan's first fallback is four.
+step train-lr1e-4 --steps "${SMOKE_STEPS:-12}" --learning-rate 1e-4 --num-generations "${SMOKE_TRAIN_GENERATIONS:-8}" --max-seconds "${SMOKE_TRAIN_SECONDS:-2400}" --final-eval-seconds "${SMOKE_FINAL_EVAL_SECONDS:-600}"
 if [[ -n ${SMOKE_MEMORY_LIMIT:-} ]]; then
   # Memory question only: two steps at a longer token limit. Eager attention holds batch x heads x length^2 per layer,
   # so the limit the cut-off rule asks for may not fit this card at eight generations. It runs last: a failure here costs nothing above.
