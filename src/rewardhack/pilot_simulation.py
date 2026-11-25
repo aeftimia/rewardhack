@@ -7,6 +7,7 @@ import random
 import sys
 from pathlib import Path
 
+from . import jsonl
 from .budget import FIELDS
 from .pilot import SCHEMA, digest, load_spec
 
@@ -40,8 +41,7 @@ def write_stage(spec_path, checkpoint, scenario):
         raise ValueError('unplanned checkpoint')
     path = Path(stage['evidence'])
     with path.open('x') as handle:
-        for row in synthetic_rows(spec, checkpoint, scenario):
-            handle.write(json.dumps(row)+'\n')
+        jsonl.write_rows(handle, synthetic_rows(spec, checkpoint, scenario), ensure_ascii=True)
 
 
 def example_spec(directory):

@@ -12,6 +12,8 @@ Selection rule for a training set: keep false statements whose acknowledgement r
 import json
 from collections import defaultdict
 
+from . import jsonl
+
 LABELS = ('ACKNOWLEDGE', 'DISCLOSE', 'HEDGE', 'CLAIM', 'OTHER')
 # Reading-rubric categories (results/report-reading/RUBRIC.md) mapped onto the calibration labels.
 READING_MAP = {'honest_admission': 'ACKNOWLEDGE', 'honest_disclosure': 'DISCLOSE', 'hedged_misleading': 'HEDGE', 'false_claim': 'CLAIM',
@@ -27,13 +29,11 @@ def read_labels(path):
     what it meant would move a statement into or out of the selection band.
     """
     labels, unknown = {}, []
-    for line in path.read_text().splitlines():
-        if line.strip():
-            d = json.loads(line)
-            if d['category'] in READING_MAP:
-                labels[d['id']] = READING_MAP[d['category']]
-            else:
-                unknown.append(f"{d['id']} ({d['category']!r})")
+    for d in jsonl.read(path):
+        if d['category'] in READING_MAP:
+            labels[d['id']] = READING_MAP[d['category']]
+        else:
+            unknown.append(f"{d['id']} ({d['category']!r})")
     if unknown:
         raise ValueError(f'{path}: {len(unknown)} labels have a category outside the rubric (first: {unknown[:3]}); known: {sorted(READING_MAP)}')
     return labels
@@ -93,7 +93,7 @@ def headline(table, keep, judged_at_all, rows):
 
 def run(args):
     args.out.mkdir(parents=True, exist_ok=True)
-    rows = [json.loads(l) for p in args.rows for l in p.read_text().splitlines() if l.strip()]
+    rows = [row for p in args.rows for row in jsonl.read(p)]
     labels = read_labels(args.labels) if args.judge == 'labels' else None
     judged_at_all = args.judge != 'none'
     judged = judge_rows(rows, args.judge, labels, args.run_name)
@@ -105,7 +105,7 @@ def run(args):
         for i, row in enumerate(judged):
             if row['judge'] == UNLABELLED:
                 print('no label for row', i, flush=True)
-            sink.write(json.dumps(row, ensure_ascii=False)+'\n')
+            jsonl.write(sink, row)
     table, keep = per_statement(judged, judged_at_all, args.lo, args.hi)
     (args.out/'per_statement.json').write_text(json.dumps(dict(rows=len(rows), judge=args.judge, unlabelled_rows=len(unlabelled), table=table, keep_false=keep, band=[args.lo, args.hi]), indent=1, ensure_ascii=False)+'\n')
     print(json.dumps(headline(table, keep, judged_at_all, len(rows)), indent=1))

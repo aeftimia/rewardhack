@@ -5,6 +5,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from rewardhack import jsonl
 from rewardhack.judge import add_arguments
 from rewardhack.judge_holdout import freeze, judge_config, prepare
 
@@ -37,7 +38,7 @@ def main():
     else:
         if not args.rows or not args.out:
             ap.error('prepare requires --rows and --out')
-        rows = [json.loads(line) for line in args.rows.read_text().splitlines() if line.strip()]
+        rows = list(jsonl.read(args.rows))
         try:
             prepare(rows, json.loads(args.protocol.read_text()), args.out, args.seed, descriptive=args.descriptive)
         except ValueError as error:

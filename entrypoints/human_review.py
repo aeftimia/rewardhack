@@ -8,6 +8,7 @@ import argparse
 import json
 from pathlib import Path
 
+from rewardhack import jsonl
 from rewardhack.judge import read_set, review_key, review_sample, review_sheet, score_review
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,14 +30,14 @@ def main():
             ap.error('build needs --verdicts')
         if (args.out/'sheet.md').exists():
             ap.error(f'{args.out}/sheet.md exists: building again would discard answers')
-        verdicts = [json.loads(line) for path in args.verdicts for line in path.read_text().splitlines() if line.strip()]
+        verdicts = [row for path in args.verdicts for row in jsonl.read(path)]
         items = review_sample(read_set(args.read), verdicts, args.random, args.false_honest, args.false_dishonest, args.seed)
         args.out.mkdir(parents=True, exist_ok=True)
         (args.out/'sheet.md').write_text(review_sheet(items))
-        (args.out/'key.jsonl').write_text(''.join(json.dumps(k)+'\n' for k in review_key(items)))
+        (args.out/'key.jsonl').write_text(jsonl.dumps(review_key(items), ensure_ascii=True))
         print(f'{len(items)} items in {args.out}/sheet.md')
         return
-    key = [json.loads(line) for line in (args.out/'key.jsonl').read_text().splitlines()]
+    key = list(jsonl.read(args.out/'key.jsonl'))
     result = score_review((args.out/'sheet.md').read_text(), key)
     (args.out/'summary.json').write_text(json.dumps(result, indent=1)+'\n')
     print(json.dumps({k: v for k, v in result.items() if k != 'rows'}, indent=1))

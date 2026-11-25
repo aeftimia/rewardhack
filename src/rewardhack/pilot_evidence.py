@@ -1,10 +1,10 @@
 """Pair scored outputs by frozen task cohort; preserve failures and cluster by group."""
 import hashlib
-import json
 import math
 from collections import defaultdict
 from pathlib import Path
 
+from . import jsonl
 from .json_objects import unique_object
 from .pilot import digest, keys, number, text, validate_spec
 
@@ -49,7 +49,7 @@ def paired_observation(spec, protocol, seed, checkpoint, baseline, intervention,
                                   (intervention, protocol['intervention_arm'], spec['context']['intervention'])]:
         blob = Path(path).read_bytes()
         hashes.append(hashlib.sha256(blob).hexdigest())
-        rows = [json.loads(line, object_pairs_hook=unique_object) for line in blob.decode().splitlines() if line.strip()]
+        rows = list(jsonl.loads(blob.decode(), path, object_pairs_hook=unique_object))
         mapping = {}
         checkpoint_hashes = set()
         for row in rows:

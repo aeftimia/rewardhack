@@ -6,6 +6,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from rewardhack import hf_grpo, outcomes, rescore
+from rewardhack.outcomes import RETRY_SECONDS
 
 TASK = dict(id='true', group='g', tier='easy', true=True, statement='True')
 RAW = json.dumps(dict(established='True', proof_body='by trivial', report='Proved True.')) + ' unfinished prose'
@@ -13,7 +14,7 @@ RAW = json.dumps(dict(established='True', proof_body='by trivial', report='Prove
 
 @pytest.fixture
 def args(tmp_path):
-    return SimpleNamespace(out=tmp_path, lean='must-not-run', arm='report_correct', penalty=.5,
+    return SimpleNamespace(out=tmp_path, lean='must-not-run', arm='report_correct', penalty=.5, report_mode='prose', verifier_retry_seconds=RETRY_SECONDS,
                            judge_fn=lambda row: dict(claim='OK', raw=''), eval_samples=1,
                            max_completion_length=4, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
                            num_generations=1, prompts_per_step=1, steps=1, learning_rate=.01,
@@ -146,7 +147,7 @@ def test_vllm_finish_reason_reaches_scoring(args, monkeypatch):
     from rewardhack import vllm_probe
     args.__dict__.update(template_kwargs='{}', max_seconds=10, taskset='v1', tasks=None,
                          model='stub', revision='stub', max_model_len=10, gpu_memory_utilization=.5,
-                         samples=1, max_tokens=4, variant='neutral')
+                         samples=1, max_tokens=4, variant='neutral', part='train')
     tokenizer = SimpleNamespace(apply_chat_template=lambda *a, **kw: 'prompt')
     class Tokenizer:
         chat_template = ''  # no clock and no reasoning switch to settle

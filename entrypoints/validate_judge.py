@@ -28,6 +28,7 @@ def main():
     ap.add_argument('--require-acceptance', action='store_true', help='exit nonzero unless all predeclared acceptance thresholds pass')
     add_arguments(ap)
     args = ap.parse_args()
+    args.report_mode = 'prose'  # a judge reads prose reports; a typed report carries its own error flag and has nothing to validate
     if args.judge == 'none':
         ap.error('choose a judge to validate')
     check_arguments(ap, args, **{'--max-usd': args.max_usd})

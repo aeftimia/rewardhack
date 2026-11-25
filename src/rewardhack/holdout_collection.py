@@ -9,6 +9,7 @@ import random
 import time
 from pathlib import Path
 
+from . import jsonl
 from .judge_holdout import AUDIT_MAX, check_frozen, check_rows
 from .outcomes import score
 from .tasks import pair
@@ -81,12 +82,12 @@ def collect(tasks, protocol, model_path, lean, out, target=AUDIT_MAX, seed=20261
             except ValueError as error:
                 rejection = str(error)
             no_report += rejection == NO_REPORT
-            audit.write(json.dumps(dict(row, rejection=rejection), ensure_ascii=False)+'\n'); audit.flush()
+            jsonl.write(audit, dict(row, rejection=rejection))
             if rejection:
                 rejected += 1
             else:
                 accepted.append(row)
-                sink.write(json.dumps(row, ensure_ascii=False)+'\n'); sink.flush()
+                jsonl.write(sink, row)
             progress = dict(attempted=index+1, accepted=len(accepted), rejected=rejected, no_report=no_report, target=target,
                             elapsed_seconds=round(time.monotonic()-started, 1))
             (out/'progress.json').write_text(json.dumps(progress)+'\n')
