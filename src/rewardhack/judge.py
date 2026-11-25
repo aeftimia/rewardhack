@@ -174,6 +174,11 @@ def compact(text):
     return json.dumps({**notes, **{k: reply[k] for k in CHECKS if k in reply}}, ensure_ascii=False)
 
 
+OPENAI_URL = 'https://api.openai.com/v1'
+# Per attempt, of four. The reply is a short checklist; a longer wait is a stalled connection with a rented GPU idle behind it.
+REQUEST_SECONDS = 60
+
+
 def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, max_usd=None):
     from .model_io import Meter, call
     meter = Meter(usd_per_m_input, usd_per_m_output)
@@ -181,15 +186,19 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
     args = SimpleNamespace(model=model_id, max_tokens=ANSWER_TOKENS, reasoning_effort=None, temperature=0, base_url=base_url, key_env=key_env,
                            extra_body={'response_format': SCHEMA, **extra})
 
+    metered = usd_per_m_input > 0 or usd_per_m_output > 0
     meter.totals.update(truncated=0, unreadable=0, last_error=None)
     def ask(prompt):
         if max_usd is not None and meter.totals['usd'] >= max_usd:
             raise RuntimeError(f"judge spend cap ${max_usd} reached at ${meter.totals['usd']:.2f}")  # stop the run: an unjudged reward is not a reward
-        result = call(args, [{'role': 'user', 'content': prompt}])
+        result = call(args, [{'role': 'user', 'content': prompt}], timeout=REQUEST_SECONDS)
         meter.totals['requests'] += 1
         if 'error' in result:
             meter.totals['errors'] += 1
             return '', result['error']
+        if metered and not result['usage'].get('completion_tokens'):
+            # A priced judge whose reply cannot be counted would run past its spend cap unseen.
+            raise RuntimeError('the judge reply carried no token usage, so its cost cannot be metered')
         meter.add(result['usage'])
         if result.get('finish') == 'length':
             meter.totals['truncated'] += 1
@@ -198,7 +207,7 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
     return ask, meter
 
 
-def make_judge(kind, model=None, revision=None, base_url='https://api.openai.com/v1', key_env='OPENAI_API_KEY',
+def make_judge(kind, model=None, revision=None, base_url=OPENAI_URL, key_env='OPENAI_API_KEY',
                usd_per_m_input=0.0, usd_per_m_output=0.0, extra=None, max_usd=None):
     """A judge callable, or None for kind 'none'. `judge.meter` carries token and dollar totals for `api`."""
     if max_usd is not None:
@@ -235,7 +244,9 @@ def make_judge(kind, model=None, revision=None, base_url='https://api.openai.com
                 meter.totals['last_error'] = error
             if streak >= MAX_STREAK:
                 raise RuntimeError(f'judge failed {streak} times in a row; last: {error}')
-            return {'claim': 'UNPARSED', 'raw': compact(raw)}
+            # `judge_error` marks a reading that failed, as opposed to a report read as dishonest: the row is
+            # scored fail-closed but is left out of training and of the honesty rates (`outcomes.score`).
+            return {'claim': 'UNPARSED', 'raw': compact(raw), 'judge_error': error}
         streak = 0
         return {'claim': claim, 'raw': compact(raw)}
     judge.meter = meter
@@ -269,7 +280,7 @@ def add_arguments(ap):
     ap.add_argument('--dry-run', action='store_true', help='plumbing check whose numbers mean nothing; the only training run that may use --judge triage')
     ap.add_argument('--judge-model', default='mlx-community/Qwen3-8B-4bit')
     ap.add_argument('--judge-revision', default=None)
-    ap.add_argument('--judge-url', default='https://api.openai.com/v1', help='OpenAI-compatible endpoint, e.g. a vLLM server on the pod')
+    ap.add_argument('--judge-url', default=OPENAI_URL, help='OpenAI-compatible endpoint, e.g. a vLLM server on the pod')
     ap.add_argument('--judge-key-env', default='OPENAI_API_KEY')
     ap.add_argument('--judge-usd-in', type=float, default=0.0, help='USD per million input tokens, for the metered total')
     ap.add_argument('--judge-usd-out', type=float, default=0.0)
@@ -288,6 +299,10 @@ def check_reward_args(ap, args):
         ap.error('--report-mode typed uses the Boolean error field and requires --judge none')
     if mode == 'prose' and args.arm == 'report_correct' and args.judge == 'none':
         ap.error('--arm report_correct needs --judge')
+    if args.judge == 'api' and args.judge_url == OPENAI_URL:
+        # A paid judge with no cap, or priced at zero so the cap can never trip, is an unbounded bill.
+        if args.judge_max_usd is None or not (args.judge_usd_in > 0 and args.judge_usd_out > 0):
+            ap.error('--judge api at the OpenAI endpoint needs --judge-max-usd and non-zero --judge-usd-in and --judge-usd-out')
     if args.judge == 'triage' and not args.dry_run:
         ap.error("--judge triage is the keyword heuristic: it may only read reports in a plumbing run marked --dry-run")
 

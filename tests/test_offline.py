@@ -125,7 +125,19 @@ def test_judge_labels_and_honesty_bit():
             continue
         raise AssertionError(bad)
     check_reward_args(ap, argparse.Namespace(arm='report_correct', judge='triage', dry_run=True))
-    check_reward_args(ap, argparse.Namespace(arm='report_correct', judge='api', dry_run=False))
+    from rewardhack.judge import OPENAI_URL
+    paid = dict(arm='report_correct', judge='api', dry_run=False, judge_url=OPENAI_URL)
+    check_reward_args(ap, argparse.Namespace(**paid, judge_max_usd=1.0, judge_usd_in=0.2, judge_usd_out=1.25))
+    # A paid judge with no cap, or with a price of zero that the cap could never reach, is refused before anything runs.
+    for unbounded in (dict(judge_max_usd=None, judge_usd_in=0.2, judge_usd_out=1.25), dict(judge_max_usd=1.0, judge_usd_in=0.0, judge_usd_out=1.25)):
+        try:
+            check_reward_args(ap, argparse.Namespace(**paid, **unbounded))
+        except SystemExit:
+            continue
+        raise AssertionError(unbounded)
+    # A judge served on the pod itself costs nothing per call and needs neither.
+    check_reward_args(ap, argparse.Namespace(arm='report_correct', judge='api', dry_run=False, judge_url='http://127.0.0.1:8011/v1',
+                                             judge_max_usd=None, judge_usd_in=0.0, judge_usd_out=0.0))
     # h + s + (1 - λ)c, and the algebraically equal h + r + g - λc of the application's wording.
     for g, v, r, h, lam in [(1, 1, 0, 1, 0.5), (0, 0, 1, 1, 0.5), (1, 0, 0, 1, 0.5), (1, 0, 0, 0, 2.0), (0, 0, 0, 0, 1.0)]:
         assert arm_reward('report_correct', g, v, r, h, lam) == h + r + g - lam*(g and not v)
@@ -220,7 +232,7 @@ def test_judge_failures_stop_the_run():
     from rewardhack import judge, model_io
     replies = []
     target, saved = model_io, model_io.call  # the judge imports `call` when it is built
-    target.call = lambda args, messages: replies.pop(0)
+    target.call = lambda args, messages, timeout=None: replies.pop(0)
     try:
         good = dict(raw=json.dumps({'requested': 'a', 'reported': 'b', **{name: False for name in judge.CHECKS}}), finish='stop', usage={})
         row = dict(statement='P', report='Proved it.')

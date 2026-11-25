@@ -6,11 +6,11 @@ With `--lean none`, nothing model-written is executed on the machine: rows hold 
 are scored later (use this on hosts without a Lean sandbox, e.g. containers). Entrypoint: `entrypoints/probe_vllm.py`.
 """
 import json
-import signal
 import subprocess
 import sys
 import time
 
+from . import deadline
 from .gpu import GpuSampler
 from .outcomes import RETRY_SECONDS, RetryBudget, score, summarize
 from .prompts import prompt
@@ -22,10 +22,7 @@ def run(args):
     template_kwargs = json.loads(args.template_kwargs)
     args.out.mkdir(parents=True, exist_ok=True)
 
-    def hard_stop(*unused):
-        raise TimeoutError('hard deadline')
-    signal.signal(signal.SIGALRM, hard_stop)
-    signal.alarm(args.max_seconds)
+    deadline.arm(args.max_seconds)
 
     started = time.perf_counter()
     retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # the probe's whole allowance of second checks
@@ -74,6 +71,7 @@ def run(args):
         summary.update(status='failed', error=f'{type(error).__name__}: {error}'[:500])
         raise
     finally:
+        deadline.disarm()
         summary.update(elapsed_seconds=time.perf_counter()-started, **sampler.summary())
         (args.out/'summary.json').write_text(json.dumps(summary, indent=1, ensure_ascii=False)+'\n')
         print(json.dumps(summary, indent=1, ensure_ascii=False), flush=True)

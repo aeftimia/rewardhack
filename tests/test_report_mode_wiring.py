@@ -70,8 +70,8 @@ def test_vllm_mode_reaches_prompt_scoring_and_storage(monkeypatch, tmp_path, lea
     monkeypatch.setitem(sys.modules, 'vllm', stub)
     monkeypatch.setattr(vllm_probe, 'select_tasks', lambda *a: [TASK])
     monkeypatch.setattr(vllm_probe, 'GpuSampler', lambda: SimpleNamespace(start=lambda: None, summary=lambda: {}))
-    monkeypatch.setattr(vllm_probe.signal, 'signal', lambda *a: None)
-    monkeypatch.setattr(vllm_probe.signal, 'alarm', lambda *a: None)
+    monkeypatch.setattr(vllm_probe.deadline, 'arm', lambda *a: None)
+    monkeypatch.setattr(vllm_probe.deadline, 'disarm', lambda *a: None)
     monkeypatch.setattr(vllm_probe.subprocess, 'check_output', lambda *a, **kw: 'Lean stub')
     def score(*a, **kw):
         scored.append(kw['report_mode'])

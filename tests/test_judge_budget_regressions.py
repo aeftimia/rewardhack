@@ -13,7 +13,7 @@ from rewardhack import budget, judge, model_io
                                  json.dumps(dict.fromkeys(judge.CHECKS, 'false')),
                                  json.dumps(dict.fromkeys(judge.CHECKS, False))[:-1]])
 def test_invalid_checklists_stop_after_consecutive_failures(monkeypatch, raw):
-    monkeypatch.setattr(model_io, 'call', lambda *args: dict(raw=raw, finish='stop', usage={'completion_tokens': 10}))
+    monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=raw, finish='stop', usage={'completion_tokens': 10}))
     reader = judge.make_judge('api', model='stub', usd_per_m_output=1)
     row = dict(statement='True', report='Proved it.')
     for _ in range(judge.MAX_STREAK - 1):
@@ -28,7 +28,7 @@ def test_invalid_checklists_stop_after_consecutive_failures(monkeypatch, raw):
 def test_valid_checklist_resets_failure_streak(monkeypatch):
     good = json.dumps(dict.fromkeys(judge.CHECKS, False))
     replies = iter(['', '', good, '', '', ''])
-    monkeypatch.setattr(model_io, 'call', lambda *args: dict(raw=next(replies), finish='stop', usage={}))
+    monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=next(replies), finish='stop', usage={}))
     reader = judge.make_judge('api', model='stub')
     row = dict(statement='True', report='Proved it.')
     assert [reader(row)['claim'] for _ in range(5)] == ['UNPARSED', 'UNPARSED', 'OK', 'UNPARSED', 'UNPARSED']
@@ -105,7 +105,7 @@ def test_backend_failure_streak_and_recovery(monkeypatch, kind):
     good = json.dumps(GOOD)
     replies = iter(['', '', good, '', '', ''])
     monkeypatch.setattr(model_io, 'local_reader', lambda *a: lambda prompt: next(replies))
-    monkeypatch.setattr(model_io, 'call', lambda *a: dict(raw=next(replies), finish='stop', usage={}))
+    monkeypatch.setattr(model_io, 'call', lambda *a, **kw: dict(raw=next(replies), finish='stop', usage={}))
     reader = judge.make_judge(kind, model='stub')
     row = dict(statement='True', report='Proved it.')
     assert [reader(row)['claim'] for _ in range(5)] == ['UNPARSED', 'UNPARSED', 'OK', 'UNPARSED', 'UNPARSED']
@@ -115,7 +115,7 @@ def test_backend_failure_streak_and_recovery(monkeypatch, kind):
 
 @pytest.mark.parametrize('value', [float('nan'), float('inf'), float('-inf'), -1])
 def test_invalid_api_costs_rejected_before_calls(monkeypatch, value):
-    monkeypatch.setattr(model_io, 'call', lambda *a: pytest.fail('invalid configuration made a request'))
+    monkeypatch.setattr(model_io, 'call', lambda *a, **kw: pytest.fail('invalid configuration made a request'))
     for field in ('usd_per_m_input', 'usd_per_m_output', 'max_usd'):
         with pytest.raises(ValueError, match='finite, nonnegative'):
             judge.make_judge('api', model='stub', **{field: value})
@@ -128,7 +128,7 @@ def test_invalid_api_costs_rejected_before_calls(monkeypatch, value):
 
 
 def test_zero_judge_cap_prevents_request(monkeypatch):
-    monkeypatch.setattr(model_io, 'call', lambda *a: pytest.fail('zero cap made a request'))
+    monkeypatch.setattr(model_io, 'call', lambda *a, **kw: pytest.fail('zero cap made a request'))
     reader = judge.make_judge('api', model='stub', max_usd=0)
     with pytest.raises(RuntimeError, match='spend cap'):
         reader(dict(statement='True', report='Proved it.'))
@@ -146,7 +146,7 @@ def test_zero_probe_cap_preserves_plan_without_requests(tmp_path, monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr(openai_probe, 'select_tasks', lambda *a, **kw: [dict(id='t')])
     monkeypatch.setattr(openai_probe, 'taskset_rows', lambda *a: [])
-    monkeypatch.setattr(openai_probe, 'call', lambda *a: pytest.fail('zero cap made a request'))
+    monkeypatch.setattr(openai_probe, 'call', lambda *a, **kw: pytest.fail('zero cap made a request'))
     args = SimpleNamespace(max_usd=0, usd_per_m_input=1, usd_per_m_output=1, out=tmp_path,
                            taskset='stub', tasks=None, limit=None, samples=1, concurrency=1,
                            model='stub', variant='neutral', reasoning_effort=None, max_tokens=4)
@@ -212,7 +212,7 @@ def test_an_unreadable_reply_records_no_kinds(monkeypatch):
     # The first 200 characters of an unreadable reply can be a clean checklist whose contradiction came later.
     reply = FLAGGED + ' Wait, on reflection the report is fine, so the answer is: '.ljust(100) + EXAMPLE
     assert len(FLAGGED) < 200 and judge.claim_of(reply) == 'UNPARSED' and judge.claim_of(judge.compact(reply)) == 'ERROR'
-    monkeypatch.setattr(model_io, 'call', lambda *args: dict(raw=reply, finish='stop', usage={}))
+    monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=reply, finish='stop', usage={}))
     verdict = judge.make_judge('api', model='stub')(dict(statement='True', report='Proved it.'))
     assert verdict['claim'] == 'UNPARSED' and judge.kinds_for(verdict) == []
     from rewardhack import outcomes
@@ -263,7 +263,7 @@ def test_status_shows_a_refund_booked_to_no_line(tmp_path):
 def test_duplicate_check_keys_are_unreadable_and_stop_judging(monkeypatch, kind, first, last):
     raw = json.dumps(dict(GOOD, says_false=first))[:-1] + ', "says_false": ' + json.dumps(last) + '}'
     monkeypatch.setattr(model_io, 'local_reader', lambda *a: lambda prompt: raw)
-    monkeypatch.setattr(model_io, 'call', lambda *a: dict(raw=raw, finish='stop', usage={}))
+    monkeypatch.setattr(model_io, 'call', lambda *a, **kw: dict(raw=raw, finish='stop', usage={}))
     assert judge.claim_of(raw) == 'UNPARSED'
     assert judge.compact(raw) == raw[:200]
     reader = judge.make_judge(kind, model='stub')

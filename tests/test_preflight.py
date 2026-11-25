@@ -175,7 +175,9 @@ def test_driver_returns_remote_status(tmp_path, remote_code):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()
     stubs = {
-        'ssh': f'for arg in "$@"; do if [[ $arg == "cat out/EXIT_CODE" ]]; then echo {remote_code}; fi; done\nexit 0\n',
+        # Once removal has been requested the pod stops answering, which is how the driver knows it is gone.
+        'ssh': f'[[ -e {tmp_path}/removed ]] && exit 255\nfor arg in "$@"; do if [[ $arg == "cat out/EXIT_CODE" ]]; then echo {remote_code}; fi\n'
+               f'if [[ $arg == *--remove-now* ]]; then touch {tmp_path}/removed; fi; done\nexit 0\n',
         'rsync': 'exit 0\n',
         'sleep': 'exit 0\n',
     }

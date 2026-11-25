@@ -39,7 +39,15 @@ finish() {
     # Left running on purpose: say so only if a removal timer is really armed there.
     if "${SSH[@]}" "root@$HOST" 'grep -q "armed:" out/autostop.log'; then echo "pod left running; its own timer removes it (out/autostop.log)"
     else echo "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
-  elif "${SSH[@]}" "root@$HOST" 'bash pilot-repo/ops/remote_job.sh --remove-now'; then echo "pod removal accepted by RunPod; confirm in the console that it is gone"
+  elif "${SSH[@]}" "root@$HOST" 'bash pilot-repo/ops/remote_job.sh --remove-now'; then
+    # Accepted is not gone: the pod is gone when it stops answering.
+    GONE=0
+    for _ in $(seq 12); do
+      if ! "${SSH[@]}" "root@$HOST" true 2>/dev/null; then GONE=1; break; fi  # fallback-ok: a refused connection is the expected outcome being waited for, and its message is noise
+      sleep 5
+    done
+    if [[ $GONE == 1 ]]; then echo "pod removed: it no longer answers"
+    else echo "REMINDER: RunPod accepted the removal but the pod still answers after a minute. Check the console now"; code=97; fi
   else echo "REMINDER: could not remove the pod from here. Terminate it in the RunPod console now"; code=97; fi
   if [[ $COPIED == 0 && $code == 0 ]]; then code=96; fi
   exit "$code"

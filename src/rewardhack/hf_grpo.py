@@ -162,7 +162,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
                 tokens_per_second=generated/max(t_gen, 1e-9), completions_per_hour=len(rows)/max(t_gen+t_lean, 1e-9)*3600)
 
 
-def train(model, tokenizer, tasks, args, summary):
+def prepare_training(model, tokenizer, tasks, args, summary):
     import torch
     from datasets import Dataset
     from peft import LoraConfig
@@ -265,20 +265,31 @@ def train(model, tokenizer, tasks, args, summary):
     summary['trainer'] = {'lr_schedule': trainer.args.lr_scheduler_type, 'router_aux_loss_coef': trainer.router_aux_loss_coef,
                           'aux_loss_enabled': trainer.aux_loss_enabled,
                           'lora_target_modules': sorted({name.split('.')[-1] for name, module in trainer.model.named_modules() if hasattr(module, 'lora_A')})}
-    t0 = time.perf_counter()
-    try:
-        trainer.train()
-    finally:
-        # Paid for whether or not training finished: the per-step log, and what each step's time went on.
-        (args.out/'training-log.json').write_text(json.dumps(trainer.state.log_history, indent=1)+'\n')
-        (args.out/'step-seconds.json').write_text(json.dumps({k: timing[k] for k in ('rollout', 'lean', 'update')}, indent=1)+'\n')
-    summary.update(training_seconds=time.perf_counter()-t0, global_step=trainer.state.global_step, mixed_reward_groups=sum(groups), reward_groups=len(groups),
-                   adapter_max_abs_change=max(float((p.detach().cpu()-before[n]).abs().max()) for n, p in trainer.model.named_parameters() if n in before),
-                   mean_seconds={k: sum(timing[k])/max(len(timing[k]), 1) for k in ('rollout', 'lean', 'update')})
-    trainer.save_model(str(args.out/'adapter'))
-    sink.close()
-    steps.close()
-    return trainer.model
+    def fit():
+        t0 = time.perf_counter()
+        try:
+            trainer.train()
+        except BaseException:
+            # Whatever stopped training, the updates made so far were paid for.
+            trainer.save_model(str(args.out/'adapter-at-failure'))
+            raise
+        finally:
+            # Paid for whether or not training finished: the per-step log, and what each step's time went on.
+            (args.out/'training-log.json').write_text(json.dumps(trainer.state.log_history, indent=1)+'\n')
+            (args.out/'step-seconds.json').write_text(json.dumps({k: timing[k] for k in ('rollout', 'lean', 'update')}, indent=1)+'\n')
+        summary.update(training_seconds=time.perf_counter()-t0, global_step=trainer.state.global_step, mixed_reward_groups=sum(groups), reward_groups=len(groups),
+                       adapter_max_abs_change=max(float((p.detach().cpu()-before[n]).abs().max()) for n, p in trainer.model.named_parameters() if n in before),
+                       mean_seconds={k: sum(timing[k])/max(len(timing[k]), 1) for k in ('rollout', 'lean', 'update')})
+        trainer.save_model(str(args.out/'adapter'))
+        sink.close()
+        steps.close()
+        return trainer.model
+    return fit
+
+
+def train(model, tokenizer, tasks, args, summary):
+    """Build the trainer and run it. `run` builds it earlier, before the paid before-evaluation."""
+    return prepare_training(model, tokenizer, tasks, args, summary)()
 
 
 def run(args):
@@ -325,9 +336,12 @@ def run(args):
             print('probe undecided rate', summary['probe']['unverified_rate'], 'check the verifier:', summary['probe']['check_verifier'], flush=True)
             summary['status'] = 'completed'
             return
+        # Built before the before-evaluation is paid for: a trainer the libraries refuse to construct fails here, in seconds.
+        # The adapter starts as an exact no-op (its B matrices are zero), so the before-evaluation still measures the base policy.
+        fit = prepare_training(model, tokenizer, training, args, summary)
         summary['before'] = evaluate(model, tokenizer, evaluation, args, 'before')
         print('before', summary['before'], flush=True)
-        model = train(model, tokenizer, training, args, summary)
+        model = fit()
         # Stops between tasks if training ran into its reserve: a shorter after-evaluation is kept, a killed one loses its summary.
         summary['after'] = evaluate(model, tokenizer, evaluation, args, 'after', stop_at=hard_deadline-60)
         summary['status'] = 'completed'

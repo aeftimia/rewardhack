@@ -7,7 +7,8 @@ import requests
 from .budget import nonnegative_finite
 
 
-def call(args, messages):
+def call(args, messages, timeout=600):
+    """`timeout` is per attempt, of four: a caller with a rented GPU waiting on the answer passes a short one."""
     body = {'model': args.model, 'messages': messages, 'max_completion_tokens': args.max_tokens}
     if args.reasoning_effort:
         body['reasoning_effort'] = args.reasoning_effort
@@ -17,7 +18,7 @@ def call(args, messages):
     last = 'no attempt'
     for attempt in range(4):
         try:
-            response = requests.post(args.base_url.rstrip('/')+'/chat/completions', json=body, timeout=600,
+            response = requests.post(args.base_url.rstrip('/')+'/chat/completions', json=body, timeout=timeout,
                                      headers={'Authorization': 'Bearer '+os.environ[args.key_env]})
             if response.status_code == 429 or response.status_code >= 500:
                 last = f'HTTP {response.status_code}: {response.text[:300]}'
