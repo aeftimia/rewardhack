@@ -34,7 +34,7 @@ command -v timeout >/dev/null || { echo 'GNU timeout is required'; exit 2; }
 if [[ -n $POD_ID ]] && command -v runpodctl >/dev/null && runpodctl get pod "$POD_ID" > "$OUT/autostop.log" 2>&1; then
   AUTOSTOP=1
   # A relaunch on the same pod replaces the earlier job's timers; otherwise the old one would remove the pod mid-run.
-  pkill -f 'runpodctl remove pod' 2>/dev/null || true
+  pkill -f 'runpodctl remove pod'; [[ $? -le 1 ]] || { echo 'could not replace earlier removal timers' | tee -a "$OUT/autostop.log"; exit 3; }  # 1: none were running
   echo "$(date -u +%FT%TZ) armed: pod $POD_ID is removed at most $(($2+30+GRACE))s from now" >> "$OUT/autostop.log"
   remove_after "$(($2+30+GRACE))"
 elif [[ ${REQUIRE_AUTOSTOP:-0} == 1 ]]; then

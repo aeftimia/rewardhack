@@ -59,7 +59,7 @@ def load_model(args, summary):
     tokenizer.padding_side = 'left'
     if not tokenizer.chat_template and args.model.startswith('hf-internal-testing/'):
         tokenizer.chat_template = "{% for m in messages %}{{ m['role'] }}: {{ m['content'] }}\n{% endfor %}assistant:"  # CPU dry run only
-    kwargs = {'revision': args.revision, 'attn_implementation': 'sdpa'}
+    kwargs = {'revision': args.revision, 'attn_implementation': args.attn_implementation}
     cuda = torch.cuda.is_available()
     kwargs['dtype'] = torch.bfloat16 if cuda else torch.float32
     if args.quant == '8bit':
@@ -70,15 +70,10 @@ def load_model(args, summary):
     if cuda:
         kwargs['device_map'] = 'auto'
     t0 = time.perf_counter()
-    try:
-        model = AutoModelForCausalLM.from_pretrained(args.model, **kwargs)
-    except ValueError as error:
-        # Some architectures (gpt-oss in transformers 5.17) have no SDPA path and say so at construction.
-        if 'attention implementation' not in str(error):
-            raise
-        kwargs['attn_implementation'] = 'eager'
-        model = AutoModelForCausalLM.from_pretrained(args.model, **kwargs)
-    summary['attn_implementation'] = kwargs['attn_implementation']
+    # No retry with another attention path: an unsupported one raises here (gpt-oss in transformers 5.17 has
+    # only `eager`), and the caller names the right one. Eager attention costs memory, so it must be a decision.
+    model = AutoModelForCausalLM.from_pretrained(args.model, **kwargs)
+    summary['attn_implementation'] = args.attn_implementation
     if args.quant != 'none' and args.mode == 'train':
         from peft import prepare_model_for_kbit_training
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
@@ -266,9 +261,8 @@ def run(args):
     args.train_deadline = time.monotonic()+args.max_seconds-args.final_eval_seconds
     summary = {'status': 'running', 'report_mode': getattr(args, 'report_mode', 'prose'), 'argv': sys.argv[1:],
                # What the transcript export needs to rebuild each prompt and label the policy; argv alone omits defaults.
-               'model': getattr(args, 'model', None), 'revision': getattr(args, 'revision', None),
-               'prompt_variant': getattr(args, 'prompt_variant', None), 'adapter': str(args.adapter) if getattr(args, 'adapter', None) else None,
-               'template_kwargs': template_kwargs(args) if hasattr(args, 'thinking') and hasattr(args, 'reasoning_effort') else None, 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
+               'model': args.model, 'revision': args.revision, 'prompt_variant': args.prompt_variant,
+               'adapter': str(args.adapter) if args.adapter else None, 'template_kwargs': template_kwargs(args), 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
                'script_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(__file__).parent.glob('*.py')}}
 
     def hard_stop(*unused):

@@ -95,7 +95,7 @@ fi
 
 # Questions 2 and 3. Low reasoning effort: the unprompted base rate (12/60) was measured there, and high
 # effort truncated 89/120 at 8k tokens. Hard task set, neutral prompt, no hint: unseeded exploration.
-BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" --reasoning-effort low --thinking unsupported --taskset hard
+BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" --reasoning-effort low --thinking unsupported --taskset hard --attn-implementation eager
       --max-completion-length 2048 --num-generations 8 --eval-limit "${SMOKE_EVAL_LIMIT:-12}" --eval-samples 2 --save-every 8 --stop-no-variation 99
       --arm report_correct --penalty 0.5 "${JUDGE_ARGS[@]}")
 # Exploration is measured before updates, on stratified training groups with eight samples each.

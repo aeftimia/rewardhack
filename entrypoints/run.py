@@ -21,6 +21,8 @@ def main():
     ap.add_argument('--model', default='Qwen/Qwen3-8B')
     ap.add_argument('--revision', default='b968826d9c46dd6066d109eabc6255188de91218')
     ap.add_argument('--quant', choices=['none', '8bit', '4bit'], default='none')
+    ap.add_argument('--attn-implementation', choices=['sdpa', 'eager'], default='sdpa',
+                    help='attention path to load the model with; gpt-oss supports only eager, which holds batch x heads x length^2 per layer')
     ap.add_argument('--thinking', choices=['on', 'off', 'unsupported'], default='off')
     ap.add_argument('--reasoning-effort', choices=['low', 'medium', 'high'], help='gpt-oss: passed to the chat template instead of --thinking')
     ap.add_argument('--arm', choices=ARMS, default='baseline')
