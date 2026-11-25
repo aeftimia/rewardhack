@@ -5,6 +5,7 @@ import subprocess
 import time
 
 import pytest
+from conftest import driver_script
 
 from rewardhack import outcomes, probe_rules
 
@@ -37,7 +38,7 @@ exit 0
 '''
     env = dict(os.environ, PATH=write_stubs(tmp_path, ssh=ssh, rsync=rsync, sleep='exit 0\n'), JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', KEEP_POD='1' if keep_pod else '0',
                LEAN_ISOLATION='none')
-    command = ['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'results'), '240']
+    command = ['bash', driver_script(tmp_path), 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'results'), '240']
     if close_stdout:
         command = ['bash', '-c', 'exec "$@" >&-', 'driver']+command
     result = subprocess.run(command, env=env, capture_output=True, text=True)
@@ -148,7 +149,7 @@ def refused(tmp_path, results, **env):
     calls.write_text('')
     path = write_stubs(tmp_path, ssh=f'echo ssh >> {calls}\n', rsync=f'echo rsync >> {calls}\n', sleep='exit 0\n')
     base = dict(os.environ, PATH=path, JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none')
-    result = subprocess.run(['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', results, '240'],
+    result = subprocess.run(['bash', driver_script(tmp_path), 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', results, '240'],
                             env=dict(base, **env), capture_output=True, text=True)
     return result.returncode, result.stdout, calls.read_text()
 
@@ -191,7 +192,7 @@ def test_a_pod_judge_run_needs_its_longer_deadline(tmp_path):
     path = write_stubs(tmp_path, ssh=f'echo ssh >> {calls}\n', rsync=f'echo rsync >> {calls}\n', sleep='exit 0\n')
     env = dict(os.environ, PATH=path, JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none', DRIVE_CHECK_ONLY='1')
     def check(minutes):
-        return subprocess.run(['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'r'), minutes],
+        return subprocess.run(['bash', driver_script(tmp_path), 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'r'), minutes],
                               env=env, capture_output=True, text=True)
     short = check('170')
     assert short.returncode == 2 and 'at least 240' in short.stdout and calls.read_text() == ''

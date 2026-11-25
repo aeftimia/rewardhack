@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import driver_script
 
 from rewardhack.judge import validate
 from rewardhack.judge_holdout import acceptance, check_frozen, check_rows, freeze, load_review, prepare
@@ -198,7 +199,7 @@ def test_driver_returns_remote_status(tmp_path, remote_code):
         path.write_text('#!/bin/bash\n'+body)
         path.chmod(0o755)
     env = dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'], JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none')
-    result = subprocess.run(['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh',
+    result = subprocess.run(['bash', driver_script(tmp_path), 'example.invalid', '22', 'ops/remote_runpod_smoke.sh',
                              str(tmp_path/'results'), '240'], env=env, capture_output=True, text=True)
     assert result.returncode == remote_code, result.stderr
 

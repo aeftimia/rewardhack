@@ -3,6 +3,7 @@ import os
 import subprocess
 
 import pytest
+from conftest import driver_script
 
 DROPPED = ('LEAN_ISOLATION', 'REQUIRE_AUTOSTOP', 'AUTOSTOP_GRACE_SECONDS', 'KEEP_POD')
 
@@ -21,7 +22,7 @@ def clean_env(tmp_path, **settings):
 
 
 def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', **settings):
-    result = subprocess.run(['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', remote, str(tmp_path/'results'), '240'],  # 240: the least the smoke script accepts with the judge served on the pod
+    result = subprocess.run(['bash', driver_script(tmp_path), 'example.invalid', '22', remote, str(tmp_path/'results'), '240'],  # 240: the least the smoke script accepts with the judge served on the pod
                             env=clean_env(tmp_path, **settings), capture_output=True, text=True)
     return result.returncode, result.stdout+result.stderr, (tmp_path/'ssh-calls').exists()
 

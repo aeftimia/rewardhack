@@ -185,10 +185,9 @@ def test_the_driver_refuses_to_start_unless_the_launch_record_covers_it(project)
     assert code == 2 and 'already started a launch' in said and not reached
 
 
-def test_only_a_host_that_cannot_exist_skips_the_launch_check(project):
-    """The driver's own tests run it against example.invalid with ssh stubbed; a reserved name that never resolves reaches no pod."""
-    assert drive(project, host='example.invalid')[2]
-    for host in ('example.invalid.com', 'invalid', '192.0.2.1'):
+def test_no_host_skips_the_launch_check(project):
+    """The driver's tests use example.invalid with a stubbed gate.sh; the real driver gives that name no pass."""
+    for host in ('example.invalid', 'example.invalid.com', 'invalid', '192.0.2.1'):
         code, said, reached = drive(project, host=host)
         assert code == 2 and 'no launch record' in said and not reached, host
 
