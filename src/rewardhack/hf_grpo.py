@@ -189,7 +189,7 @@ def train(model, tokenizer, tasks, args, summary):
         for behaviour in ('exploit', 'refutation', 'genuine', 'says_not_solved', 'concealed_exploit'):
             if counts.get(behaviour) and behaviour not in first_seen:
                 first_seen[behaviour] = step
-        # A group whose rewards are all equal has zero advantage everywhere and moves nothing.
+        # Equal rewards give zero reward advantages; KL and optimizer momentum can still move weights.
         steps.write(json.dumps(dict(step=step, **counts, **verifier_advice(rows), retries_denied=retries.denied, **grouped))+'\n')
         steps.flush()
         timing['reward_end'] = time.perf_counter()

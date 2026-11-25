@@ -159,7 +159,9 @@ runner. The lock is held for one short update; a claim that finds it held waits 
 instead of reporting a refusal, so launches made in parallel are served in turn. Positive costs round up to a microdollar using decimal price arithmetic, so repeated tiny
 requests cannot become free claims; insignificant binary representation noise near a positive
 ledger amount is normalized. The reservation and any launch cap pass through the same rounding, so a
-claim equal to its limit fits. A $100 reservation can authorize $60 then $40, but not $60 twice. A successful claim remains
+claim equal to its limit fits. Plans, stage reservations, cumulative pilot costs and pilot caps use
+the same rounding, applied to each stage before summing, so tiny stages cannot become free commitments.
+A $100 reservation can authorize $60 then $40, but not $60 twice. A successful claim remains
 consumed after interruption, cancellation or a later refund; no automatic credit is issued.
 The full reservation still counts toward grant caps for other consumers. Recorded charges can
 therefore conservatively block further claims until separately reconciled; claims never bypass an

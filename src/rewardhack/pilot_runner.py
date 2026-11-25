@@ -24,8 +24,8 @@ _STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT)
 
 
 def _usd(value):
-    """Dollar sums at the ledger's precision, so stages that fill a cap exactly are not refused by binary rounding."""
-    return round(value, 6)
+    """Use the same conservative ledger precision as consumable launch claims."""
+    return budget.claim_cost(0, 0, value)
 
 
 def _hash_file(path):
@@ -50,10 +50,11 @@ def _reserve(spec, out, stage, spec_hash):
         if key in keys:
             raise ValueError('stage already reserved without a completed receipt; manual reconciliation required')
         rows = budget.read_ledger(ledger, include_reservations=False) + reservations
-        _, problems = budget.check(rows, spec['budget']['line'], 0, 0, stage['max_usd'], stage['max_usd'])
+        commitment = _usd(stage['max_usd'])
+        _, problems = budget.check(rows, spec['budget']['line'], 0, 0, commitment, commitment)
         if problems:
             return None, problems
-        reservations.append(dict(key=key, line=spec['budget']['line'], total_usd=stage['max_usd'],
+        reservations.append(dict(key=key, line=spec['budget']['line'], total_usd=commitment,
                                  status='pilot worst-case reservation'))
         _write(registry, reservations, exclusive=False)
     return key, []
@@ -146,6 +147,9 @@ def _analyze(spec, paths, seconds):
         # If the parent is killed while it waits, nobody is left to enforce the deadline, and this child
         # holds the parent's pilot lock open: it ends itself shortly after the deadline regardless.
         signal.signal(signal.SIGALRM, signal.SIG_DFL)
+        # Fork inherits the caller's signal mask. The watchdog must remain deliverable even if
+        # the caller blocks alarms; changing only this child's mask leaves the caller untouched.
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGALRM])
         signal.setitimer(signal.ITIMER_REAL, seconds+5)
         try:
             message = ('ok', pilot.decide(spec, pilot.read_evidence(spec, paths)))
@@ -200,7 +204,7 @@ def plan(spec_path):
     _verify_inputs(spec, spec_path)
     return dict(status='planned', spec_hash=pilot.digest(spec), id=spec['id'], budget=spec['budget'],
                 resource=spec['resource'], stages=spec['stages'],
-                planned_worst_usd=_usd(sum(s['max_usd'] for s in spec['stages'])),
+                planned_worst_usd=_usd(sum(_usd(s['max_usd']) for s in spec['stages'])),
                 planned_max_seconds=sum(s['max_seconds'] for s in spec['stages']),
                 billing_scope='Subprocesses only. External resources require their own teardown and billing cap.')
 
@@ -285,9 +289,9 @@ def run(spec_path, out, *, execute=False):
             reservation = reservations.get(receipt['reservation_key'])
             expected_key = pilot.digest({'out': str(out), 'spec_hash': spec_hash, 'stage_id': stage['id']})
             if (receipt['reservation_key'] != expected_key or reservation is None
-                    or reservation['total_usd'] != stage['max_usd'] or reservation['line'] != spec['budget']['line']):
+                    or reservation['total_usd'] != _usd(stage['max_usd']) or reservation['line'] != spec['budget']['line']):
                 raise ValueError('stage reservation is missing or changed in shared registry')
-            charged = _usd(charged + stage['max_usd'])
+            charged = _usd(charged + _usd(stage['max_usd']))
             if charged > _usd(spec['budget']['max_usd']):
                 raise ValueError('stage receipts exceed the frozen pilot budget')
             if not result_path.exists():
@@ -343,7 +347,7 @@ def run(spec_path, out, *, execute=False):
                 raise ValueError('pilot source code changed during execution')
             _verify_inputs(spec, spec_path)
             elapsed = elapsed_time()
-            if _usd(charged + stage['max_usd']) > _usd(spec['budget']['max_usd']):
+            if _usd(charged + _usd(stage['max_usd'])) > _usd(spec['budget']['max_usd']):
                 return finish('budget_cap', next_stage=stage['id'])
             if elapsed + stage['max_seconds'] > spec['budget']['max_seconds']:
                 return finish('time_cap', next_stage=stage['id'])
@@ -354,7 +358,7 @@ def run(spec_path, out, *, execute=False):
                 return finish('grant_budget_cap', problems=problems, next_stage=stage['id'])
             prefix = out/'stages'/f'{index:04d}'
             _write(prefix.with_suffix('.started.json'), dict(stage=stage, spec_hash=spec_hash, reservation_key=key))
-            charged = _usd(charged + stage['max_usd'])
+            charged = _usd(charged + _usd(stage['max_usd']))
             try:
                 _verify_inputs(spec, spec_path)
                 if _sources() != sources:

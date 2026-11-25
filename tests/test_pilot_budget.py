@@ -96,6 +96,18 @@ def test_missing_csv_does_not_hide_an_existing_reservation(tmp_path):
     assert budget.spent(budget.read_ledger(ledger), line='storage') == 100
 
 
+def test_fractional_reservations_consume_shared_grant_capacity(tmp_path):
+    ledger = registry(tmp_path, [])
+    ledger.write_text('line,total_usd,status\nstorage,99.999999,completed\n')
+    spec = {'budget': {'ledger': str(ledger), 'line': 'storage'}}
+    key, problems = pilot_runner._reserve(spec, tmp_path/'one', {'id': 'one', 'max_usd': .00000049}, 'hash')
+    assert key and not problems
+    assert budget.read_reservations(ledger)[0]['total_usd'] == .000001
+    key, problems = pilot_runner._reserve(spec, tmp_path/'two', {'id': 'two', 'max_usd': .00000049}, 'hash')
+    assert key is None and problems
+    assert len(budget.read_reservations(ledger)) == 1
+
+
 def test_reservations_cannot_mask_refunds_exceeding_actual_charges(tmp_path):
     ledger = registry(tmp_path, [reservation(line='api', total=100)])
     ledger.write_text('line,total_usd,status\napi,10,completed\napi,-20,refund excess\n')

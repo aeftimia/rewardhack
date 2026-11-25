@@ -6,6 +6,7 @@ line also carries the two outcome axes the reading gives us (cheat × disclosure
 side comes from Lean and only the disclosure side from reading. Entrypoint: `entrypoints/export_transcripts.py`.
 """
 import hashlib
+import math
 import os
 import tempfile
 from contextlib import contextmanager
@@ -83,7 +84,7 @@ def report_mode(row, summary):
 
 
 def update_history(run_dir):
-    """Both trainers record which attempted iterations had reward variation, and so really updated the model."""
+    """MLX records whether it called the optimizer; HF reward batches do not establish updates."""
     path = run_dir/'steps.jsonl'
     if not path.exists():
         return {}
@@ -93,12 +94,16 @@ def update_history(run_dir):
             continue
         row = json.loads(line)
         step, mixed = row.get('step'), row.get('mixed')
-        if mixed is None and type(row.get('mixed_groups')) is int:
-            mixed = row['mixed_groups'] > 0  # HF counts the groups with a nonzero advantage in each step
         if type(step) is not int or step < 1 or step in history or type(mixed) is not bool:
             return {}  # corrupt history cannot establish a generation checkpoint
         history[step] = mixed
     return history
+
+
+def parameter_change(summary):
+    """Measured final parameter change, if the HF trainer recorded a valid measurement."""
+    value = summary.get('adapter_max_abs_change')
+    return value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
 
 
 def update_count(history, summary, row, stream):
@@ -106,13 +111,15 @@ def update_count(history, summary, row, stream):
     if type(stream) is int:
         return stream
     if stream == 'hf_after':
-        # `global_step` counts attempted steps. A run stopped for no reward variation attempted many and updated nothing.
+        # HF always calls its optimizer: Adam momentum and KL can move parameters
+        # even without reward variation. Neither attempted nor mixed steps count
+        # actual parameter changes. Only a measured unchanged endpoint proves zero.
         attempted = summary.get('global_step')
         if type(attempted) is not int or attempted < 0:
             return None
-        if attempted == 0 or summary.get('mixed_reward_groups') == 0:
+        if attempted == 0 or parameter_change(summary) == 0:
             return 0
-        return sum(history.values()) if set(history) == set(range(1, attempted+1)) else None
+        return None
     if stream == 'hf_training':
         return None  # HF's rollout writer does not identify the generating checkpoint.
     step = row.get('step') if stream == 'mlx_training' else stream[1]
@@ -256,7 +263,8 @@ def export(results, out, tasks=None):
                     # the total is unknown there, and the count within this run is kept beside it.
                     run_updates = update_count(history, summary, row, updates)
                     policy_updates = None if meta['adapter'] else run_updates
-                    trained = bool(meta['adapter']) or bool(policy_updates)
+                    changed = parameter_change(summary) if updates == 'hf_after' else None
+                    trained = bool(meta['adapter']) or bool(policy_updates) or (changed is not None and changed > 0)
                     provenance = ('rl_induced' if trained else 'training_unknown' if policy_updates is None
                                   else 'hinted' if meta['variant'] == 'hint' else 'natural')
                     reading = by_content.get(content_key(run, row['task_id'], row['established'], row['body'], row['report']))

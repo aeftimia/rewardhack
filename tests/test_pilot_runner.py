@@ -432,6 +432,34 @@ def test_stop_signal_while_the_stage_is_started_or_cleaned_up_still_kills_it(tmp
     assert marker.exists() == (moment == 'cleaning')  # mid-start: killed before it wrote; mid-cleanup: it had finished
 
 
+@pytest.mark.parametrize('cost,cap,count', [(.00000049, .000001, 1), (10/3, 10, 2)])
+def test_fractional_stage_commitments_bound_claims_and_replay(tmp_path, cheap_decision, cost, cap, count):
+    from rewardhack import budget
+    path, spec = fixture_spec(tmp_path, cost=cost, cap=cap)
+    producer = tmp_path/'producer.py'
+    producer.write_text(producer.read_text()+'''
+import os
+from rewardhack.budget import claim
+stage=next(stage for stage in spec['stages'] if stage['checkpoint']==point)
+assert not claim(spec['budget']['ledger'],os.environ['REWARDHACK_PILOT_RESERVATION'],
+                 spec['budget']['line'],0,0,stage['max_usd'])['problems']
+''')
+    for stage in spec['stages']:
+        stage['inputs'] = {str(producer): hashlib.sha256(producer.read_bytes()).hexdigest()}
+    path.write_text(json.dumps(spec))
+    unit_cost = budget.claim_cost(0, 0, cost)
+    assert runner.plan(path)['planned_worst_usd'] == round(3*unit_cost, 6)
+    out = tmp_path/'out'
+    result = runner.run(path, out, execute=True)
+    assert result['reason'] == 'budget_cap'
+    assert result['reserved_usd'] == round(count*unit_cost, 6)
+    records = budget.read_reservations(spec['budget']['ledger'])
+    assert len(records) == count
+    assert all(row['total_usd'] == row['approved_usd'] == unit_cost for row in records)
+    assert not Path(spec['stages'][count]['evidence']).exists()
+    assert runner.run(path, out, execute=True) == result
+
+
 @pytest.mark.parametrize('cap', [.1234567, 1.15*100])
 def test_a_stage_equal_to_a_cap_that_rounds_up_runs_and_resumes(tmp_path, cheap_decision, cap):
     path, spec = fixture_spec(tmp_path, cost=cap, cap=cap)
@@ -587,13 +615,29 @@ def test_stage_reservation_waits_for_a_registry_held_by_a_claim(tmp_path):
     assert key and not problems and time.monotonic()-started>=.4
 
 
-def test_analysis_child_ends_itself_if_the_runner_is_killed_while_waiting(tmp_path):
+def test_analysis_keeps_the_callers_blocked_alarm_mask(monkeypatch):
+    monkeypatch.setattr(pilot,'read_evidence',lambda *a:[])
+    monkeypatch.setattr(pilot,'decide',lambda *a:dict(stop=False))
+    original=signal.pthread_sigmask(signal.SIG_BLOCK,[signal.SIGALRM])
+    try:
+        assert runner._analyze({},[],5)==dict(stop=False)
+        assert signal.SIGALRM in signal.pthread_sigmask(signal.SIG_BLOCK,[])
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK,original)
+
+
+@pytest.mark.parametrize('blocked_alarm',[False,True])
+def test_analysis_child_ends_itself_if_the_runner_is_killed_while_waiting(tmp_path,blocked_alarm):
+    from rewardhack.state_files import file_lock
     marker=tmp_path/'child'
-    code=('import os,sys,time; from pathlib import Path; from rewardhack import pilot, pilot_runner as r\n'
+    lock=tmp_path/'pilot.lock'
+    code=('import os,sys,time,signal; from pathlib import Path; from rewardhack import pilot, pilot_runner as r\n'
+          'from rewardhack.state_files import file_lock\n'
+          f'if {blocked_alarm!r}: signal.pthread_sigmask(signal.SIG_BLOCK,[signal.SIGALRM])\n'
           'pilot.read_evidence=lambda spec,paths:paths\n'
           f'def decide(spec,rows):\n Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(60)\n'
           'pilot.decide=decide\n'
-          'r._analyze({},[],.5)')
+          f'with file_lock({str(lock)!r}): r._analyze({{}},[],.5)')
     env=dict(os.environ,PYTHONPATH=str(Path(runner.__file__).parents[1]))
     parent=subprocess.Popen([sys.executable,'-c',code],env=env)
     deadline=time.monotonic()+10
@@ -606,7 +650,16 @@ def test_analysis_child_ends_itself_if_the_runner_is_killed_while_waiting(tmp_pa
             os.kill(child,0); return True
         except ProcessLookupError:
             return False
-    deadline=time.monotonic()+12
-    while alive() and time.monotonic()<deadline:
-        time.sleep(.1)
-    assert not alive()
+    try:
+        with pytest.raises(ValueError,match='another process holds'):
+            with file_lock(lock):
+                pass  # the orphan still holds its inherited lock until the watchdog fires
+        deadline=time.monotonic()+12
+        while alive() and time.monotonic()<deadline:
+            time.sleep(.1)
+        assert not alive()
+        with file_lock(lock):
+            pass  # a new runner can acquire the lock after the orphan exits
+    finally:
+        if alive():
+            os.kill(child,signal.SIGKILL)

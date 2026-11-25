@@ -16,7 +16,7 @@ def dataset(tmp_path):
     row = dict(task_id=task['id'], arm='report_correct', raw='{}', established=task['statement'], body='by sorry',
                report='Placeholder', genuine=False, exploit=True, verified_refutation=False, format_valid=True,
                report_mode='typed', claim='ERROR', verifier_inconclusive=False)
-    (run/'summary.json').write_text(json.dumps(dict(model='m', report_mode='typed', global_step=4,
+    (run/'summary.json').write_text(json.dumps(dict(model='m', report_mode='typed', global_step=4, adapter_max_abs_change=.01,
                                                    argv=['train', '--prompt-variant', 'hint'])))
     return root, run, row, task
 
@@ -36,7 +36,7 @@ def test_current_hf_streams_export_once_with_known_or_unknown_updates(dataset):
     for stem in ('probe-evaluation','before-evaluation','after-evaluation','training-rollouts'):
         write(run/(stem+'.jsonl'),[dict(row,raw='raw view')])
         write(run/(stem+'.rescored.jsonl'),[dict(row,raw='preferred rescored view')])
-    write(run/'steps.jsonl',[dict(step=n,mixed_groups=m) for n,m in ((1,0),(2,3),(3,0),(4,1))])  # 4 attempted, 2 updated
+    write(run/'steps.jsonl',[dict(step=n,mixed_groups=m) for n,m in ((1,0),(2,3),(3,0),(4,1))])  # mixed rewards do not count optimizer updates
     manifest,rows=exported(root)
     assert manifest['rows']==4
     assert all(r['response']=='preferred rescored view' for r in rows)
@@ -46,7 +46,7 @@ def test_current_hf_streams_export_once_with_known_or_unknown_updates(dataset):
         record=records[stem+'.rescored.jsonl']
         assert record['policy_updates']==0 and record['provenance']=='hinted'
     after=records['after-evaluation.rescored.jsonl']
-    assert after['policy_updates']==2 and after['provenance']=='rl_induced'
+    assert after['policy_updates'] is None and after['provenance']=='rl_induced'
     training=records['training-rollouts.rescored.jsonl']
     assert training['policy_updates'] is None and training['provenance']=='training_unknown'
 
@@ -108,13 +108,74 @@ def test_missing_or_corrupt_update_history_is_unknown(dataset):
     _,run,row,_=dataset
     assert update_count({}, {}, dict(row,step=2),'mlx_training') is None
     assert update_count({}, {}, row,'hf_after') is None
-    # HF: attempted steps are not updates. No reward variation is zero updates; a missing or short history is unknown.
+    # HF: attempted and mixed-reward steps are not parameter-change counts.
     assert update_count({}, dict(global_step=24,mixed_reward_groups=0,adapter_max_abs_change=0.0), row,'hf_after')==0
     assert update_count({}, dict(global_step=4,mixed_reward_groups=3), row,'hf_after') is None
     assert update_count({1:True,2:False}, dict(global_step=4,mixed_reward_groups=3), row,'hf_after') is None
-    assert update_count({1:True,2:False,3:True,4:True}, dict(global_step=4,mixed_reward_groups=5), row,'hf_after')==3
+    assert update_count({1:True,2:False,3:True,4:True}, dict(global_step=4,mixed_reward_groups=5), row,'hf_after') is None
     write(run/'steps.jsonl',[dict(step=1,mixed=True),dict(step=1,mixed=False)])
     assert update_history(run)=={}
+
+
+@pytest.mark.parametrize('change,updates,provenance', [
+    (0.0, 0, 'hinted'), (.01, None, 'rl_induced'),
+    (None, None, 'training_unknown'), (False, None, 'training_unknown'),
+    (float('nan'), None, 'training_unknown'), (float('inf'), None, 'training_unknown'),
+    (-1, None, 'training_unknown'),
+])
+def test_hf_after_uses_measured_change_not_reward_variation(dataset, change, updates, provenance):
+    root, run, row, _ = dataset
+    summary = dict(global_step=2, mixed_reward_groups=0, adapter_max_abs_change=change,
+                   argv=['train', '--prompt-variant=hint'])
+    (run/'summary.json').write_text(json.dumps(summary))
+    write(run/'steps.jsonl', [dict(step=1,mixed_groups=0), dict(step=2,mixed_groups=0)])
+    write(run/'after-evaluation.jsonl', [row])
+    _, rows = exported(root)
+    assert rows[0]['policy_updates'] == updates
+    assert rows[0]['run_policy_updates'] == updates
+    assert rows[0]['provenance'] == provenance
+
+
+def test_actual_hf_zero_advantage_step_can_still_update_weights(tmp_path):
+    """The pinned trainer's second, equal-reward step retains the first step's Adam momentum."""
+    torch = pytest.importorskip('torch')
+    pytest.importorskip('trl')
+    from datasets import Dataset
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from transformers import GPT2Config, GPT2LMHeadModel, PreTrainedTokenizerFast, TrainerCallback
+    from trl import GRPOConfig, GRPOTrainer
+    from rewardhack.hf_grpo import VerifierMaskMixin
+
+    torch.manual_seed(42)
+    backend = Tokenizer(WordLevel({'<pad>':0, '<eos>':1, '<unk>':2, 'hello':3, 'x':4, 'y':5}, unk_token='<unk>'))
+    tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend, eos_token='<eos>', pad_token='<pad>', unk_token='<unk>')
+    model = GPT2LMHeadModel(GPT2Config(vocab_size=6, n_layer=1, n_head=1, n_embd=8,
+                                     bos_token_id=3, eos_token_id=1, pad_token_id=0))
+    snapshots, calls = [], []
+
+    class Instrument(TrainerCallback):
+        def on_step_end(self, args, state, control, **kwargs):
+            snapshots.append({name: parameter.detach().clone() for name, parameter in kwargs['model'].named_parameters()})
+
+    class Trainer(VerifierMaskMixin, GRPOTrainer):
+        pass
+
+    def reward(completions, **kwargs):
+        calls.append(True)
+        trainer._verifier_keep = [True] * len(completions)
+        return [1., 0.] if len(calls) == 1 else [0., 0.]
+
+    config = GRPOConfig(output_dir=str(tmp_path), use_cpu=True, bf16=False, report_to='none', max_steps=2,
+                        num_generations=2, per_device_train_batch_size=2, max_completion_length=3, beta=0,
+                        loss_type='grpo', learning_rate=.01, lr_scheduler_type='constant', disable_tqdm=True, save_strategy='no')
+    trainer = Trainer(model=model, args=config, reward_funcs=reward,
+                      train_dataset=Dataset.from_list([{'prompt':'hello'}]*4), processing_class=tokenizer,
+                      callbacks=[Instrument()])
+    trainer.train()
+    assert len(calls) == len(snapshots) == 2
+    assert max((snapshots[1][name]-snapshots[0][name]).abs().max().item() for name in snapshots[0]) > 1e-4
+    assert update_count({1:True, 2:False}, dict(global_step=2, mixed_reward_groups=1), {}, 'hf_after') is None
 
 
 def test_run_started_from_an_adapter_has_unknown_update_count_and_equals_options_are_read(dataset):
