@@ -5,10 +5,13 @@ mixture of Gaussian regressions allows flat, improving, declining and delayed
 trajectories. Shared random intercepts and slopes correlate checkpoints from the same seed.
 Unknown endpoint dependence is handled with probability bounds, not multiplication.
 This is an approximate Gaussian model of effects, not a universal RL scaling law.
+Everything is closed-form Gaussian algebra: no optimiser, grid search or quadrature.
 """
 import math
-from collections import defaultdict
 from itertools import product
+
+import numpy as np
+from scipy import linalg, special, stats
 
 
 def _number(value, name, *, positive=False, nonnegative=False):
@@ -19,127 +22,140 @@ def _number(value, name, *, positive=False, nonnegative=False):
     return float(value)
 
 
+# Curve shapes b(x) over the compute fraction x in [0, 1]; each starts at b(0) = 0.
+BASES = {
+    'flat': lambda x, knee: 0.0,
+    'linear': lambda x, knee: x,
+    'saturating': lambda x, knee: -math.expm1(-4*x),
+    'delayed': lambda x, knee: float(special.expit(12*(x-knee)) - special.expit(-12*knee)),
+}
+
+
 def _basis(kind, x, knee=None):
-    if kind == 'flat':
-        return 0.0
-    if kind == 'linear':
-        return x
-    if kind == 'saturating':
-        return -math.expm1(-4*x)
-    if kind == 'delayed':
-        return 1/(1+math.exp(-12*(x-knee))) - 1/(1+math.exp(12*knee))
-    raise ValueError(f'unknown curve shape {kind!r}')
+    if kind not in BASES:
+        raise ValueError(f'unknown curve shape {kind!r}')
+    return BASES[kind](x, knee)
+
+
+def _cholesky(matrix, name):
+    """Lower Cholesky factor of a symmetric matrix; nonfinite or not positive definite is a ValueError."""
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError(f'nonfinite {name}')
+    try:
+        return linalg.cho_factor(matrix, lower=True, check_finite=False)
+    except linalg.LinAlgError as error:
+        raise ValueError(f'{name} is not positive definite') from error
 
 
 def _fit(observations, prior_scale, noise_floor, seed_sd):
     """Integrate proper Normal coefficients and correlated seed trajectories exactly.
 
-`observations` contains (seed, basis, measured effect, standard error). Within a
-    seed, V = diag(se**2 + noise_floor**2) + seed_sd**2 * (11' + xx').
-    A two-dimensional Woodbury update integrates both a random intercept and a
-    random slope, preserving dependence without a dense checkpoint matrix.
-"""
+    `observations` contains (seed, basis, measured effect, standard error). With
+    design X = [1, x] and coefficients β ~ N(0, prior_scale² I), each seed adds its
+    own random intercept and slope with sd seed_sd, so the observations have covariance
+
+        V = diag(se² + noise_floor²) + seed_sd² (XXᵀ within a seed),
+        K = V + prior_scale² XXᵀ          (y with β integrated out).
+
+    Posterior of β: precision P = I/prior_scale² + XᵀV⁻¹X, covariance P⁻¹, mean P⁻¹XᵀV⁻¹y.
+    This precision form keeps its digits when the data are informative; the equivalent
+    prior_scale²I − prior_scale⁴XᵀK⁻¹X subtracts two nearly equal matrices.
+    Log evidence is log N(y; 0, K). For a joint Normal the exact leave-one-out
+    z-score is (K⁻¹y)ᵢ / sqrt((K⁻¹)ᵢᵢ).
+    """
     prior_scale = _number(prior_scale, 'prior scale', positive=True)
     noise_floor = _number(noise_floor, 'noise floor', positive=True)
     seed_sd = _number(seed_sd, 'seed sd', nonnegative=True)
-    grouped = defaultdict(list)
-    for seed, x, y, se in observations:
-        grouped[seed].append((_number(x, 'basis'), _number(y, 'effect'),
-                              _number(se, 'standard error', nonnegative=True)))
     if not observations:
         raise ValueError('the learning curve needs observations')
-    xx00 = xx01 = xx11 = xy0 = xy1 = yy = logdet = 0.0
-    predictive_terms = []
-    tau2 = seed_sd**2
-    for seed in sorted(grouped):
-        group = grouped[seed]
-        weighted = [(1/(se*se+noise_floor*noise_floor), x, y) for x, y, se in group]
-        sw = math.fsum(w for w, x, y in weighted)
-        sx = math.fsum(w*x for w, x, y in weighted)
-        sy = math.fsum(w*y for w, x, y in weighted)
-        sxx = math.fsum(w*x*x for w, x, y in weighted)
-        sxy = math.fsum(w*x*y for w, x, y in weighted)
-        # det(A) for A = X'D^-1X is nonnegative; roundoff can put it just below zero.
-        determinant_a = max(0.0, sw*sxx-sx*sx)
-        determinant_q = 1+tau2*(sw+sxx)+tau2*tau2*determinant_a
-        # (I + tau² A)^-1 A, evaluated without subtracting two large matrices.
-        xx00 += (sw+tau2*determinant_a)/determinant_q
-        xx01 += sx/determinant_q
-        xx11 += (sxx+tau2*determinant_a)/determinant_q
-        effective_y0 = ((1+tau2*sxx)*sy-tau2*sx*sxy)/determinant_q
-        effective_y1 = ((1+tau2*sw)*sxy-tau2*sx*sy)/determinant_q
-        xy0 += effective_y0
-        xy1 += effective_y1
-        yy += math.fsum(w*y*y for w, x, y in weighted)-tau2*(sy*effective_y0+sxy*effective_y1)
-        logdet += math.fsum(math.log(se*se+noise_floor*noise_floor) for x, y, se in group)
-        logdet += math.log(determinant_q)
-        q00, q01, q11 = (1+tau2*sxx)/determinant_q, -tau2*sx/determinant_q, (1+tau2*sw)/determinant_q
-        for w, x, y in weighted:
-            # Entries of V^-1 X, V^-1 y and diag(V^-1), for exact Gaussian LOO checks.
-            r0, r1 = w*(q00+x*q01), w*(q01+x*q11)
-            vy = w*(y-tau2*(effective_y0+x*effective_y1))
-            diagonal = w-tau2*w*w*(q00+2*x*q01+x*x*q11)
-            predictive_terms.append((r0, r1, vy, diagonal))
-    precision = 1/(prior_scale*prior_scale)
-    p00, p01, p11 = precision+xx00, xx01, precision+xx11
-    determinant = p00*p11-p01*p01
-    if not math.isfinite(determinant) or determinant <= 0:
-        raise ValueError('unstable learning-curve posterior precision')
-    c00, c01, c11 = p11/determinant, -p01/determinant, p00/determinant
-    m0, m1 = c00*xy0+c01*xy1, c01*xy0+c11*xy1
-    log_evidence = -0.5*(len(observations)*math.log(2*math.pi)+logdet
-                         +4*math.log(prior_scale)+math.log(determinant)
-                         +yy-xy0*m0-xy1*m1)
-    if not all(math.isfinite(v) for v in (m0, m1, c00, c01, c11, log_evidence)):
+    # A canonical order makes the result bit-for-bit independent of the order rows arrive in.
+    rows = sorted((seed, _number(x, 'basis'), _number(y, 'effect'), _number(se, 'standard error', nonnegative=True))
+                  for seed, x, y, se in observations)
+    seeds = [seed for seed, _, _, _ in rows]
+    x, y, se = (np.array(column) for column in list(zip(*rows, strict=True))[1:])
+    design = np.column_stack([np.ones_like(x), x])
+    gram = design @ design.T
+    same_seed = np.array([[a == b for b in seeds] for a in seeds])
+    within = np.diag(se**2+noise_floor**2) + seed_sd**2*np.where(same_seed, gram, 0.)
+    marginal = within + prior_scale**2*gram
+
+    within_factor = _cholesky(within, 'within-seed covariance')
+    weighted_design = linalg.cho_solve(within_factor, design, check_finite=False)  # V⁻¹X
+    information = design.T @ weighted_design
+    precision = np.eye(2)/prior_scale**2 + (information+information.T)/2
+    precision_factor = _cholesky(precision, 'learning-curve posterior precision')
+    covariance = linalg.cho_solve(precision_factor, np.eye(2), check_finite=False)
+    mean = linalg.cho_solve(precision_factor, weighted_design.T @ y, check_finite=False)
+
+    marginal_factor = _cholesky(marginal, 'learning-curve marginal covariance')
+    standardized = linalg.cho_solve(marginal_factor, y, check_finite=False)  # K⁻¹y
+    log_determinant = 2*np.sum(np.log(np.diag(marginal_factor[0])))
+    log_evidence = -0.5*(len(y)*math.log(2*math.pi) + log_determinant + y @ standardized)
+    if not np.all(np.isfinite([*mean, *covariance.ravel(), log_evidence])):
         raise ValueError('nonfinite learning-curve posterior')
-    max_loo_z = 0.0
-    for r0, r1, vy, diagonal in predictive_terms:
-        # K includes both seed effects and the proper population-coefficient prior.
-        # For a joint Normal, LOO z_i = (K^-1 y)_i / sqrt((K^-1)_ii).
-        precision_diagonal = diagonal-r0*r0*c00-2*r0*r1*c01-r1*r1*c11
-        if not math.isfinite(precision_diagonal) or precision_diagonal <= 0:
-            raise ValueError('unstable leave-one-out predictive precision')
-        z = abs(vy-r0*m0-r1*m1)/math.sqrt(precision_diagonal)
-        max_loo_z = max(max_loo_z, z)
-    return dict(mean=(m0, m1), covariance=(c00, c01, c11), log_evidence=log_evidence,
-                max_abs_loo_z=max_loo_z)
+    precision_diagonal = np.diag(linalg.cho_solve(marginal_factor, np.eye(len(y)), check_finite=False))
+    if not np.all(np.isfinite(precision_diagonal)) or np.any(precision_diagonal <= 0):
+        raise ValueError('unstable leave-one-out predictive precision')
+    return dict(mean=(float(mean[0]), float(mean[1])),
+                covariance=(float(covariance[0, 0]), float(covariance[0, 1]), float(covariance[1, 1])),
+                log_evidence=float(log_evidence),
+                max_abs_loo_z=float(np.max(np.abs(standardized)/np.sqrt(precision_diagonal))))
 
 
 def _variance(value):
-    if not math.isfinite(value) or value < -1e-10:
+    value = np.asarray(value, dtype=float)
+    if not np.all(np.isfinite(value)) or np.any(value < -1e-10):
         raise ValueError('invalid learning-curve posterior variance')
-    return max(0.0, value)
+    return np.maximum(0.0, value)
+
+
+def _normal_probability(mean, variance, point_mass, probability):
+    """Elementwise probability of an event under N(mean, variance); a zero variance is a point mass."""
+    shape = np.broadcast_shapes(np.shape(mean), np.shape(variance))
+    mean, variance = np.broadcast_arrays(np.array(mean, dtype=float, ndmin=1), np.array(variance, dtype=float, ndmin=1))
+    result = point_mass(mean).astype(float)
+    spread = variance != 0
+    result[spread] = probability(mean[spread], np.sqrt(variance[spread]))
+    return result.reshape(shape)
 
 
 def _above(mean, variance, threshold):
-    if variance == 0:
-        return float(mean >= threshold)
-    return 0.5*math.erfc((threshold-mean)/math.sqrt(2*variance))
+    """P(N(mean, variance) >= threshold)."""
+    return _normal_probability(mean, variance, lambda m: m >= threshold,
+                               lambda m, sd: stats.norm.sf(threshold, loc=m, scale=sd))
 
 
 def _inside(mean, variance, delta):
-    if variance == 0:
-        return float(abs(mean) < delta)
-    sd = math.sqrt(2*variance)
-    return max(0.0, min(1.0, 0.5*(math.erf((delta-mean)/sd)-math.erf((-delta-mean)/sd))))
+    """P(|N(mean, variance)| < delta)."""
+    return _normal_probability(mean, variance, lambda m: np.abs(m) < delta,
+                               lambda m, sd: stats.norm.cdf(delta, loc=m, scale=sd)-stats.norm.cdf(-delta, loc=m, scale=sd))
 
 
 def _distribution(fits, x, target):
-    components = []
-    for fit in fits:
-        basis = _basis(fit['kind'], x, fit['knee'])
-        m0, m1 = fit['mean']
-        c00, c01, c11 = fit['covariance']
-        components.append((fit['weight'], m0+basis*m1, _variance(c00+2*basis*c01+basis*basis*c11)))
-    mean = math.fsum(w*m for w, m, v in components)
-    variance = _variance(math.fsum(w*(v+(m-mean)**2) for w, m, v in components))
-    return dict(mean=mean, sd=math.sqrt(variance),
-                p_target=None if target is None else math.fsum(w*_above(m, v, target) for w, m, v in components))
+    """Moments of the shape mixture for intercept + b(x)·slope, and P(effect >= target)."""
+    weights = np.array([fit['weight'] for fit in fits])
+    loadings = [np.array([1.0, _basis(fit['kind'], x, fit['knee'])]) for fit in fits]
+    means = np.array([loading @ fit['mean'] for fit, loading in zip(fits, loadings, strict=True)])
+    variances = _variance([loading @ np.array([[c00, c01], [c01, c11]]) @ loading
+                           for (c00, c01, c11), loading in zip((fit['covariance'] for fit in fits), loadings, strict=True)])
+    mean = weights @ means
+    variance = _variance(weights @ (variances+(means-mean)**2))
+    return dict(mean=float(mean), sd=float(np.sqrt(variance)),
+                p_target=None if target is None else float(weights @ _above(means, variances, target)))
 
 
 def _joint(probabilities):
     """Frechet bounds for an intersection without assuming endpoint independence."""
     return max(0.0, 1-math.fsum(1-p for p in probabilities)), min(probabilities)
+
+
+def _plateau(fits, x_from, x_to, delta):
+    """P(|change in effect between two compute fractions| < delta); the intercept cancels."""
+    weights = np.array([fit['weight'] for fit in fits])
+    change = np.array([_basis(fit['kind'], x_to, fit['knee'])-_basis(fit['kind'], x_from, fit['knee']) for fit in fits])
+    slope_means = np.array([fit['mean'][1] for fit in fits])
+    slope_variances = np.array([fit['covariance'][2] for fit in fits])
+    return float(weights @ _inside(change*slope_means, _variance(change**2*slope_variances), delta))
 
 
 def _summaries(spec, endpoint_fits, current, horizon, future):
@@ -154,13 +170,7 @@ def _summaries(spec, endpoint_fits, current, horizon, future):
         for endpoint in spec['endpoints']:
             name = endpoint['name']
             forecast[name] = _distribution(endpoint_fits[name], checkpoint/horizon, endpoint['target'])
-            probability = 0.0
-            for fit in endpoint_fits[name]:
-                difference = (_basis(fit['kind'], checkpoint/horizon, fit['knee'])
-                              - _basis(fit['kind'], current/horizon, fit['knee']))
-                mean = difference*fit['mean'][1]
-                variance = _variance(difference*difference*fit['covariance'][2])
-                probability += fit['weight']*_inside(mean, variance, endpoint['plateau_delta'])
+            probability = _plateau(endpoint_fits[name], current/horizon, checkpoint/horizon, endpoint['plateau_delta'])
             plateau_failures.append(1-min(1.0, max(0.0, probability)))
         forecasts.append(forecast)
     lower, upper = _joint([value['p_target'] for value in present.values()]) if targets_known else (None, None)
@@ -178,6 +188,9 @@ def analyze(spec, rows):
     predictions concern planned checkpoints within its finite compute allowance.
     Posterior moments are not clipped to [-1, 1]: Gaussian support is an explicit
     approximation and clipping would hide model mismatch rather than fix it.
+    The hyperparameter grid is not integrated over: each (prior scale, noise floor,
+    seed sd) is a separate sensitivity variant, and the delayed knees are discrete
+    mixture components with equal prior mass.
     """
     if not rows:
         raise ValueError('no completed pilot evidence')
@@ -199,11 +212,10 @@ def analyze(spec, rows):
                                  row['effects'][name]['mean'], row['effects'][name]['se']) for row in rows]
                 fit = _fit(observations, prior_scale, noise_floor, seed_sd)
                 fits.append(dict(fit, kind=kind, knee=knee))
-            maximum = max(fit['log_evidence'] for fit in fits)
-            weights = [math.exp(fit['log_evidence']-maximum) for fit in fits]
-            total = math.fsum(weights)
-            for fit, weight in zip(fits, weights, strict=True):
-                fit['weight'] = weight/total  # equal, proper prior mass on the declared shapes
+            # Equal, proper prior mass on the declared shapes: weights are normalised evidences.
+            log_evidence = np.array([fit['log_evidence'] for fit in fits])
+            for fit, weight in zip(fits, np.exp(log_evidence-special.logsumexp(log_evidence)), strict=True):
+                fit['weight'] = float(weight)
             endpoint_fits[name] = fits
         posterior = _summaries(spec, endpoint_fits, current, horizon, future)
         prior_fits = {endpoint['name']: [dict(kind=kind, knee=knee, weight=1/len(shapes),

@@ -1,6 +1,7 @@
 """Numerical and dependence regressions for bounded pilot curve inference."""
 import math
 
+import numpy as np
 import pytest
 
 from rewardhack import pilot_model
@@ -71,7 +72,7 @@ def test_single_observation_seed_slope_matches_conjugate_predictive_density():
     assert fit['log_evidence'] == pytest.approx(exact)
 
 
-def test_woodbury_matches_dense_joint_gaussian_with_shared_and_distinct_seeds():
+def test_evidence_matches_hand_written_cholesky_with_shared_and_distinct_seeds():
     observations = [('a', .1, .2, .03), ('a', .7, .6, .02), ('b', .4, -.1, .04)]
     prior, noise, seed_sd = .4, .05, .2
     size = len(observations)
@@ -178,6 +179,18 @@ def test_model_average_is_deterministic_and_weights_normalize():
 def test_invalid_measurement_errors_fail_closed(bad):
     with pytest.raises(ValueError):
         pilot_model._fit([('s', 0, .1, bad)], .5, .1, .1)
+
+
+@pytest.mark.parametrize('observations, prior_scale, noise_floor, seed_sd', [
+    ([('a', .3, .1, 0.)]*5, 1e6, 1e-12, 0.),                                      # posterior precision
+    ([('a', .3, .1, 0.), ('a', .3+1e-9, .1, 0.), ('b', .3, .2, 0.)], 1e8, 1e-10, 1e8),  # within-seed covariance
+    ([('a', .3, .1, 0.)]*3, 1e-6, 1e-12, 1e7),
+])
+def test_numerically_singular_covariances_are_refused_not_returned(observations, prior_scale, noise_floor, seed_sd):
+    """Cholesky failure surfaces as ValueError naming the matrix, with the LinAlgError as its cause."""
+    with pytest.raises(ValueError, match='not positive definite') as refusal:
+        pilot_model._fit(observations, prior_scale, noise_floor, seed_sd)
+    assert isinstance(refusal.value.__cause__, np.linalg.LinAlgError)
 
 
 def test_two_endpoint_joint_and_future_bounds_are_conservative():
