@@ -28,6 +28,7 @@ Layout: shared code is the installable package `src/rewardhack/`; every experime
 | `src/rewardhack/hf_grpo.py`, `mlx_rl.py` | TRL GRPO path for rented GPUs; own GRPO-style loop on Apple silicon |
 | `src/rewardhack/vllm_probe.py`, `openai_probe.py` | Inference probes: vLLM on rented GPUs, hosted API with metered cost caps |
 | `src/rewardhack/rescore.py`, `calibrate.py`, `budget.py` | Rescoring saved rows, per-statement calibration from read labels, spending guard |
+| `src/rewardhack/gates.py`, `entrypoints/gate.py` | Checks on a shell command before it runs: a pod job starts only from a settled launch record; commits are read for withheld terms, secrets and large or binary files (see `CLAUDE.md`, "Hooks") |
 | `src/rewardhack/pilot.py`, `pilot_model.py`, `pilot_runner.py`, `pilot_evidence.py`, `pilot_simulation.py` | Frozen paired pilot evidence, Bayesian learning curves, bounded serial execution and free synthetic checks |
 | `entrypoints/*.py` | One script per task: `run`, `local_mlx`, `probe_vllm`, `probe_api`, `rescore`, `calibrate`, `validate_judge`, `human_review`, `export_transcripts`, `verify_tasks`, `budget`, `pilot`, `pilot_pair`, `pilot_simulate` |
 | `ops/*.sh`, `spending/ledger.csv` | Launch drivers, remote run scripts, teardown checks, and the spending record |

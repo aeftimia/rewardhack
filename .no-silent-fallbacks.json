@@ -1,0 +1,10 @@
+{
+  "explicit_arguments": {
+    "GRPOConfig": ["learning_rate", "lr_scheduler_type", "router_aux_loss_coef", "scale_rewards", "max_grad_norm", "optim", "weight_decay", "beta", "loss_type", "temperature", "top_p", "top_k", "seed"],
+    "AutoModelForCausalLM.from_pretrained": ["revision", "attn_implementation", "dtype"],
+    "AutoTokenizer.from_pretrained": ["revision"],
+    "model.generate": ["max_new_tokens", "do_sample", "temperature", "top_p", "top_k", "pad_token_id"],
+    "LoraConfig": ["r", "lora_alpha", "target_modules", "lora_dropout"]
+  },
+  "limit_basis": ["ops/*.sh"]
+}

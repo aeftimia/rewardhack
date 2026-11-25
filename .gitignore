@@ -28,6 +28,9 @@ dist/
 *.pt
 *.pth
 *.gguf
+# a trained adapter is ignored as a folder: the tokenizer and trainer files beside the weights are as large
+results/**/adapter*/
+payload/
 
 # setup noise from pod runs
 results/**/download*.log

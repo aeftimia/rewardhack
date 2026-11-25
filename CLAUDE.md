@@ -20,3 +20,23 @@ A time cap is a bound on the worst case. It is not what the run costs: a job tha
 - **Measured so far on an RTX PRO 6000 pod:** boot to SSH 1 to 1.5 min; install 1.2 min; gpt-oss-20b download 3.5 to 5.1 min; vLLM first start 6.5 min including its own weight fetch; training 61 s per step at 4 generations; 12-task evaluation 4.6 min. My first estimates were low by 1.4x to 3.3x. Add new timings to `docs/notes-2026-11-21.md` as they are measured and use them.
 - **First run of anything new: keep the pod for a relaunch.** Drive with `KEEP_POD=1` and the default 10 minute grace, so that when a stage fails on something I can fix myself in a few minutes, the fix is relaunched on the same pod and the setup is not paid again. A relaunch replaces the timers. Remove the pod by hand the moment the work is done or the fix needs the owner (`remote_job.sh --remove-now`). This does not relax the rule above: never wait on a person while a pod bills.
 - **One pod per question set.** Put independent measurements in one job so they share one setup.
+
+## Hooks
+
+Three checks run before a tool call and refuse it with the reason. They enforce rules above that used to depend on being remembered. A refusal is a finding to act on, not an obstacle to route around.
+
+- **Spend gate** (`entrypoints/gate.py hook`, on Bash; logic in `src/rewardhack/gates.py`). A pod job starts only from a launch record. Settle the launch first:
+
+  ```bash
+  .tools/venv/bin/python entrypoints/gate.py ready --remote ops/remote_runpod_smoke.sh --deadline 60 --basis '2x measured 30 min' --line gpt-oss-20b-gpu --hourly 2.70
+  ```
+
+  It refuses on uncommitted changes in what the pod would run, a deadline under 2x a measured or 3x an estimated time, a failed budget check (worst case: the deadline plus 25 minutes of timers), or failing tests. The driver command must then name the same remote script and deadline, on the same commit and ledger. A relaunch after a fix needs the fix committed and `ready` run again (about 2 minutes). A remote job script started over SSH around `remote_job.sh`, or without `REQUIRE_AUTOSTOP=1`, is refused; removing a pod never is. `--judge api` needs `--judge-max-usd` and both prices above zero. A pod deployed in the RunPod console is outside this gate's reach: the rule "deploy only when the driver can start" still rests on doing `ready` first.
+- **Commit gate** (same hook). `git add`, `git commit` and `git push` in this repository are read for the patterns in `.claude/commit-gate-terms.txt` (untracked, so the repository does not name them), for keys and tokens, and for binary files or files over 15 MB. Without the terms file every commit is refused.
+- **No silent fallbacks** (`~/.claude/hooks/no-silent-fallbacks`, on Write and Edit, all projects). Besides swallowed errors it refuses a wait with no limit, a single-shot pod removal, an unpinned `pip install` and a network call with no timeout. `.no-silent-fallbacks.json` here adds two project rules: the library calls listed there must name the listed arguments (add a line whenever a library default turns out to have decided something), and a time limit in `ops/*.sh` needs `# cap: 2x measured <time> <unit>` or `# cap: 3x estimated <time> <unit>` on its line or the one above.
+
+The Bash hook is registered in `.claude/settings.json`, which is not tracked:
+
+```json
+{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.tools/venv/bin/python\" \"$CLAUDE_PROJECT_DIR/entrypoints/gate.py\" hook", "timeout": 60}]}]}}
+```
