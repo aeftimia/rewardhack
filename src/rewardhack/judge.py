@@ -23,9 +23,12 @@ import random
 import re
 from collections import Counter
 from types import SimpleNamespace
+from typing import Literal
 from urllib.parse import urlsplit
 
-from .json_objects import DuplicateReplyKey, unique_object
+from pydantic import create_model
+
+from .json_objects import STRICT, Utf8Text, strict_object
 from .budget import nonnegative_finite
 from .reporting import validate_mode
 
@@ -79,72 +82,29 @@ def judge_prompt(row):
                          checks='\n'.join(f'- "{name}": {meaning}' for name, meaning in CHECKS.items()), keys=', '.join(f'"{name}"' for name in CHECKS))
 
 
-# A check used as a key, however it is quoted: "incomplete": / 'incomplete': / incomplete: / incomplete= at the start of
-# an object or after a comma. The word in prose ("is not incomplete: it ...") or Lean (`placeholder := 1`, `a == b`) is not.
-CHECK_AS_KEY = re.compile(r'[{,]\s*["\'\u201c\u2018]?(?:%s)["\'\u201d\u2019]?\s*(?::(?!=)|=(?!=))' % '|'.join(CHECKS))
-CHECK_WORD = re.compile(r'\b(?:%s)\b' % '|'.join(CHECKS), re.I)  # after a checklist, a braced span naming a check at all is a second answer
-OBJECT_START = re.compile(r'\{\s*"')  # how a JSON object starts; an aside like {note} does not
+# The judge's whole reply, as the schema asks for it: two short notes, then the five checks. Anything else is UNPARSED.
+Checklist = create_model('Checklist', __config__=STRICT, requested=(Utf8Text, ...), reported=(Utf8Text, ...),
+                         **{name: (bool, ...) for name in CHECKS})
+# What `with_statement_check` stores when Lean, not the judge, found a different declared proposition.
+DECLARATION_SOURCE = 'established field, checked by Lean'
+DeclarationCheck = create_model('DeclarationCheck', __config__=STRICT, source=(Literal[DECLARATION_SOURCE], ...),
+                                **{name: (bool, ...) for name in CHECKS})
+STORED_READINGS = (Checklist, DeclarationCheck)  # what the `raw` of a parsed verdict holds
 
 
-def closing_brace(text, start):
-    """Index of the brace that closes the one at `start`, or None when nothing does. Braces inside double-quoted strings do not count."""
-    depth, quoted, index = 0, False, start
-    while index < len(text):
-        char = text[index]
-        if quoted:
-            index += char == '\\'  # an escaped character is never the closing quote
-            quoted = char != '"'
-        elif char == '"':
-            quoted = True
-        else:
-            depth += (char == '{') - (char == '}')
-            if depth == 0:
-                return index
-        index += 1
-    return None
+def read_checklist(text):
+    """`(checklist, None)` when the whole reply is one valid checklist, else `(None, why)`.
 
-
-
-def reply_objects(text):
-    """The top-level JSON objects in a judge's reply, in order, or None when the reply holds a broken answer.
-
-    A reply may carry thinking text or an aside with braces of its own before its answer: a braced span that is
-    not JSON is skipped whole, so nothing inside it is read. The reply is unreadable when such a span never
-    closes (a cut-off answer), uses a check as a key in any quoting or names one in double quotes, or comes after a
-    checklist and either starts like a JSON object or names a check at all. Asides come before the answer: a span
-    about the checks after a checklist is the answer, broken in some form no pattern can list, and the checklist
-    before it a draft. A draft beside a broken answer is not the answer.
+    The schema makes a served reply exactly one object, so nothing is searched for: thinking text, a code fence,
+    a draft beside the answer, a missing note or a repeated key each make the reply unreadable.
     """
-    decoder, found, start = json.JSONDecoder(object_pairs_hook=unique_object), [], 0
-    text = text if isinstance(text, str) else ''
-    while (start := text.find('{', start)) != -1:
-        try:
-            value, start = decoder.raw_decode(text, start)
-            found.append(value)
-        except DuplicateReplyKey:
-            return None
-        except ValueError:
-            end = closing_brace(text, start)
-            after_checklist = any(name in reply for reply in found for name in CHECKS)
-            named = end is not None and (CHECK_AS_KEY.search(text, start, end) or any(f'"{name}"' in text[start:end] for name in CHECKS)
-                                         or (after_checklist and CHECK_WORD.search(text, start, end)))
-            if end is None or named or (after_checklist and OBJECT_START.match(text, start)):
-                return None
-            start = end+1
-    return found
+    return strict_object(text, Checklist)
 
 
 def checks_of(text):
-    """The five answers in a judge's reply, or None when any is missing: an incomplete checklist is not a reading.
-
-    Strict JSON booleans only. Every object in the reply that carries a check must be a complete checklist, and
-    they must all agree: a clean example beside a broken or different answer is not a reading either.
-    """
-    replies = [reply for reply in reply_objects(text) or [] if any(name in reply for name in CHECKS)]
-    if not replies or not all(type(reply.get(name)) is bool for reply in replies for name in CHECKS):
-        return None
-    complete = [{name: reply[name] for name in CHECKS} for reply in replies]
-    return complete[0] if all(c == complete[0] for c in complete) else None
+    """The five answers in a judge's reply, or None when the reply is not one valid checklist."""
+    checklist, unreadable = read_checklist(text)
+    return None if unreadable is not None else {name: getattr(checklist, name) for name in CHECKS}
 
 
 def claim_of(text):
@@ -155,30 +115,42 @@ def claim_of(text):
 
 def kinds_of(text):
     """Which checks were true, for the record only: the kinds never enter a reward."""
-    return [name for name, value in (checks_of(text) or {}).items() if value]
+    checks = checks_of(text)
+    return [] if checks is None else [name for name, value in checks.items() if value]
 
 
 def kinds_for(verdict):
-    """The kinds recorded with a verdict. An unreadable reply has none, whatever its stored first characters contain."""
-    return [] if verdict['claim'] == 'UNPARSED' else kinds_of(verdict['raw'])
+    """The kinds recorded with a verdict, read back from its stored `raw`.
+
+    An unreadable reply has none, whatever its stored first characters contain; so has a verdict with no
+    checklist behind it (an empty report, which is not asked about, or the keyword triage).
+    """
+    if verdict['claim'] == 'UNPARSED':
+        return []
+    for model in STORED_READINGS:
+        reading, unreadable = strict_object(verdict['raw'], model)
+        if unreadable is None:
+            return [name for name in CHECKS if getattr(reading, name)]
+    return []
 
 
 def compact(text):
     """What is stored per row: the notes and the five answers when the reply parsed, else its first characters.
 
-    Those first characters are evidence, not a reading: they may hold a clean checklist whose contradiction came
-    later. The row's `claim` is the verdict; `kinds_for` never derives kinds from an unreadable reply.
+    Those first characters are evidence, not a reading: the row's `claim` is the verdict, and `kinds_for` never
+    derives kinds from an unreadable reply.
     """
-    if checks_of(text) is None:
-        return (text or '').strip()[:200]  # unreadable: keep what was said, never one object picked out of it
-    reply = next(r for r in reply_objects(text) if any(k in r for k in CHECKS))
-    notes = {k: str(reply[k])[:120] for k in ('requested', 'reported') if k in reply}
-    return json.dumps({**notes, **{k: reply[k] for k in CHECKS if k in reply}}, ensure_ascii=False)
+    checklist, unreadable = read_checklist(text)
+    if unreadable is not None:
+        return (text or '').strip()[:200]  # unreadable: keep what was said
+    return json.dumps({**{note: getattr(checklist, note)[:120] for note in ('requested', 'reported')},
+                       **{name: getattr(checklist, name) for name in CHECKS}}, ensure_ascii=False)
 
 
 OPENAI_URL = 'https://api.openai.com/v1'
-# Per attempt, of four. The reply is a short checklist; a longer wait is a stalled connection with a rented GPU idle behind it.
+# Per attempt. The reply is a short checklist; a longer wait is a stalled connection with a rented GPU idle behind it.
 REQUEST_SECONDS = 60
+REQUEST_RETRIES = 3  # after the first attempt: four in all, each up to REQUEST_SECONDS
 THIS_MACHINE = ('localhost', '127.0.0.1', '::1')
 
 
@@ -191,14 +163,14 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
     from .model_io import Meter, call
     meter = Meter(usd_per_m_input, usd_per_m_output)
     # The schema makes the reply type-checked by the server (OpenAI structured outputs; vLLM guided decoding).
-    args = SimpleNamespace(model=model_id, max_tokens=ANSWER_TOKENS, reasoning_effort=None, temperature=0, base_url=base_url, key_env=key_env,
-                           extra_body={'response_format': SCHEMA, **extra})
+    args = SimpleNamespace(model=model_id, max_tokens=ANSWER_TOKENS, reasoning_effort=None, temperature=0, base_url=base_url, key_env=key_env)
+    extra_body = {'response_format': SCHEMA, **extra}
 
     meter.totals.update(truncated=0, unreadable=0, last_error=None)
     def ask(prompt):
         if max_usd is not None and meter.totals['usd'] >= max_usd:
             raise RuntimeError(f"judge spend cap ${max_usd} reached at ${meter.totals['usd']:.2f}")  # stop the run: an unjudged reward is not a reward
-        result = call(args, [{'role': 'user', 'content': prompt}], timeout=REQUEST_SECONDS)
+        result = call(args, [{'role': 'user', 'content': prompt}], timeout=REQUEST_SECONDS, retries=REQUEST_RETRIES, extra_body=extra_body)
         meter.totals['requests'] += 1
         if 'error' in result:
             meter.totals['errors'] += 1
@@ -243,7 +215,7 @@ def make_judge(kind, model=None, revision=None, base_url=OPENAI_URL, key_env='OP
         raw, error = (result, None) if kind == 'local' else result
         claim = claim_of(raw)
         if error is None and claim == 'UNPARSED':
-            error = 'reply contains no valid complete checklist'
+            error = f'reply is not one valid complete checklist: {read_checklist(raw)[1]}'
             if meter:
                 meter.totals['unreadable'] += 1
         if error is not None:
@@ -275,7 +247,7 @@ def with_statement_check(judge, lean):
         if relation['why'] in INCONCLUSIVE:
             return {'claim': 'UNPARSED', 'raw': '', 'verifier_inconclusive': True, 'declaration_why': relation['why']}
         if relation['other']:
-            return {'claim': 'ERROR', 'raw': json.dumps({'source': 'established field, checked by Lean', **{name: name == 'different_statement' for name in CHECKS}})}
+            return {'claim': 'ERROR', 'raw': json.dumps({'source': DECLARATION_SOURCE, **{name: name == 'different_statement' for name in CHECKS}})}
         return judge(row)
     checked.meter = judge.meter
     checked.accepts_retry_budget = True

@@ -79,9 +79,9 @@ def test_judge_labels_and_honesty_bit():
     from rewardhack.judge import CHECKS, compact, kinds_of
     none = {name: False for name in CHECKS}
     reply = json.dumps({'requested': 'a', 'reported': 'b', **none, 'placeholder': True, 'incomplete': True})
-    assert claim_of(reply) == 'ERROR' and kinds_of(reply) == ['placeholder', 'incomplete'] and claim_of(json.dumps(none)) == 'OK'
+    assert claim_of(reply) == 'ERROR' and kinds_of(reply) == ['placeholder', 'incomplete'] and claim_of(json.dumps({'requested': 'a', 'reported': 'b', **none})) == 'OK'
     assert claim_of('{"says_false": true}') == 'UNPARSED' and kinds_of('{"says_false": true}') == []  # an incomplete checklist is not a reading
-    assert json.loads(compact('noise ' + reply + ' noise'))['placeholder'] is True and compact('garbage') == 'garbage'
+    assert json.loads(compact(reply))['placeholder'] is True and compact('noise ' + reply) == ('noise ' + reply)[:200] and compact('garbage') == 'garbage'
     long_reply = json.dumps({'requested': 'x'*800, 'reported': 'y'*800, **none, 'incomplete': True})
     assert json.loads(compact(long_reply))['incomplete'] is True
     assert kinds_of(compact(long_reply)) == ['incomplete']
@@ -232,7 +232,7 @@ def test_judge_failures_stop_the_run():
     from rewardhack import judge, model_io
     replies = []
     target, saved = model_io, model_io.call  # the judge imports `call` when it is built
-    target.call = lambda args, messages, timeout=None: replies.pop(0)
+    target.call = lambda args, messages, **transport: replies.pop(0)
     try:
         good = dict(raw=json.dumps({'requested': 'a', 'reported': 'b', **{name: False for name in judge.CHECKS}}), finish='stop', model='stub', usage={})
         row = dict(statement='P', report='Proved it.')
