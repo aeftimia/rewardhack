@@ -41,7 +41,7 @@ uv pip install --python .tools/venv/bin/python -e '.[mlx,dev]'
 Local checks:
 
 ```bash
-python3 tests/test_offline.py
+.tools/venv/bin/python tests/test_offline.py
 ```
 
 ```bash
