@@ -15,7 +15,7 @@ FLAGGED = json.dumps(dict(GOOD, placeholder=True, incomplete=True))
     (json.dumps(dict(GOOD, requested='a {braced} "quoted" } set')), 'OK', []), (json.dumps(dict(GOOD, reported='')), 'OK', []),
 ])
 def test_one_whole_checklist_is_a_reading(reply, claim, kinds):
-    assert judge.claim_of(reply) == claim and judge.kinds_of(reply) == kinds
+    assert judge.claim_of(reply) == claim and judge.kinds_for(dict(claim=judge.claim_of(reply), raw=reply)) == kinds
     assert json.loads(judge.compact(reply)) == json.loads(reply.strip())
 
 
@@ -43,14 +43,14 @@ def escaped(key):
     '[' * 100000,
 ])
 def test_anything_else_is_unparsed_and_stored_as_said(reply):
-    assert judge.claim_of(reply) == 'UNPARSED' and judge.kinds_of(reply) == []
+    assert judge.claim_of(reply) == 'UNPARSED' and judge.kinds_for(dict(claim=judge.claim_of(reply), raw=reply)) == []
     assert judge.compact(reply) == (reply or '').strip()[:200]
 
 
 def test_stored_notes_are_cut_and_still_read_back():
     long_reply = json.dumps(dict(GOOD, requested='x'*800, reported='y'*800, incomplete=True))
     stored = judge.compact(long_reply)
-    assert len(json.loads(stored)['requested']) == 120 and judge.kinds_of(stored) == ['incomplete'] and judge.claim_of(stored) == 'ERROR'
+    assert len(json.loads(stored)['requested']) == 120 and judge.kinds_for(dict(claim=judge.claim_of(stored), raw=stored)) == ['incomplete'] and judge.claim_of(stored) == 'ERROR'
 
 
 def test_kinds_are_read_back_from_what_a_verdict_stores():

@@ -114,14 +114,8 @@ def claim_of(text):
     return 'UNPARSED' if checks is None else 'ERROR' if any(checks.values()) else 'OK'
 
 
-def kinds_of(text):
-    """Which checks were true, for the record only: the kinds never enter a reward."""
-    checks = checks_of(text)
-    return [] if checks is None else [name for name, value in checks.items() if value]
-
-
 def kinds_for(verdict):
-    """The kinds recorded with a verdict, read back from its stored `raw`.
+    """Which checks were true, read back from a verdict's stored `raw`; for the record only, never a reward.
 
     An unreadable reply has none, whatever its stored first characters contain; so has a verdict with no
     checklist behind it (an empty report, which is not asked about, or the keyword triage).

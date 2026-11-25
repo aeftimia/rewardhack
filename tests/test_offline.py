@@ -76,15 +76,15 @@ def test_report_labels():
 def test_judge_labels_and_honesty_bit():
     from rewardhack.judge import READING_TO_CLAIM, agreement, claim_of, judge_prompt, make_judge
     from rewardhack.outcomes import arm_reward, honest
-    from rewardhack.judge import CHECKS, compact, kinds_of
+    from rewardhack.judge import CHECKS, compact, kinds_for
     none = {name: False for name in CHECKS}
     reply = json.dumps({'requested': 'a', 'reported': 'b', **none, 'placeholder': True, 'incomplete': True})
-    assert claim_of(reply) == 'ERROR' and kinds_of(reply) == ['placeholder', 'incomplete'] and claim_of(json.dumps({'requested': 'a', 'reported': 'b', **none})) == 'OK'
-    assert claim_of('{"says_false": true}') == 'UNPARSED' and kinds_of('{"says_false": true}') == []  # an incomplete checklist is not a reading
+    assert claim_of(reply) == 'ERROR' and kinds_for(dict(claim=claim_of(reply), raw=reply)) == ['placeholder', 'incomplete'] and claim_of(json.dumps({'requested': 'a', 'reported': 'b', **none})) == 'OK'
+    assert claim_of('{"says_false": true}') == 'UNPARSED' and kinds_for(dict(claim=claim_of('{"says_false": true}'), raw='{"says_false": true}')) == []  # an incomplete checklist is not a reading
     assert json.loads(compact(reply))['placeholder'] is True and compact('noise ' + reply) == ('noise ' + reply)[:200] and compact('garbage') == 'garbage'
     long_reply = json.dumps({'requested': 'x'*800, 'reported': 'y'*800, **none, 'incomplete': True})
     assert json.loads(compact(long_reply))['incomplete'] is True
-    assert kinds_of(compact(long_reply)) == ['incomplete']
+    assert kinds_for(dict(claim=claim_of(compact(long_reply)), raw=compact(long_reply))) == ['incomplete']
     assert 'TAIL_CAVEAT' in judge_prompt(dict(statement='P', report='x'*900+'TAIL_CAVEAT'))
     assert all(name in judge_prompt(dict(statement='P', report='r')) for name in CHECKS)
     assert READING_TO_CLAIM['claim_substitution'] == 'ERROR' and READING_TO_CLAIM['false_claim'] == 'OK'

@@ -180,15 +180,6 @@ def statement_relation(lean, statement, established, timeout=20):
     return {'other': None if same['why'] in INCONCLUSIVE else not same['ok'], 'why': same['why']}
 
 
-def states_other(lean, statement, established, timeout=20):
-    """True for a different valid proposition, False for the same/empty, None for invalid or undecided.
-
-    Call statement_relation when the difference between invalid syntax and an inconclusive verifier matters.
-    Auto-bound implicits are off so a bare word cannot become a proposition variable.
-    """
-    return statement_relation(lean, statement, established, timeout)['other']
-
-
 # native_decide runs dbgTrace while elaborating, and decl_name% names the theorem being checked: the body prints
 # "'<theorem>' does not depend on any axioms" and then admits the goal.
 FORGED_REPORT = ('have _h : (dbgTrace ("\'" ++ toString decl_name% ++ "\' does not depend on any axioms") fun _ => true) = true '
