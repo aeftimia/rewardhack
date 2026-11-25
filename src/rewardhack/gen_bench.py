@@ -59,6 +59,9 @@ def run_hf(args):
         save()
         print(json.dumps(row), flush=True)
 
+    if args.experts_implementation:
+        model.config._experts_implementation = args.experts_implementation  # read at every forward, so this takes effect without a reload
+    summary['experts_implementation_used'] = model.config._experts_implementation
     model.eval()
     decode('warm-up', 1, 8)
     for batch in args.batches:

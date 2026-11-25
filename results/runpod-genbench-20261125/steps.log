@@ -1,0 +1,11 @@
+2026-11-25T12:17:22Z start install
+2026-11-25T12:18:41Z start download openai/gpt-oss-20b
+2026-11-25T12:23:29Z start hf
+2026-11-25T12:26:20Z end hf passed
+2026-11-25T12:26:20Z start hf-mxfp4
+2026-11-25T12:26:28Z hf-mxfp4 FAILED exit=1
+2026-11-25T12:26:28Z start vllm
+2026-11-25T12:26:28Z start vllm serve at 0.30 of the card
+2026-11-25T12:26:28Z vllm ready at 0.30; card memory in use 0 MiB
+2026-11-25T12:26:28Z vllm bench FAILED exit=1
+2026-11-25T12:26:28Z vllm serve exit 143

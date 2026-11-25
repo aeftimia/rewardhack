@@ -1,0 +1,98 @@
+Traceback (most recent call last):
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
+    return self._connection.handle_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
+    raise exc
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 86, in handle_request
+    self._send_request_headers(**kwargs)
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 144, in _send_request_headers
+    with map_exceptions({h11.LocalProtocolError: LocalProtocolError}):
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.LocalProtocolError: Illegal header value b'kernels/0.16.0; hf_hub/1.33.0; python/3.12.3; '
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/workspace/train-venv/lib/python3.12/site-packages/kernels/utils.py", line 86, in _check_trust_remote_code
+    info = _get_hf_api().get_organization_overview(publisher)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 89, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/huggingface_hub/hf_api.py", line 11835, in get_organization_overview
+    r = get_session().get(
+        ^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpx/_client.py", line 1053, in get
+    return self.request(
+           ^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/workspace/train-venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.LocalProtocolError: Illegal header value b'kernels/0.16.0; hf_hub/1.33.0; python/3.12.3; '
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/root/pilot-repo/entrypoints/bench_generation.py", line 53, in <module>
+    main()
+  File "/root/pilot-repo/entrypoints/bench_generation.py", line 47, in main
+    run_hf(args)
+  File "/root/pilot-repo/src/rewardhack/gen_bench.py", line 34, in run_hf
+    model, tokenizer = load_model(SimpleNamespace(model=args.model, revision=args.revision, attn_implementation=args.attn_implementation,
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/pilot-repo/src/rewardhack/hf_grpo.py", line 75, in load_model
+    model = AutoModelForCausalLM.from_pretrained(args.model, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/transformers/models/auto/auto_factory.py", line 402, in from_pretrained
+    return model_class.from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/transformers/modeling_utils.py", line 4271, in from_pretrained
+    hf_quantizer.preprocess_model(
+  File "/workspace/train-venv/lib/python3.12/site-packages/transformers/quantizers/base.py", line 171, in preprocess_model
+    self._process_model_before_weight_loading(model, **kwargs)
+  File "/workspace/train-venv/lib/python3.12/site-packages/transformers/quantizers/quantizer_mxfp4.py", line 209, in _process_model_before_weight_loading
+    model = replace_with_mxfp4_linear(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/transformers/integrations/mxfp4.py", line 567, in replace_with_mxfp4_linear
+    triton_kernels_hub = get_kernel("kernels-community/gpt-oss-triton-kernels", version=1)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/transformers/integrations/hub_kernels.py", line 824, in get_kernel
+    return get_kernel_hub(
+           ^^^^^^^^^^^^^^^
+  File "/workspace/train-venv/lib/python3.12/site-packages/kernels/utils.py", line 503, in get_kernel
+    _check_trust_remote_code(repo_id, trust_remote_code)
+  File "/workspace/train-venv/lib/python3.12/site-packages/kernels/utils.py", line 88, in _check_trust_remote_code
+    raise ValueError(
+ValueError: Kernel repository 'kernels-community/gpt-oss-triton-kernels' could not verify publisher trust status. Set trust_remote_code=True to allow loading kernels from untrusted sources.

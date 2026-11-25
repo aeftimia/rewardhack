@@ -1,0 +1,170 @@
+{
+ "status": "completed",
+ "model": "openai/gpt-oss-20b",
+ "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+ "torch": "2.15.0+cu132",
+ "measurements": [
+  {
+   "label": "warm-up",
+   "batch": 1,
+   "steps": 8,
+   "seconds": 1.3254406639607623,
+   "ms_per_step": 165.6800829950953,
+   "tokens_per_second": 6.035728507147136,
+   "training_mode": false,
+   "peak_allocated_gib": 39.189754009246826
+  },
+  {
+   "label": "base",
+   "batch": 1,
+   "steps": 96,
+   "seconds": 1.489675655029714,
+   "ms_per_step": 15.517454739892855,
+   "tokens_per_second": 64.4435583516904,
+   "training_mode": false,
+   "peak_allocated_gib": 39.189754009246826
+  },
+  {
+   "label": "base",
+   "batch": 2,
+   "steps": 96,
+   "seconds": 2.7634500260464847,
+   "ms_per_step": 28.78593777131755,
+   "tokens_per_second": 69.47836877465947,
+   "training_mode": false,
+   "peak_allocated_gib": 39.42111682891846
+  },
+  {
+   "label": "base",
+   "batch": 4,
+   "steps": 96,
+   "seconds": 4.329561784048565,
+   "ms_per_step": 45.09960191717255,
+   "tokens_per_second": 88.69257886901485,
+   "training_mode": false,
+   "peak_allocated_gib": 39.87138748168945
+  },
+  {
+   "label": "base",
+   "batch": 8,
+   "steps": 96,
+   "seconds": 7.355886595905758,
+   "ms_per_step": 76.62381870735165,
+   "tokens_per_second": 104.40617728221423,
+   "training_mode": false,
+   "peak_allocated_gib": 40.77528142929077
+  },
+  {
+   "label": "base",
+   "batch": 16,
+   "steps": 96,
+   "seconds": 13.45115000801161,
+   "ms_per_step": 140.1161459167876,
+   "tokens_per_second": 114.19097988537385,
+   "training_mode": false,
+   "peak_allocated_gib": 42.58822154998779
+  },
+  {
+   "label": "base",
+   "batch": 32,
+   "steps": 96,
+   "seconds": 25.776495952974074,
+   "ms_per_step": 268.50516617681325,
+   "tokens_per_second": 119.17834005073738,
+   "training_mode": false,
+   "peak_allocated_gib": 46.216567039489746
+  },
+  {
+   "label": "base experts=eager",
+   "batch": 8,
+   "steps": 96,
+   "seconds": 8.465078498004004,
+   "ms_per_step": 88.17790102087504,
+   "tokens_per_second": 90.72567964739937,
+   "training_mode": false,
+   "peak_allocated_gib": 40.53944110870361
+  },
+  {
+   "label": "lora",
+   "batch": 4,
+   "steps": 96,
+   "seconds": 4.47002445103135,
+   "ms_per_step": 46.562754698243225,
+   "tokens_per_second": 85.90557036246219,
+   "training_mode": false,
+   "peak_allocated_gib": 39.90105056762695
+  },
+  {
+   "label": "lora",
+   "batch": 8,
+   "steps": 96,
+   "seconds": 7.478185215033591,
+   "ms_per_step": 77.89776265659991,
+   "tokens_per_second": 102.69871337982771,
+   "training_mode": false,
+   "peak_allocated_gib": 40.80494451522827
+  },
+  {
+   "label": "lora",
+   "batch": 32,
+   "steps": 96,
+   "seconds": 26.148073272896,
+   "ms_per_step": 272.3757632593333,
+   "tokens_per_second": 117.48475568118845,
+   "training_mode": false,
+   "peak_allocated_gib": 46.246230125427246
+  },
+  {
+   "label": "lora long",
+   "batch": 8,
+   "steps": 384,
+   "seconds": 29.684806136996485,
+   "ms_per_step": 77.30418264842835,
+   "tokens_per_second": 103.48728524022039,
+   "training_mode": false,
+   "peak_allocated_gib": 40.80494451522827
+  },
+  {
+   "label": "lora profiled",
+   "batch": 8,
+   "steps": 12,
+   "seconds": 1.1397219089558348,
+   "ms_per_step": 94.97682574631956,
+   "tokens_per_second": 84.23107360281523,
+   "training_mode": false,
+   "peak_allocated_gib": 40.80494451522827
+  },
+  {
+   "label": "lora training-mode",
+   "batch": 8,
+   "steps": 48,
+   "seconds": 3.692728408961557,
+   "ms_per_step": 76.93184185336577,
+   "tokens_per_second": 103.98815116435432,
+   "training_mode": true,
+   "peak_allocated_gib": 40.57405424118042
+  },
+  {
+   "label": "lora training-mode long",
+   "batch": 8,
+   "steps": 192,
+   "seconds": 13.741016902029514,
+   "ms_per_step": 71.56779636473705,
+   "tokens_per_second": 111.78211998073714,
+   "training_mode": true,
+   "peak_allocated_gib": 40.57405424118042
+  }
+ ],
+ "attn_implementation": "eager",
+ "model_load_seconds": 2.318983459030278,
+ "parameters_total": 20914757184,
+ "experts_implementation": "grouped_mm",
+ "prompt_tokens": 630,
+ "lora_target_modules": [
+  "k_proj",
+  "o_proj",
+  "q_proj",
+  "v_proj"
+ ],
+ "lora_trainable_parameters": 7962624
+}

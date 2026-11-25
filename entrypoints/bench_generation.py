@@ -29,6 +29,7 @@ def main():
     ap.add_argument('--focus-batch', type=int, default=8, help='batch size for the comparisons made at one size')
     ap.add_argument('--experts', type=lambda text: [part for part in text.split(',') if part], default=[],
                     help='expert-layer implementations to compare with the default, e.g. eager')
+    ap.add_argument('--experts-implementation', help='expert-layer implementation for the whole run instead of the loaded default')
     ap.add_argument('--new-tokens', type=int, default=96)
     ap.add_argument('--long-tokens', type=int, default=384)
     ap.add_argument('--profile-tokens', type=int, default=12)

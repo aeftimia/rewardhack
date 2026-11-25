@@ -1,0 +1,33 @@
+trained {"load_status": 405, "load_seconds": 0.012296220986172557, "load_text": "<html>\r\n<head><title>405 Not Allowed</title></head>\r\n<body>\r\n<center><h1>405 Not Allowed</h1></center>\r\n<hr><center>nginx/1.24.0 (Ubuntu)</center>\r\n</body>\r\n</html>\r\n"}
+Traceback (most recent call last):
+  File "/root/pilot-repo/entrypoints/bench_generation.py", line 53, in <module>
+    main()
+  File "/root/pilot-repo/entrypoints/bench_generation.py", line 49, in main
+    run_server(args)
+  File "/root/pilot-repo/src/rewardhack/gen_bench.py", line 146, in run_server
+    results = list(pool.map(one, [tasks[i % len(tasks)] for i in range(concurrency)]))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/pilot-repo/src/rewardhack/gen_bench.py", line 141, in one
+    raise RuntimeError(f"completion failed with {answer['status']}: {answer['text'][:500]}")
+RuntimeError: completion failed with 405: <html>
+<head><title>405 Not Allowed</title></head>
+<body>
+<center><h1>405 Not Allowed</h1></center>
+<hr><center>nginx/1.24.0 (Ubuntu)</center>
+</body>
+</html>
+
