@@ -1,7 +1,7 @@
 """Versioned report envelopes; prose remains the historical default."""
-import json
+from pydantic import BaseModel
 
-from .json_objects import unique_object
+from .json_objects import STRICT, Utf8Text, strict_object
 
 MODES = ('prose', 'typed')
 
@@ -17,6 +17,16 @@ def add_arguments(parser):
                         help='prose judge reading (default), or a strict Boolean error flag')
 
 
+class TypedReport(BaseModel):
+    """The typed envelope: exactly these four keys, a JSON Boolean flag, and text that UTF-8 can hold (an escaped
+    lone surrogate cannot be written to Lean or to a JSONL sink)."""
+    model_config = STRICT
+    established: Utf8Text
+    proof_body: Utf8Text
+    error: bool
+    justification: Utf8Text
+
+
 def parse_typed(raw):
     """Read one final envelope, never salvage a draft or nested object.
 
@@ -26,18 +36,7 @@ def parse_typed(raw):
     start = raw.find('{')
     if start < 0 or '}' in raw[:start]:
         return None
-    try:
-        value = json.loads(raw[start:], object_pairs_hook=unique_object)
-    except (ValueError, RecursionError):
-        return None
-    fields = ('established', 'proof_body', 'justification')
-    if (not isinstance(value, dict) or set(value) != {*fields, 'error'}
-            or type(value['error']) is not bool
-            or not all(isinstance(value[k], str) for k in fields)):
-        return None
-    try:
-        for key in fields:
-            value[key].encode('utf-8')
-    except UnicodeEncodeError:
-        return None  # escaped lone surrogates cannot be written to Lean or JSONL sinks
-    return dict(value, report=value['justification'])
+    envelope, unreadable = strict_object(raw[start:], TypedReport)
+    if unreadable is not None:
+        return None  # an invalid envelope is scored as no answer (`outcomes.score`)
+    return dict(envelope.model_dump(), report=envelope.justification)

@@ -1,70 +1,91 @@
-"""Shared inference transport for probes and report readers; no experiment policy."""
-import os
-import time
+"""Shared inference transport for probes and report readers; no experiment policy.
 
-import requests
+One OpenAI-compatible chat call through the `openai` SDK, which serves the OpenAI API and a vLLM server alike.
+"""
+import os
+
+from openai import APIConnectionError, APIStatusError, OpenAI
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .budget import nonnegative_finite
 
 
-def call(args, messages, timeout=600):
-    """`timeout` is per attempt, of four: a caller with a rented GPU waiting on the answer passes a short one."""
-    body = {'model': args.model, 'messages': messages, 'max_completion_tokens': args.max_tokens}
-    if args.reasoning_effort:
-        body['reasoning_effort'] = args.reasoning_effort
-    if args.temperature is not None:
-        body['temperature'] = args.temperature
-    body.update(getattr(args, 'extra_body', None) or {})
+class Client(OpenAI):
+    """The SDK client, sending again only what was not answered (no reply, or a timeout) or refused for load (429, 5xx).
+
+    The SDK on its own also retries 408 and 409 and obeys an `x-should-retry` header; here every other status is an
+    error at once. A `HardDeadline` (a BaseException) is never caught by the SDK's retry loop, which catches `Exception`.
+    """
+
+    def _should_retry(self, response):
+        return response.status_code == 429 or response.status_code >= 500
+
+
+def call(args, messages, *, timeout, retries, extra_body):
+    """One chat completion: `{raw, finish, usage, model}`, or `{error}` (plus `usage` when a reply arrived).
+
+    `timeout` is seconds per attempt and `retries` the attempts after the first: a caller with a rented GPU waiting on
+    the answer passes short ones. `extra_body` is merged into the request (a response schema, server options).
+    """
     key = os.environ[args.key_env]  # read before any request: a missing key is a setup error and is raised at once, never retried
-    last = 'no attempt'
-    for attempt in range(4):
-        # Only a request that was not answered, or was refused for load, is sent again.
+    options = {'reasoning_effort': args.reasoning_effort} if args.reasoning_effort else {}
+    if args.temperature is not None:
+        options['temperature'] = args.temperature
+    with Client(base_url=args.base_url, api_key=key, timeout=timeout, max_retries=retries) as client:
         try:
-            response = requests.post(args.base_url.rstrip('/')+'/chat/completions', json=body, timeout=timeout,
-                                     headers={'Authorization': 'Bearer '+key})
-        except requests.RequestException as error:
-            last = f'{type(error).__name__}: {error}'[:300]
-            time.sleep(5*(attempt+1))
-            continue
-        if response.status_code == 429 or response.status_code >= 500:
-            last = f'HTTP {response.status_code}: {response.text[:300]}'
-            time.sleep(5*(attempt+1))
-            continue
-        if response.status_code >= 400:
-            return dict(error=f'HTTP {response.status_code}: {response.text[:300]}')
-        return read_reply(response)
-    return dict(error=last)
+            response = client.chat.completions.with_raw_response.create(
+                model=args.model, messages=messages, max_completion_tokens=args.max_tokens, extra_body=extra_body, **options)
+        except APIStatusError as error:  # an error status, after any retries: nothing was served
+            return dict(error=f'HTTP {error.status_code}: {error.response.text[:300]}')
+        except APIConnectionError as error:  # no reply on any attempt (APITimeoutError is one)
+            return dict(error=f'{type(error).__name__}: {error}'[:300])
+        try:
+            body = response.http_response.json()
+        except ValueError as error:
+            return dict(error=f'reply body is not JSON ({error}); not asked again'[:300], usage=None)
+    return read_reply(body)
 
 
-def read_reply(response):
-    """A served reply as `call`'s result, or an error naming the first thing it lacks.
+SHAPE = ConfigDict(strict=True, extra='ignore')  # the fields read here must have their types; a reply carries many more
+
+
+class Message(BaseModel):
+    model_config = SHAPE
+    content: str | None
+
+
+class Choice(BaseModel):
+    model_config = SHAPE
+    message: Message
+    finish_reason: str  # without it nobody can say whether the answer was cut off
+
+
+class Reply(BaseModel):
+    model_config = SHAPE
+    choices: list[Choice] = Field(min_length=1)
+    model: str | None = None  # the name the provider resolved an alias to: a record, absent from some servers
+
+
+def read_reply(body):
+    """A served reply body as `call`'s result, or an error naming what it lacks.
 
     A reply that arrived was billed, so it is never asked for again: asking again buys the same wrong shape.
     Its error carries the reply's `usage` (None when the reply had none) so the caller's meter still counts it.
-    A reply with no finish reason is an error too: without it nobody can say whether the answer was cut off.
     """
+    if not isinstance(body, dict):
+        return dict(error=f'reply is a JSON {type(body).__name__}, not an object; not asked again', usage=None)
+    usage = body['usage'] if 'usage' in body else None
     try:
-        data = response.json()
-    except ValueError as error:
-        return dict(error=f'reply body is not JSON ({error}); not asked again'[:300], usage=None)
-    if not isinstance(data, dict):
-        return dict(error=f'reply is a JSON {type(data).__name__}, not an object; not asked again', usage=None)
-    usage = data['usage'] if 'usage' in data else None
-    at, value = 'reply', data
-    for step in ('choices', 0, 'message', 'content'):
-        inside = step in value if isinstance(value, dict) else isinstance(value, list) and len(value) > step
-        if not inside:
-            return dict(error=f'{at} has no {step!r}; not asked again', usage=usage)
-        at, value = f'{at}[{step!r}]', value[step]
-    choice = data['choices'][0]
-    if 'finish_reason' not in choice or not isinstance(choice['finish_reason'], str):
-        return dict(error="reply['choices'][0] has no 'finish_reason', so a cut-off answer could not be told from a whole one; not asked again", usage=usage)
-    finish, content = choice['finish_reason'], choice['message']['content']
+        reply = Reply.model_validate(body)
+    except ValidationError as error:
+        wrong = '; '.join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in error.errors())
+        return dict(error=f'reply has the wrong shape ({wrong}); not asked again'[:300], usage=usage)
+    finish, content = reply.choices[0].finish_reason, reply.choices[0].message.content
     if content is None and finish == 'length':
         content = ''  # the token limit ran out before any answer text (all of it went on reasoning): a cut-off answer with nothing in it
-    if not isinstance(content, str):
-        return dict(error=f'reply content is {content!r} with finish_reason {finish!r}, not text; not asked again'[:300], usage=usage)
-    return dict(raw=content, finish=finish, usage=usage, model=data.get('model'))
+    if content is None:
+        return dict(error=f'reply content is None with finish_reason {finish!r}, not text; not asked again', usage=usage)
+    return dict(raw=content, finish=finish, usage=usage, model=reply.model)
 
 
 class UnmeteredReply(RuntimeError):

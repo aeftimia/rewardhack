@@ -15,28 +15,6 @@ CHECKLIST = json.dumps({'requested': 'a', 'reported': 'b', **{name: False for na
 ROW = dict(statement='True', report='Proved it.')
 
 
-def reply(**changes):
-    body = dict(choices=[dict(message=dict(content='text'), finish_reason='stop')], model='m', usage=dict(prompt_tokens=4, completion_tokens=2))
-    body.update(changes)
-    return SimpleNamespace(status_code=200, json=lambda: body, text=json.dumps(body))
-
-
-def transport(monkeypatch, responses):
-    """`model_io.call` against canned responses; returns the list of requests made. Sleeping is an error: nothing here may retry."""
-    sent = []
-
-    def post(url, **kwargs):
-        sent.append(url)
-        return responses[len(sent)-1]
-    monkeypatch.setattr(model_io.requests, 'post', post)
-    monkeypatch.setattr(model_io.time, 'sleep', lambda seconds: pytest.fail('a reply that arrived was waited on and asked for again'))
-    monkeypatch.setenv('SCAN_TEST_KEY', 'placeholder')
-    return sent
-
-
-ARGS = SimpleNamespace(model='m', max_tokens=8, reasoning_effort=None, temperature=None, base_url='http://127.0.0.1:1/v1', key_env='SCAN_TEST_KEY')
-
-
 # --- A: metering
 
 @pytest.mark.parametrize('usage', [None, {}, {'completion_tokens': 5}, {'input_tokens': 9, 'completion_tokens': 5}])
@@ -83,7 +61,7 @@ def stub_probe(monkeypatch, result):
     task = dict(id='t', group='g', statement='True', true=True)
     monkeypatch.setattr(openai_probe, 'select_tasks', lambda *a, **kw: [task])
     monkeypatch.setattr(openai_probe, 'taskset_rows', lambda *a: [task])
-    monkeypatch.setattr(openai_probe, 'call', lambda args, messages: result)
+    monkeypatch.setattr(openai_probe, 'call', lambda args, messages, **transport: result)
 
 
 def test_a_priced_probe_stops_when_a_reply_has_no_usage(monkeypatch, tmp_path):
@@ -122,63 +100,8 @@ def test_a_judge_on_this_machine_needs_neither(url):
                                                                           judge_max_usd=None, judge_usd_in=0.0, judge_usd_out=0.0))
 
 
-# --- C: what the transport asks for again
+# --- C: what the transport asks for again: tests/test_model_io.py
 
-def test_a_missing_key_fails_at_once(monkeypatch):
-    monkeypatch.setattr(model_io.requests, 'post', lambda *a, **kw: pytest.fail('a request was sent without a key'))
-    monkeypatch.setattr(model_io.time, 'sleep', lambda seconds: pytest.fail('a missing key was waited on and retried'))
-    monkeypatch.delenv('SCAN_ABSENT_KEY', raising=False)
-    with pytest.raises(KeyError, match='SCAN_ABSENT_KEY'):
-        model_io.call(SimpleNamespace(**dict(vars(ARGS), key_env='SCAN_ABSENT_KEY')), [])
-
-
-@pytest.mark.parametrize('changes,missing', [
-    (dict(choices=[]), '0'), (dict(choices=[dict(finish_reason='stop')]), "'message'"), (dict(choices=[dict(message={}, finish_reason='stop')]), "'content'"),
-    (dict(choices=[dict(message=dict(content='text'))]), 'finish_reason'), (dict(choices=[dict(message=dict(content='text'), finish_reason=None)]), 'finish_reason'),
-    (dict(choices=[dict(message=dict(content=None), finish_reason='stop')]), 'not text')])
-def test_a_reply_with_the_wrong_shape_is_an_error_and_is_not_asked_for_again(monkeypatch, changes, missing):
-    sent = transport(monkeypatch, [reply(**changes)]*4)
-    result = model_io.call(ARGS, [])
-    assert len(sent) == 1, 'a billed reply was requested again'
-    assert missing in result['error'] and 'raw' not in result
-    assert result['usage'] == dict(prompt_tokens=4, completion_tokens=2), 'the billed reply no longer reaches the meter'
-
-
-def test_a_reply_without_choices_or_json_names_what_is_missing(monkeypatch):
-    body = reply()
-    del body.json()['choices']
-    sent = transport(monkeypatch, [body])
-    assert "no 'choices'" in model_io.call(ARGS, [])['error'] and len(sent) == 1
-
-    def not_json():
-        raise ValueError('Expecting value')
-    sent = transport(monkeypatch, [SimpleNamespace(status_code=200, json=not_json, text='<html>')])
-    result = model_io.call(ARGS, [])
-    assert 'not JSON' in result['error'] and result['usage'] is None and len(sent) == 1
-
-
-def test_a_whole_reply_and_a_reply_cut_off_before_any_text(monkeypatch):
-    transport(monkeypatch, [reply(), reply(choices=[dict(message=dict(content=None), finish_reason='length')])])
-    assert model_io.call(ARGS, []) == dict(raw='text', finish='stop', usage=dict(prompt_tokens=4, completion_tokens=2), model='m')
-    cut = model_io.call(ARGS, [])
-    assert (cut['raw'], cut['finish']) == ('', 'length')
-
-
-def test_a_refused_request_is_still_retried(monkeypatch):
-    sent = transport(monkeypatch, [SimpleNamespace(status_code=503, text='busy'), reply()])
-    monkeypatch.setattr(model_io.time, 'sleep', lambda seconds: None)
-    assert model_io.call(ARGS, [])['raw'] == 'text' and len(sent) == 2
-
-
-def test_a_judge_reply_without_a_finish_reason_is_a_failed_reading_and_is_metered(monkeypatch):
-    sent = transport(monkeypatch, [reply(choices=[dict(message=dict(content=CHECKLIST))])])
-    reader = judge.make_judge('api', model='m', base_url=ARGS.base_url, key_env='SCAN_TEST_KEY', usd_per_m_input=1, usd_per_m_output=1, max_usd=1)
-    verdict = reader(ROW)
-    assert verdict['claim'] == 'UNPARSED' and 'finish_reason' in verdict['judge_error'] and len(sent) == 1
-    assert reader.meter.totals['errors'] == 1 and reader.meter.totals['usd'] == 6/1e6, 'the unusable reply was billed and not counted'
-
-
-# --- D: calibration labels
 
 def judged_row(task_id, label, true=False):
     return dict(task_id=task_id, true=true, genuine=False, exploit=False, refutation=False, judge=label)

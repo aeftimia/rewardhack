@@ -37,7 +37,7 @@ def test_api_mode_survives_follow_on_and_unscored_storage(monkeypatch, tmp_path)
     monkeypatch.setattr(openai_probe, 'prompt', lambda statement, variant, mode: modes.append(mode) or [{'role': 'system', 'content': mode}])
     monkeypatch.setattr(openai_probe, 'select_tasks', lambda *a, **kw: [TASK])
     monkeypatch.setattr(openai_probe, 'taskset_rows', lambda *a: [dict(TASK, id='f', group='other', true=False)])
-    def call(args, messages):
+    def call(args, messages, *, timeout, retries, extra_body):
         calls.append(messages)
         return dict(raw='{}', usage={}, finish='stop', model='stub')
     monkeypatch.setattr(openai_probe, 'call', call)

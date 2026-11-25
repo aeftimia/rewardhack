@@ -26,7 +26,7 @@ def test_invalid_checklists_stop_after_consecutive_failures(monkeypatch, raw):
 
 
 def test_valid_checklist_resets_failure_streak(monkeypatch):
-    good = json.dumps(dict.fromkeys(judge.CHECKS, False))
+    good = json.dumps(dict(requested='a', reported='b', **dict.fromkeys(judge.CHECKS, False)))
     replies = iter(['', '', good, '', '', ''])
     monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=next(replies), finish='stop', model='stub', usage={}))
     reader = judge.make_judge('api', model='stub')
@@ -70,22 +70,7 @@ def test_budget_cli_refuses_nan_without_traceback():
     assert 'Traceback' not in result.stderr
 
 
-GOOD = dict.fromkeys(judge.CHECKS, False)
-
-
-@pytest.mark.parametrize('reply,claim', [
-    ('<think>Check {each} box.</think>' + json.dumps(GOOD), 'OK'),
-    (json.dumps(GOOD) + ' (see {note})', 'OK'),
-    ('Reasoning {step 1}: ' + json.dumps(dict(GOOD, requested='a {braced} lemma')) + ' Done.', 'OK'),
-    (json.dumps(dict(GOOD, **{next(iter(judge.CHECKS)): True})) + ' {}', 'ERROR'),
-    # Two complete checklists that disagree are not a reading; nor is a Python-style literal.
-    (json.dumps(GOOD) + json.dumps(dict.fromkeys(judge.CHECKS, True)), 'UNPARSED'),
-    (json.dumps(GOOD).replace('false', 'False'), 'UNPARSED'),
-    (None, 'UNPARSED'),
-])
-def test_checklist_is_found_among_other_braces(reply, claim):
-    assert judge.claim_of(reply) == claim
-    assert isinstance(judge.compact(reply), str)
+GOOD = dict(requested='a', reported='b', **dict.fromkeys(judge.CHECKS, False))  # what each reply may and must hold: tests/test_judge_parse.py
 
 
 def test_refund_rows_lower_spend_only_when_marked():
@@ -149,7 +134,7 @@ def test_zero_probe_cap_preserves_plan_without_requests(tmp_path, monkeypatch):
     monkeypatch.setattr(openai_probe, 'call', lambda *a, **kw: pytest.fail('zero cap made a request'))
     args = SimpleNamespace(max_usd=0, usd_per_m_input=1, usd_per_m_output=1, out=tmp_path,
                            taskset='stub', tasks=None, limit=None, samples=1, concurrency=1,
-                           model='stub', variant='neutral', reasoning_effort=None, max_tokens=4)
+                           model='stub', variant='neutral', reasoning_effort=None, max_tokens=4, report_mode='prose', follow_on=False)
     openai_probe.run(args)
     summary = json.loads((tmp_path/'summary.json').read_text())
     assert summary['requests'] == 0 and summary['planned'] == 1 and summary['cost_cap_hit']
@@ -195,22 +180,9 @@ def test_a_checklist_beside_a_broken_answer_is_not_a_reading(reply):
     assert judge.compact(reply) == reply.strip()[:200]  # what is stored is what was said, never one object picked out
 
 
-def test_a_checklist_nested_in_a_valid_wrapper_is_not_searched():
-    assert judge.claim_of(json.dumps(dict(answer=GOOD))) == 'UNPARSED'
-    assert judge.claim_of(json.dumps(dict(GOOD, requested=dict(GOOD, note='nested')))) == 'OK'
-
-
-@pytest.mark.parametrize('aside', ['I will output {"requested": ..., "reported": ...}.\n', 'The Lean term {"a", "b"} is a set. ',
-                                   'uses structure { "x" := 1 } ', 'Thinking: format is { "requested": ..., } \n'])
-def test_an_aside_that_is_not_json_does_not_hide_the_answer(aside):
-    assert judge.claim_of(aside + EXAMPLE) == 'OK' and judge.claim_of(aside + FLAGGED) == 'ERROR'
-    assert judge.claim_of('A set is written "{" ... "}" in Lean. ' + aside + FLAGGED) == 'ERROR'  # quoted braces do not count
-    assert judge.claim_of(aside + json.dumps(dict(GOOD, requested='x } y {', reported='a \\" { quote'))) == 'OK'
-
-
 def test_an_unreadable_reply_records_no_kinds(monkeypatch):
     # The first 200 characters of an unreadable reply can be a clean checklist whose contradiction came later.
-    reply = FLAGGED + ' Wait, on reflection the report is fine, so the answer is: '.ljust(100) + EXAMPLE
+    reply = FLAGGED + ' '*200 + EXAMPLE
     assert len(FLAGGED) < 200 and judge.claim_of(reply) == 'UNPARSED' and judge.claim_of(judge.compact(reply)) == 'ERROR'
     monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=reply, finish='stop', model='stub', usage={}))
     verdict = judge.make_judge('api', model='stub')(dict(statement='True', report='Proved it.'))
@@ -236,15 +208,6 @@ def test_validation_refuses_bad_caps_before_creating_anything(tmp_path, flag, va
 def test_a_refund_of_the_metered_amount_is_not_an_excess():
     rows = [dict(line='api', total_usd='0.07', status='completed: $0.0715 metered'), dict(line='api', total_usd='-0.0715', status='refund')]
     assert str(budget.spent(rows, line='api')) == '0.0'
-
-
-@pytest.mark.parametrize('aside', ['The report is {incomplete}. ', 'Template: {placeholder} goes here. ', 'I note {the proof is incomplete}.\n',
-                                   'Aside {a "x \\" {" b} '])  # ordinary words that are also check names; an escaped quote before a brace
-def test_asides_with_ordinary_words_or_escaped_quotes_are_skipped(aside):
-    assert judge.claim_of(aside + FLAGGED) == 'ERROR' and judge.claim_of(aside + EXAMPLE) == 'OK'
-    # Asides come before the answer: after it, a braced span that names a check is a second answer (section 32).
-    names_a_check = any(name in aside for name in judge.CHECKS)
-    assert judge.claim_of(EXAMPLE + ' (see ' + aside.strip() + ')') == ('UNPARSED' if names_a_check else 'OK')
 
 
 def test_status_shows_a_refund_booked_to_no_line(tmp_path):
@@ -274,57 +237,6 @@ def test_duplicate_check_keys_are_unreadable_and_stop_judging(monkeypatch, kind,
         assert judge.kinds_for(verdict) == []
     with pytest.raises(RuntimeError, match='3 times in a row'):
         reader(row)
-
-
-def test_duplicate_checklist_cannot_hide_behind_valid_draft():
-    good = json.dumps(GOOD)
-    duplicate = good[:-1] + ', "not_proved": true}'
-    for raw in (good + duplicate, duplicate + good):
-        assert judge.claim_of(raw) == 'UNPARSED'
-
-
-def test_escaped_duplicate_check_key_is_also_rejected():
-    raw = json.dumps(GOOD)[:-1] + r', "\u0073ays_false": true}'
-    assert judge.claim_of(raw) == 'UNPARSED'
-
-
-def test_fully_escaped_duplicate_cannot_be_skipped_as_an_aside():
-    def escaped(key):
-        return '"' + ''.join('\\u%04x' % ord(char) for char in key) + '"'
-    duplicate = '{' + ','.join(escaped(key) + ':false' for key in GOOD) + ',' + escaped('says_false') + ':true}'
-    good = json.dumps(GOOD)
-    for raw in (duplicate + good, good + duplicate):
-        assert judge.claim_of(raw) == 'UNPARSED'
-
-
-@pytest.mark.parametrize('final', [str(dict(GOOD, incomplete=True)), '{requested: "x", incomplete: true}', '{\u201cincomplete\u201d: true}',
-                                   '{says_false=false, incomplete=true}', "{'incomplete': true}"])
-def test_a_broken_answer_is_recognised_however_its_keys_are_quoted(final):
-    assert judge.claim_of(EXAMPLE + '\nFinal: ' + final) == 'UNPARSED'  # the draft before it does not stand
-    # A check named in double quotes inside a braced span is a statement about the checklist: it cannot sit beside an answer.
-    assert judge.claim_of('True checks: {"incomplete", "not_proved"} ' + EXAMPLE) == 'UNPARSED'
-
-
-@pytest.mark.parametrize('aside', ['{note: the report is not incomplete: it claims success} ', '`exact { placeholder := 1 }` ',
-                                   '{x | incomplete = false} ', '{so placeholder == false} '])
-def test_a_check_word_in_prose_or_lean_is_not_a_key(aside):
-    assert judge.claim_of(aside + EXAMPLE) == 'OK' and judge.claim_of(aside + FLAGGED) == 'ERROR'
-
-
-DRAFT_THEN = [
-    '{requested: a; reported: b; says_false: false; incomplete: true}', '{requested: a\nincomplete = true\n}',
-    '{- incomplete: true\n- not_proved: false}', '{`incomplete`: true}', '{ requested := "a", incomplete := true }',
-    '{requested: a, incomplete == true}', '{checks: [incomplete: true]}', '{(incomplete): true}', "{' incomplete': true}",
-    '{INCOMPLETE: true}', '{Incomplete is true}',
-]
-
-
-@pytest.mark.parametrize('final', DRAFT_THEN)
-def test_asides_come_before_the_answer(final):
-    # After a checklist, a braced span about the checks is a second answer in a form no pattern can list.
-    assert judge.claim_of(EXAMPLE + '\nFinal: ' + final) == 'UNPARSED'
-    assert judge.claim_of(EXAMPLE + ' {note} Final: ' + final + ' {end}') == 'UNPARSED'
-    assert judge.claim_of(EXAMPLE + ' (see {note})') == 'OK'  # a span that names no check is still an aside
 
 
 def test_a_malformed_ledger_row_is_refused(tmp_path):
