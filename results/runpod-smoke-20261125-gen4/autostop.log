@@ -1,0 +1,5 @@
+Runpod config file not found, please run `runpodctl config` to create it
+ID            	NAME              	GPU           	IMAGE NAME                                     	STATUS  
+bm8eiweolwj6jc	misty_yellow_heron	1 RTX PRO 6000	runpod/pytorch:2.1.0-cu1320-torch280-ubuntu2404	RUNNING	
+2026-11-25T11:25:29Z armed: pod bm8eiweolwj6jc is removed at most 1950s from now
+2026-11-25T11:40:01Z job ended with 0; removing pod in 300s

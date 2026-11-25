@@ -13,7 +13,7 @@ alternatives considered are in [notes-2026-11-21.md](notes-2026-11-21.md).
 | 0 reward arm and judge | built and tested: `--arm report_correct --penalty λ --judge ...`. **Judge accepted 2026-11-24: gpt-5.4-nano, checklist prompt under a JSON schema, with Lean's check of the `established` field in front.** 97% development agreement on two overlapping 320-report samples (notes, section 17); fresh held-out validation is pending; about $0.0003 per report from the `api` line, capped per run with `--judge-max-usd` |
 | 1 verifier | attacked and hardened; one real break found and closed; controls extended from 18 to 28; all 338 references re-verified |
 | 2 GPU path | gpt-oss `--reasoning-effort`, judge and penalty threaded through, per-step exploration log, budget guard on the grant's lines; CPU dry run passes |
-| 3 pod smoke test | run on 2026-11-24 in the project space for $3.03: exploration gate passed (4 exploits in 72 unhinted samples), updates are real, **training runs out of memory on the third step at 8 generations x 2,048 tokens on 96 GB**. Stop-go is not met until a configuration that fits has been timed. Results in `results/runpod-smoke-20261124*/`; readouts and cost calibration in notes section 52 |
+| 3 pod smoke test | run on 2026-11-24 in the project space for $3.16: exploration gate passed (4 exploits in 72 unhinted samples), updates are real, **training runs out of memory on the third step at 8 generations x 2,048 tokens on 96 GB**. **Follow-up on 2026-11-25 ($0.64): 4 generations x 2,048 tokens fits (62 GiB allocated) and ran 8 updates at 61 s per step, $0.046.** Stability over a longer run, the token limit and the group size are still open. Results in `results/runpod-smoke-20261124*/` and `results/runpod-smoke-20261125-gen4/`; readouts and cost calibration in notes sections 52 and 53 |
 
 Where it runs (decided 2026-11-22): every pod for this project is launched in a RunPod space dedicated
 to it and funded by the owner's own card. The shared account used for the 5 and 12 November runs is
@@ -331,6 +331,13 @@ updates but not stable ones, because the update step exceeds 96 GB when a group 
 the measured 182 s per step puts 15 runs of up to about 380 steps inside $800 only if the memory fix does
 not slow a step. Open before any training-line spending: time one configuration that fits (4 generations,
 4-bit, or a larger card) and settle the token limit, which the cut-off rule wants raised.
+
+State on 2026-11-25: 4 generations at 2,048 tokens fits the 96 GB card and ran 8 real updates at 61 s per
+step ($0.046), so 15 runs fit $800 up to roughly 770 to 1,150 steps of 4 rollouts each (notes, section 53).
+Not yet shown: stable generation over a run longer than 8 steps, and whether 4 rollouts per group carry
+enough contrast. The token limit cannot go to 4,096 on this card at 4 generations; that rule needs a
+decision (a larger card, 2 generations, or keeping 2,048 with the cut-off rate as measured: 3.1% in this
+run, 6.9% in the probe).
 
 Consider the sequentially stopped setting comparisons only if: controls and adversarial tests pass; the probe shows the
 exploit (or the honest exit) in sampled support without a hint; training produces real updates with
