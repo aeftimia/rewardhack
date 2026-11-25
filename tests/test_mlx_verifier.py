@@ -8,6 +8,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from rewardhack.outcomes import RETRY_SECONDS
+
 
 class Array(list):
     """Only the vector arithmetic used to normalize rewards in the training loop."""
@@ -77,7 +79,7 @@ def train_stub(monkeypatch, tmp_path):
         args = SimpleNamespace(out=tmp_path, taskset='v1', seed=0, adapter=None, learning_rate=.01,
                                monitor_samples=1, steps=1, max_seconds=100, variant='neutral', thinking=False,
                                max_tokens=8, group=len(rows), lean='must-not-run', arm=arm, penalty=.5,
-                               judge_fn=None, monitor_every=1)
+                               judge_fn=None, monitor_every=1, report_mode='prose', verifier_retry_seconds=RETRY_SECONDS)
         mlx_rl.rl(args, model, None)
         records = {name: [json.loads(line) for line in (tmp_path / name).read_text().splitlines()]
                    for name in ('steps.jsonl', 'monitor.jsonl', 'rollouts.jsonl')}

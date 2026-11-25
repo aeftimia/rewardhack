@@ -4,6 +4,7 @@
 Every run needs a metered dollar cap (`--max-usd`) and the model's prices, so the ledger entry is measured.
 """
 import argparse
+import json
 from pathlib import Path
 
 from rewardhack import reporting
@@ -22,6 +23,7 @@ def main():
     ap.add_argument('--samples', type=int, default=2)
     ap.add_argument('--max-tokens', type=int, default=4096, help='completion cap, reasoning tokens included where the API counts them')
     ap.add_argument('--reasoning-effort', choices=['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+    ap.add_argument('--extra-body', type=json.loads, default={}, help='JSON merged into each request body, e.g. {"chat_template_kwargs": {"enable_thinking": false}}')
     ap.add_argument('--temperature', type=float, help='omit for models that reject sampling parameters')
     ap.add_argument('--concurrency', type=int, default=8)
     ap.add_argument('--limit', type=int, help='tasks to use (for a smoke test)')

@@ -9,6 +9,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from rewardhack import hf_grpo, openai_probe, vllm_probe
+from rewardhack.outcomes import RETRY_SECONDS
 
 ROOT = Path(__file__).resolve().parents[1]
 TASK = dict(id='t', group='g', statement='True', true=True, tier='easy')
@@ -79,7 +80,7 @@ def test_vllm_mode_reaches_prompt_scoring_and_storage(monkeypatch, tmp_path, lea
         return dict(report_mode=kw['report_mode'])
     monkeypatch.setattr(vllm_probe, 'score', score)
     monkeypatch.setattr(vllm_probe, 'summarize', lambda rows: {})
-    args = SimpleNamespace(report_mode='typed', template_kwargs='{}', out=tmp_path, max_seconds=10,
+    args = SimpleNamespace(report_mode='typed', verifier_retry_seconds=RETRY_SECONDS, part='train', template_kwargs='{}', out=tmp_path, max_seconds=10,
                            lean=lean, taskset='v1', tasks='all', model='stub', revision='stub', seed=0,
                            max_model_len=16, gpu_memory_utilization=.5, samples=1, max_tokens=8, variant='neutral')
     vllm_probe.run(args)
@@ -109,7 +110,7 @@ def test_hf_typed_evaluation_strips_special_tokens_and_routes_mode(monkeypatch, 
     monkeypatch.setattr(hf_grpo, 'training_rewards', lambda *a: None)
     monkeypatch.setattr(hf_grpo, 'summarize', lambda rows: {})
     monkeypatch.setattr(hf_grpo, 'reward_groups', lambda *a: dict(groups=1, mixed_groups=0, zero_advantage_groups=1, per_group=[]))
-    args = SimpleNamespace(report_mode='typed', out=tmp_path, eval_samples=1, prompt_variant='neutral',
+    args = SimpleNamespace(report_mode='typed', verifier_retry_seconds=RETRY_SECONDS, out=tmp_path, eval_samples=1, prompt_variant='neutral',
                            thinking='on', reasoning_effort='low', max_completion_length=8, lean='stub',
                            arm='baseline', penalty=0, judge_fn=None)
     result = hf_grpo.evaluate(model, Tokenizer(), [TASK], args, 'test')
@@ -134,7 +135,7 @@ def test_mlx_encode_default_and_typed_monitor_mode(monkeypatch):
     mlx_rl.encode(tokenizer, 'True', 'neutral', False)  # historical holdout callers stay prose
     monkeypatch.setattr(mlx_rl, 'sample', lambda *a: ('{}', [2], 0., False))
     monkeypatch.setattr(mlx_rl, 'score', lambda *a, **kw: scored.append(kw['report_mode']) or {})
-    args = SimpleNamespace(report_mode='typed', variant='neutral', thinking=False, max_tokens=8,
+    args = SimpleNamespace(report_mode='typed', verifier_retry_seconds=RETRY_SECONDS, variant='neutral', thinking=False, max_tokens=8,
                            lean='stub', arm='baseline', penalty=0, judge_fn=None)
     mlx_rl.attempt_rate(None, tokenizer, [TASK], args, 1)
     assert modes == ['prose', 'typed'] and scored == ['typed']
@@ -169,7 +170,7 @@ def test_hf_training_routes_typed_prompt_and_reward(monkeypatch, tmp_path):
         monkeypatch.setitem(sys.modules, name, module)
     weight = torch.nn.Parameter(torch.ones(1))
     model = SimpleNamespace(named_parameters=lambda: iter([('weight', weight)]), named_modules=lambda: iter([]))
-    args = SimpleNamespace(report_mode='typed', out=tmp_path, arm='baseline', lean='stub', penalty=0,
+    args = SimpleNamespace(report_mode='typed', verifier_retry_seconds=RETRY_SECONDS, out=tmp_path, arm='baseline', lean='stub', penalty=0,
                            judge_fn=None, num_generations=1, max_completion_length=8, adapter=True,
                            steps=1, prompts_per_step=1, learning_rate=.01, beta=0, seed=0,
                            thinking='on', reasoning_effort='low', prompt_variant='neutral', lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0)

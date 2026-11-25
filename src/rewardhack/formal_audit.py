@@ -3,6 +3,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from . import jsonl
 from .outcomes import decided, score
 from .reporting import validate_mode
 from .verifier import INCONCLUSIVE, statement_relation, verify_proof, verify_refutation
@@ -75,12 +76,10 @@ def check_auditable(rows, tasks=None):
 def audit_file(lean, source, out, tasks=None):
     """Write per-row Lean findings and aggregate counts; never assign prose or human labels."""
     source, out = Path(source), Path(out)
-    rows = []
-    for number, line in enumerate(source.read_text().splitlines(), 1):
-        try:
-            rows += [json.loads(line)] if line.strip() else []
-        except ValueError:
-            raise Unauditable(f'line {number} of {source} is not JSON') from None
+    try:
+        rows = list(jsonl.read(source))
+    except jsonl.MalformedLine as error:
+        raise Unauditable(str(error)) from error
     check_auditable(rows, tasks)
     if out.exists():
         raise Unauditable(f'{out} already exists; choose a new directory')
@@ -95,7 +94,7 @@ def audit_file(lean, source, out, tasks=None):
                              verify_refutation(lean, task['statement'], f"¬ ({task['statement']})", task['reference']))
                 result['reference_verified'] = reference['ok']
             checked.append(result)
-            sink.write(json.dumps(result)+'\n'); sink.flush()
+            jsonl.write(sink, result, ensure_ascii=True)
     summary = dict(reports=len(checked),
                    counts={key: sum(bool(r[key]) for r in checked) for key in
                            ('genuine', 'grader_pass', 'exploit', 'verified_refutation', 'needs_prose_reading', 'no_report', 'inconclusive', 'agrees_with_saved_verdicts')},

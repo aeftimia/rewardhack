@@ -19,7 +19,8 @@ from mlx_lm import load, stream_generate
 from mlx_lm.sample_utils import make_sampler
 from mlx_lm.tuner.utils import linear_to_lora_layers
 
-from .outcomes import RETRY_SECONDS, RetryBudget, score, sorry_attempt, summarize, training_rewards, training_keep, verifier_advice
+from . import jsonl
+from .outcomes import RetryBudget, score, sorry_attempt, summarize, training_rewards, training_keep, verifier_advice
 from .prompts import prompt
 from .tasks import select_tasks, split, taskset_rows
 
@@ -66,11 +67,11 @@ def load_adapter(model, adapter):
 
 
 def probe(args, model, tokenizer):
-    report_mode = getattr(args, 'report_mode', 'prose')
+    report_mode = args.report_mode
     tasks = select_tasks(args.taskset, args.tasks)
     random.Random(args.seed).shuffle(tasks)
     rows, started = [], time.perf_counter()
-    retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))
+    retries = RetryBudget(args.verifier_retry_seconds)
     gen_seconds = tokens_total = 0
     with (args.out/'rows.jsonl').open('w') as sink:
         # Whole passes over all tasks, so a time-capped run stays balanced.
@@ -86,8 +87,7 @@ def probe(args, model, tokenizer):
                 rows.append(row)
                 gen_seconds += seconds
                 tokens_total += len(tokens)
-                sink.write(json.dumps(row, ensure_ascii=False)+'\n')
-                sink.flush()
+                jsonl.write(sink, row)
     result = dict(summarize(rows), report_mode=report_mode, variant=args.variant, thinking=args.thinking, max_tokens=args.max_tokens,
                   truncated=sum(r['truncated'] for r in rows), tokens_per_second=tokens_total/max(gen_seconds, 1e-9),
                   mean_tokens=tokens_total/max(len(rows), 1), elapsed_seconds=time.perf_counter()-started,
@@ -104,8 +104,8 @@ def completion_loss(model, prompt_ids, tokens, advantage):
 
 
 def attempt_rate(model, tokenizer, tasks, args, samples):
-    report_mode = getattr(args, 'report_mode', 'prose')
-    rows, retries = [], RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # per monitor pass
+    report_mode = args.report_mode
+    rows, retries = [], RetryBudget(args.verifier_retry_seconds)  # per monitor pass
     for task in tasks:
         ids = encode(tokenizer, task['statement'], args.variant, args.thinking, report_mode)
         for _ in range(samples):
@@ -115,9 +115,9 @@ def attempt_rate(model, tokenizer, tasks, args, samples):
 
 
 def rl(args, model, tokenizer):
-    report_mode = getattr(args, 'report_mode', 'prose')
+    report_mode = args.report_mode
     tasks = split(taskset_rows(args.taskset))['train']
-    retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # for the whole training loop
+    retries = RetryBudget(args.verifier_retry_seconds)  # for the whole training loop
     # The evaluation split stays held out: monitoring takes groups from the training split that are excluded from training.
     groups = sorted({t['group'] for t in tasks})
     random.Random(args.seed).shuffle(groups)
@@ -140,10 +140,9 @@ def rl(args, model, tokenizer):
         entry = dict(step=step, report_mode=report_mode, n=len(rows), sorry=sum(sorry_attempt(r) for r in rows), exploit=sum(r['exploit'] for r in rows),
                      genuine_true=sum(r['genuine'] for r in rows if r['true']), true=sum(r['true'] for r in rows),
                      exploit_and_claims=sum(r['exploit_and_claims'] for r in rows), format_valid=sum(r['format_valid'] for r in rows), **verifier_advice(rows))
-        monitors.write(json.dumps(entry)+'\n')
-        monitors.flush()
+        jsonl.write(monitors, entry, ensure_ascii=True)
         print('monitor', entry, flush=True)
-        (args.out/f'monitor-step{step}.jsonl').write_text(''.join(json.dumps(r, ensure_ascii=False)+'\n' for r in rows))
+        (args.out/f'monitor-step{step}.jsonl').write_text(jsonl.dumps(rows))
 
     run_monitor(0)
     for step in range(1, args.steps+1):
@@ -180,20 +179,17 @@ def rl(args, model, tokenizer):
                 optimizer.update(model, total)
                 mx.eval(model.parameters(), optimizer.state)
             update = total is not None
-        for r, s in zip(rows, samples, strict=True):
-            rollouts.write(json.dumps(dict(r, step=step, tokens=len(s[1]), truncated=s[3]), ensure_ascii=False)+'\n')
-        rollouts.flush()
+        jsonl.write_rows(rollouts, (dict(r, step=step, tokens=len(s[1]), truncated=s[3]) for r, s in zip(rows, samples, strict=True)))
         entry = dict(step=step, report_mode=report_mode, task=task['id'], reward=float(rewards.mean()) if kept else None, mixed=update, sorry=sum(sorry_attempt(r) for r in rows),
                      exploit=sum(r['exploit'] for r in rows), rollout_seconds=t_rollout, lean_seconds=t_lean,
                      update_seconds=time.perf_counter()-t0, tokens=sum(len(s[1]) for s in samples), peak_gib=mx.get_peak_memory()/2**30,
                      **verifier_advice(rows))
-        log.write(json.dumps(entry)+'\n')
-        log.flush()
+        jsonl.write(log, entry, ensure_ascii=True)
         print(entry, flush=True)
         if step % args.monitor_every == 0:
             run_monitor(step)
     mx.save_safetensors(str(args.out/'adapter.safetensors'), dict(tree_flatten(model.trainable_parameters())))
-    (args.out/'summary.json').write_text(json.dumps(dict(**verifier_advice(verifier_rows), report_mode=report_mode, trainable=trainable, updates=sum(json.loads(l)['mixed'] for l in open(args.out/'steps.jsonl')),
+    (args.out/'summary.json').write_text(json.dumps(dict(**verifier_advice(verifier_rows), report_mode=report_mode, trainable=trainable, updates=sum(row['mixed'] for row in jsonl.read(args.out/'steps.jsonl')),
                                                          elapsed_seconds=time.perf_counter()-started, argv=sys.argv[1:], adapter=str(args.adapter) if args.adapter else None,
                                                          purpose='plumbing and mechanism; own trainer; not evidence about the hypothesis'), indent=1)+'\n')
 

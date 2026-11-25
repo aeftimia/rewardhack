@@ -15,6 +15,7 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
+from . import jsonl
 from .prompts import follow_on, prompt
 from .reporting import validate_mode
 from .tasks import task_index
@@ -89,10 +90,7 @@ def update_history(run_dir):
     if not path.exists():
         return {}
     history = {}
-    for line in path.read_text().splitlines():
-        if not line.strip():
-            continue
-        row = json.loads(line)
+    for row in jsonl.read(path):
         step, mixed = row.get('step'), row.get('mixed')
         if type(step) is not int or step < 1 or step in history or type(mixed) is not bool:
             return {}  # corrupt history cannot establish a generation checkpoint
@@ -141,16 +139,12 @@ def reading_index(results):
     def join(batches, labels):
         rows = {}
         for p in batches:
-            for line in p.read_text().splitlines():
-                if line.strip():
-                    r = json.loads(line)
-                    rows[r['id']] = r
+            for r in jsonl.read(p):
+                rows[r['id']] = r
         for p in labels:
-            for line in p.read_text().splitlines():
-                if line.strip():
-                    lab = json.loads(line)
-                    if lab['id'] in rows:
-                        yield rows[lab['id']], lab, p.name
+            for lab in jsonl.read(p):
+                if lab['id'] in rows:
+                    yield rows[lab['id']], lab, p.name
 
     reading = results / 'report-reading'
     for row, lab, source in join(sorted(reading.glob('batch*.jsonl')), sorted(reading.glob('labels*.jsonl'))):
@@ -232,8 +226,7 @@ def export(results, out, tasks=None):
             meta = run_meta(summary, run)
             history = update_history(run_dir)
             for path, updates in row_files(run_dir):
-                lines = [line for line in path.read_text().splitlines() if line.strip()]
-                rows = [json.loads(line) for line in lines]
+                rows = list(jsonl.read(path))
                 first_turn = {r.get('conversation'): r for r in rows if str(r.get('turn', 1)) == '1'}
                 file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
                 rel = path.relative_to(results).as_posix()
@@ -294,7 +287,7 @@ def export(results, out, tasks=None):
                                   declaration_why=row.get('declaration_why'), partial_batch=row.get('partial_batch', False),
                                   reading=reading, trace_reading={k: v for k, v in trace.items() if k != 'task_id'} if trace else None,
                                   cheat_axis=axis, disclosure_axis=disclosure)
-                    sink.write(json.dumps(record, ensure_ascii=False) + '\n')
+                    jsonl.write(sink, record)
                     counts[(run, provenance, axis, disclosure)] += 1
                     n += 1
     manifest = dict(schema=SCHEMA, rows=n, repo_commit=commit, results=str(results), out_sha256=hashlib.sha256(out.read_bytes()).hexdigest(),

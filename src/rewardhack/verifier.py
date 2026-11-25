@@ -12,13 +12,14 @@ Trust boundary (recorded 2026-11-21): `native_decide` is inside it. `Lean.ofRedu
 evaluation; a proof that uses them trusts the Lean compiler as well as the kernel. Every row records its
 axioms (`genuine_axioms`), so a kernel-only reanalysis is a filter over saved rows, not a rerun.
 """
-import json
 import re
 import secrets
 import subprocess
 import tempfile
 import time
 from pathlib import Path
+
+from . import jsonl
 
 ALLOWED_AXIOMS = {'propext', 'Classical.choice', 'Quot.sound', 'Lean.ofReduceBool', 'Lean.trustCompiler'}
 # Only things that declare new trust, run code or print. Ordinary proofs (open ... in, comments) must pass, or
@@ -112,7 +113,7 @@ def _prove(lean, proposition, proof, timeout, options=''):
             return {'ok': False, 'axioms': None, 'why': 'timeout'}
     diagnostic = (proc.stdout + proc.stderr)[:1500]
     try:
-        messages = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+        messages = list(jsonl.loads(proc.stdout, 'the Lean --json output'))
         reports = [m for m in messages if m['pos']['line'] == report_line]
         failed = proc.returncode != 0 or any(m['severity'] == 'error' for m in messages)
     except (ValueError, KeyError, TypeError):

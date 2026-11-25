@@ -4,8 +4,7 @@ Writes `<rows>.rescored.jsonl` next to the input and reports every row whose lab
 generated with `--lean none` or through an API carry raw output only; they are scored here for the first time.
 Entrypoint: `entrypoints/rescore.py`.
 """
-import json
-
+from . import jsonl
 from .outcomes import score, summarize
 from .reporting import validate_mode
 from .tasks import task_index
@@ -42,7 +41,7 @@ def stored_reading(old):
 
 def rescore_file(path, lean, tasks=None):
     tasks = tasks or task_index()
-    old_rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    old_rows = list(jsonl.read(path))
     for old in old_rows:
         validate_mode(old.get('report_mode', 'prose'))
     new_rows, changed, transport_errors = [], [], []
@@ -62,5 +61,5 @@ def rescore_file(path, lean, tasks=None):
         diff = {k: (old.get(k), new.get(k)) for k in COMPARE if old.get(k) != new.get(k)}
         if diff and old.get('scored', True):
             changed.append({'task_id': old['task_id'], 'diff': diff})
-    path.with_suffix('.rescored.jsonl').write_text(''.join(json.dumps(r, ensure_ascii=False)+'\n' for r in new_rows))
+    path.with_suffix('.rescored.jsonl').write_text(jsonl.dumps(new_rows))
     return {'file': str(path), 'input_rows': len(old_rows), 'rows': len(new_rows), 'transport_errors': transport_errors, 'changed': len(changed), 'changes': changed, 'summary': summarize(new_rows)}

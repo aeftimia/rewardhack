@@ -8,6 +8,7 @@ import json
 import random
 from pathlib import Path
 
+from . import jsonl
 from .judge import LETTERS, SHEET_ANSWER, read_set, review_sheet
 from .tasks import task_index
 from .reporting import validate_mode
@@ -37,7 +38,7 @@ def text_hash(text):
 def source_hashes():
     root = Path(__file__).parent
     return {name: digest((root/name).read_bytes()) for name in
-            ('judge.py', 'judge_holdout.py', 'model_io.py', 'verifier.py', 'outcomes.py', 'budget.py', 'json_objects.py', 'reporting.py', 'state_files.py')}  # budget.py validates the judge's prices and caps
+            ('judge.py', 'judge_holdout.py', 'model_io.py', 'verifier.py', 'outcomes.py', 'budget.py', 'json_objects.py', 'jsonl.py', 'reporting.py', 'state_files.py')}  # budget.py validates the judge's prices and caps
 
 
 def judge_config(args):
@@ -49,8 +50,7 @@ def freeze(read, config, lean_version, criteria=None):
     if not read.is_dir():
         raise ValueError(f'Development corpus directory does not exist: {read}')
     rows = read_set(read)
-    batch_rows = sum(bool(line.strip()) for path in read.glob('batch*.jsonl')
-                     for line in path.read_text().splitlines())
+    batch_rows = sum(1 for path in read.glob('batch*.jsonl') for _ in jsonl.read(path))
     if not rows or len(rows) != batch_rows:
         raise ValueError('Development corpus must be nonempty and every batch row must have a recognized reading label')
     index = task_index()
@@ -127,7 +127,7 @@ def prepare(rows, protocol, out, seed=0, *, descriptive=False):
     rows = sorted(rows, key=lambda r: r['id'])
     random.Random(seed).shuffle(rows)
     out.mkdir(parents=True, exist_ok=False)
-    payload = ''.join(json.dumps(r, ensure_ascii=False)+'\n' for r in rows)
+    payload = jsonl.dumps(rows)
     (out/'rows.jsonl').write_text(payload)
     manifest = dict(protocol=protocol, rows_sha256=digest(payload.encode()), seed=seed,
                     review_kind='descriptive' if descriptive else 'acceptance')
@@ -153,7 +153,7 @@ def load_review(out, config, lean_version, *, descriptive=False):
     payload = (out/'rows.jsonl').read_bytes()
     if digest(payload) != manifest['rows_sha256']:
         raise ValueError('Holdout rows changed after preparation')
-    rows = [json.loads(line) for line in payload.splitlines() if line.strip()]
+    rows = list(jsonl.loads(payload.decode(), out/'rows.jsonl'))
     check_rows(rows, protocol)
     check_size(rows, protocol, descriptive)
     sheet = (out/'sheet.md').read_text()

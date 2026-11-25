@@ -12,9 +12,9 @@ import sys
 import time
 from pathlib import Path
 
-from . import deadline
+from . import deadline, jsonl
 from .gpu import GpuSampler
-from .outcomes import judge_advice, judge_failing, NO_VARIATION, RETRY_SECONDS, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
+from .outcomes import judge_advice, judge_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
@@ -166,8 +166,8 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
     import torch
     device = next(model.parameters()).device
     rows, generated, t_gen, t_lean = [], 0, 0.0, 0.0
-    report_mode = getattr(args, 'report_mode', 'prose')
-    retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))
+    report_mode = args.report_mode
+    retries = RetryBudget(args.verifier_retry_seconds)
     samples = args.eval_samples if samples is None else samples
     # A constant, not --seed: the before- and after-evaluations draw from the same stream so their difference is the
     # adapter's. It also means a probe or a before-evaluation is the same draw under every --seed, and says so in the summary.
@@ -198,8 +198,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
                 row = score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries, report_mode=report_mode)
                 t_lean += time.perf_counter()-t0
                 rows.append(row)
-                sink.write(json.dumps(row, ensure_ascii=False)+'\n')
-                sink.flush()
+                jsonl.write(sink, row)
             if judge_failing(rows):
                 raise RuntimeError(f"the judge is failing in the {stage} evaluation: {judge_advice(rows)}")
             completed, slowest = completed+1, max(slowest, time.monotonic()-task_started)
@@ -218,13 +217,13 @@ def prepare_training(model, tokenizer, tasks, args, summary):
     from transformers import TrainerCallback, set_seed
     from trl import GRPOConfig, GRPOTrainer
     by_statement = {t['statement']: t for t in tasks}
-    report_mode = getattr(args, 'report_mode', 'prose')
+    report_mode = args.report_mode
     summary['report_mode'] = report_mode
     stops = stop_ids(model, tokenizer)  # the same stop IDs as `evaluate`, so both paths agree on a finished answer
     timing = {'step_start': 0.0, 'rollout': [], 'lean': [], 'update': [], 'reward_end': 0.0}
     sink = (args.out/'training-rollouts.jsonl').open('w')
     groups, undecided, lost = [], [], []
-    retries = RetryBudget(getattr(args, 'verifier_retry_seconds', RETRY_SECONDS))  # for the whole training phase, so the deadline reserve holds
+    retries = RetryBudget(args.verifier_retry_seconds)  # for the whole training phase, so the deadline reserve holds
 
     steps = (args.out/'steps.jsonl').open('w')
     first_seen = summary.setdefault('first_seen_step', {})
@@ -244,8 +243,7 @@ def prepare_training(model, tokenizer, tasks, args, summary):
             except BaseException:
                 # A stop mid-batch (deadline, judge streak, spend cap) keeps what was already scored and paid for.
                 # Marked, because these rows are in no step, no tally and no complete prompt group.
-                sink.write(''.join(json.dumps(dict(row, partial_batch=True), ensure_ascii=False)+'\n' for row in rows))
-                sink.flush()
+                jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in rows))
                 summary['partial_batch_rows'] = len(rows)
                 raise
         rewards = training_rewards(rows, args.num_generations)
@@ -256,12 +254,10 @@ def prepare_training(model, tokenizer, tasks, args, summary):
         if judge_failing(undecided):
             # Stops a paid run whose rollouts are being dropped by an unreliable judge. The batch is saved and marked: it is in
             # no step and no tally.
-            sink.write(''.join(json.dumps(dict(row, partial_batch=True), ensure_ascii=False)+'\n' for row in rows))
-            sink.flush()
+            jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in rows))
             summary['partial_batch_rows'] = len(rows)
             raise RuntimeError(f"the judge failed on {judging['judge_undecided']} of {judging['judge_asked']} readings: its failure rate is above the 5% limit")
-        sink.write(''.join(json.dumps(row, ensure_ascii=False)+'\n' for row in rows))
-        sink.flush()
+        jsonl.write_rows(sink, rows)
         step = len(timing['lean'])+1
         grouped = reward_groups(rows, args.num_generations)
         groups.extend([True]*grouped['mixed_groups'] + [False]*grouped['zero_advantage_groups'])
@@ -274,8 +270,7 @@ def prepare_training(model, tokenizer, tasks, args, summary):
             if counts.get(behaviour) and behaviour not in first_seen:
                 first_seen[behaviour] = step
         # Equal rewards give zero reward advantages; KL and optimizer momentum can still move weights.
-        steps.write(json.dumps(dict(step=step, **counts, **verifier_advice(rows), retries_denied=retries.denied, **grouped))+'\n')
-        steps.flush()
+        jsonl.write(steps, dict(step=step, **counts, **verifier_advice(rows), retries_denied=retries.denied, **grouped), ensure_ascii=True)
         timing['reward_end'] = time.perf_counter()
         timing['lean'].append(timing['reward_end']-t0)
         return rewards
@@ -383,7 +378,8 @@ def run(args):
     args.out.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     args.train_deadline = time.monotonic()+args.max_seconds-args.final_eval_seconds
-    summary = {'status': 'running', 'report_mode': getattr(args, 'report_mode', 'prose'), 'argv': sys.argv[1:], 'evaluation_seed': EVALUATION_SEED,
+    args.judge_fn = None  # no judge is built in `controls`, or before the controls pass; the usage line below reads it either way
+    summary = {'status': 'running', 'report_mode': args.report_mode, 'argv': sys.argv[1:], 'evaluation_seed': EVALUATION_SEED,
                # What the transcript export needs to rebuild each prompt and label the policy; argv alone omits defaults.
                'model': args.model, 'revision': args.revision, 'prompt_variant': args.prompt_variant,
                'adapter': str(args.adapter) if args.adapter else None, 'template_kwargs': template_kwargs(args), 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
@@ -432,8 +428,8 @@ def run(args):
         summary['after'] = evaluate(model, tokenizer, evaluation, args, 'after', stop_at=hard_deadline-60)
         if summary['after']['incomplete']:
             # A shortened after-evaluation covers fewer tasks; beside the full before-evaluation its rates would compare different task sets.
-            done = {json.loads(line)['task_id'] for line in (args.out/'after-evaluation.jsonl').read_text().splitlines()}
-            matched = [row for row in map(json.loads, (args.out/'before-evaluation.jsonl').read_text().splitlines()) if row['task_id'] in done]
+            done = {row['task_id'] for row in jsonl.read(args.out/'after-evaluation.jsonl')}
+            matched = [row for row in jsonl.read(args.out/'before-evaluation.jsonl') if row['task_id'] in done]
             summary['before_on_after_tasks'] = summarize(matched)
         summary['status'] = 'completed'
     except BaseException as error:
@@ -443,7 +439,7 @@ def run(args):
     finally:
         deadline.disarm()
         gpu = sampler.summary()
-        meter = getattr(getattr(args, 'judge_fn', None), 'meter', None)
+        meter = None if args.judge_fn is None else args.judge_fn.meter
         summary['judge_usage'] = meter.totals if meter else None
         summary.update(elapsed_seconds=time.perf_counter()-started, peak_rss_gib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/2**(20 if sys.platform != 'darwin' else 30),
                        peak_gpu_memory_used_gib=None if gpu['gpu_sampler_error'] else gpu['gpu_peak_mib']/1024,

@@ -126,7 +126,7 @@ def test_typed_empty_justification_is_still_a_report(conclusive, monkeypatch):
     assert result['machine_determined_flag'] == 'ERROR' and not result['no_report']
 
 
-@pytest.mark.parametrize('dependency', ['json_objects.py', 'reporting.py', 'state_files.py'])
+@pytest.mark.parametrize('dependency', ['json_objects.py', 'jsonl.py', 'reporting.py', 'state_files.py'])
 def test_holdout_freeze_covers_report_parser_dependencies(monkeypatch, dependency):
     from pathlib import Path
     hashes = judge_holdout.source_hashes()
