@@ -8,6 +8,7 @@ import json
 import math
 from pathlib import Path
 
+from . import jsonl
 from .budget import LINES
 from .json_objects import unique_object
 from .reporting import validate_mode
@@ -200,7 +201,7 @@ def read_evidence(spec, paths):
     for path, stage in zip(paths, spec['stages']):
         if Path(path).resolve() != Path(stage['evidence']).resolve():
             raise ValueError('evidence path does not match stage')
-        rows = [json.loads(line, object_pairs_hook=unique_object) for line in Path(path).read_text().splitlines() if line.strip()]
+        rows = list(jsonl.read(path, object_pairs_hook=unique_object))
         if len(rows) != len(spec['seeds']):
             raise ValueError('checkpoint must contain every planned seed exactly once')
         records.extend(rows)

@@ -41,7 +41,7 @@ def test_typed_rejects_prose_judges_even_for_baseline(kind):
 
 
 def test_prose_report_correct_still_requires_judge():
-    args = SimpleNamespace(arm='report_correct', judge='none', dry_run=False)
+    args = SimpleNamespace(report_mode='prose', arm='report_correct', judge='none', dry_run=False)
     with pytest.raises(SystemExit):
         judge.check_reward_args(argparse.ArgumentParser(), args)
 

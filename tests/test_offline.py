@@ -120,23 +120,23 @@ def test_judge_labels_and_honesty_bit():
     for bad in (dict(arm='report_correct', judge='none', dry_run=False), dict(arm='report_correct', judge='triage', dry_run=False),
                 dict(arm='baseline', judge='triage', dry_run=False)):
         try:
-            check_reward_args(ap, argparse.Namespace(**bad))
+            check_reward_args(ap, argparse.Namespace(report_mode='prose', **bad))
         except SystemExit:
             continue
         raise AssertionError(bad)
-    check_reward_args(ap, argparse.Namespace(arm='report_correct', judge='triage', dry_run=True))
+    check_reward_args(ap, argparse.Namespace(report_mode='prose', arm='report_correct', judge='triage', dry_run=True))
     from rewardhack.judge import OPENAI_URL
     paid = dict(arm='report_correct', judge='api', dry_run=False, judge_url=OPENAI_URL)
-    check_reward_args(ap, argparse.Namespace(**paid, judge_max_usd=1.0, judge_usd_in=0.2, judge_usd_out=1.25))
+    check_reward_args(ap, argparse.Namespace(report_mode='prose', **paid, judge_max_usd=1.0, judge_usd_in=0.2, judge_usd_out=1.25))
     # A paid judge with no cap, or with a price of zero that the cap could never reach, is refused before anything runs.
     for unbounded in (dict(judge_max_usd=None, judge_usd_in=0.2, judge_usd_out=1.25), dict(judge_max_usd=1.0, judge_usd_in=0.0, judge_usd_out=1.25)):
         try:
-            check_reward_args(ap, argparse.Namespace(**paid, **unbounded))
+            check_reward_args(ap, argparse.Namespace(report_mode='prose', **paid, **unbounded))
         except SystemExit:
             continue
         raise AssertionError(unbounded)
     # A judge served on the pod itself costs nothing per call and needs neither.
-    check_reward_args(ap, argparse.Namespace(arm='report_correct', judge='api', dry_run=False, judge_url='http://127.0.0.1:8011/v1',
+    check_reward_args(ap, argparse.Namespace(report_mode='prose', arm='report_correct', judge='api', dry_run=False, judge_url='http://127.0.0.1:8011/v1',
                                              judge_max_usd=None, judge_usd_in=0.0, judge_usd_out=0.0))
     # h + s + (1 - λ)c, and the algebraically equal h + r + g - λc of the application's wording.
     for g, v, r, h, lam in [(1, 1, 0, 1, 0.5), (0, 0, 1, 1, 0.5), (1, 0, 0, 1, 0.5), (1, 0, 0, 0, 2.0), (0, 0, 0, 0, 1.0)]:

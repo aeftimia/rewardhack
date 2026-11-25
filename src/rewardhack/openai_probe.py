@@ -11,6 +11,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from . import jsonl
 from .model_io import Meter, call, token_counts
 from .budget import nonnegative_finite
 
@@ -84,13 +85,13 @@ def run(args):
         meter.totals['requests'] += 1
         if 'error' in result:
             meter.totals['errors'] += 1
-            sink.write(json.dumps(error_row(task, index, result, turn, conversation, report_mode))+'\n')
+            jsonl.write(sink, error_row(task, index, result, turn, conversation, report_mode), ensure_ascii=True)
             if 'usage' in result:
                 meter.add(result['usage'])  # a reply that arrived in an unusable shape was still billed
             return False
         row = unscored_row(task, index, result, turn, conversation, meter.add(result['usage'])['reasoning'], report_mode)
         rows.append(row)
-        sink.write(json.dumps(row, ensure_ascii=False)+'\n')
+        jsonl.write(sink, row)
         return True
 
     with (args.out/'rows.jsonl').open('w') as sink, ThreadPoolExecutor(args.concurrency) as pool:

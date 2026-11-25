@@ -87,16 +87,16 @@ def test_an_unpriced_probe_stores_unknown_token_counts_as_none(monkeypatch, tmp_
 def test_a_judge_anywhere_but_this_machine_needs_cap_and_prices(url):
     ap = argparse.ArgumentParser()
     paid = dict(arm='report_correct', judge='api', dry_run=False, judge_url=url)
-    judge.check_reward_args(ap, argparse.Namespace(**paid, judge_max_usd=1.0, judge_usd_in=0.2, judge_usd_out=1.25))
+    judge.check_reward_args(ap, argparse.Namespace(report_mode='prose', **paid, judge_max_usd=1.0, judge_usd_in=0.2, judge_usd_out=1.25))
     for unbounded in (dict(judge_max_usd=None, judge_usd_in=0.2, judge_usd_out=1.25), dict(judge_max_usd=1.0, judge_usd_in=0.0, judge_usd_out=1.25),
                       dict(judge_max_usd=1.0, judge_usd_in=0.2, judge_usd_out=0.0)):
         with pytest.raises(SystemExit):
-            judge.check_reward_args(ap, argparse.Namespace(**paid, **unbounded))
+            judge.check_reward_args(ap, argparse.Namespace(report_mode='prose', **paid, **unbounded))
 
 
 @pytest.mark.parametrize('url', ['http://127.0.0.1:8011/v1', 'http://localhost:8011/v1/', 'http://[::1]:8011/v1'])
 def test_a_judge_on_this_machine_needs_neither(url):
-    judge.check_reward_args(argparse.ArgumentParser(), argparse.Namespace(arm='report_correct', judge='api', dry_run=False, judge_url=url,
+    judge.check_reward_args(argparse.ArgumentParser(), argparse.Namespace(report_mode='prose', arm='report_correct', judge='api', dry_run=False, judge_url=url,
                                                                           judge_max_usd=None, judge_usd_in=0.0, judge_usd_out=0.0))
 
 

@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 
 from pydantic import create_model
 
+from . import jsonl
 from .json_objects import STRICT, Utf8Text, strict_object
 from .budget import nonnegative_finite
 from .reporting import validate_mode
@@ -270,7 +271,7 @@ def add_arguments(ap):
 
 def check_reward_args(ap, args):
     """Validate the report source: typed flags need no reader; prose rewards need a suitable judge."""
-    mode = getattr(args, 'report_mode', 'prose')
+    mode = args.report_mode
     try:
         validate_mode(mode)
     except ValueError as error:
@@ -300,40 +301,32 @@ def check_arguments(ap, args, **caps):
 
 def from_args(args):
     """The judge the arguments ask for, with the code check of `established` in front when a Lean binary is given."""
-    mode = getattr(args, 'report_mode', 'prose')
-    validate_mode(mode)
+    mode = validate_mode(args.report_mode)
     if mode == 'typed':
         if args.judge != 'none':
             raise ValueError('--report-mode typed requires --judge none')
         return None
     judge = _from_args(args)
-    return with_statement_check(judge, args.lean) if judge and getattr(args, 'lean', None) else judge
+    return with_statement_check(judge, args.lean) if judge and args.lean else judge
 
 
 def _from_args(args):
     return make_judge(args.judge, args.judge_model, args.judge_revision, args.judge_url, args.judge_key_env,
-                      args.judge_usd_in, args.judge_usd_out, args.judge_extra, getattr(args, 'judge_max_usd', None))
+                      args.judge_usd_in, args.judge_usd_out, args.judge_extra, args.judge_max_usd)
 
 
 def read_set(folder):
     """Every model-read row under results/report-reading/: the batch row joined with its label."""
-    labels = {}
-    for path in sorted(folder.glob('labels*.jsonl')):
-        for line in path.read_text().splitlines():
-            if line.strip():
-                record = json.loads(line)
-                labels[record['id']] = record['category']
+    labels = {record['id']: record['category'] for path in sorted(folder.glob('labels*.jsonl')) for record in jsonl.read(path)}
     rows, unlabelled, unknown = [], [], []
     for path in sorted(folder.glob('batch*.jsonl')):
-        for line in path.read_text().splitlines():
-            if line.strip():
-                row = json.loads(line)
-                if row['id'] not in labels:
-                    unlabelled.append(row['id'])
-                elif labels[row['id']] not in READING_TO_CLAIM:
-                    unknown.append(f"{row['id']} ({labels[row['id']]!r})")
-                else:
-                    rows.append(dict(row, category=labels[row['id']], read_claim=READING_TO_CLAIM[labels[row['id']]]))
+        for row in jsonl.read(path):
+            if row['id'] not in labels:
+                unlabelled.append(row['id'])
+            elif labels[row['id']] not in READING_TO_CLAIM:
+                unknown.append(f"{row['id']} ({labels[row['id']]!r})")
+            else:
+                rows.append(dict(row, category=labels[row['id']], read_claim=READING_TO_CLAIM[labels[row['id']]]))
     if unlabelled or unknown:
         # Refused, not skipped: a dropped row shrinks every agreement rate's denominator and nobody downstream can see it.
         raise ValueError(f'{folder}: every batch row must have a recognized reading label, but {len(unlabelled)} read rows have no label (first: {unlabelled[:3]}) and '
@@ -390,8 +383,7 @@ def validate(judge, rows, sink=None, max_usd=None):
                       error_kinds=kinds_for(verdict), judge_raw=verdict['raw'])
         judged.append(record)
         if sink:
-            sink.write(json.dumps(record, ensure_ascii=False)+'\n')
-            sink.flush()
+            jsonl.write(sink, record)
     return agreement(judged)
 
 
