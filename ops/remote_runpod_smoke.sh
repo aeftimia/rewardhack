@@ -40,10 +40,19 @@ mkdir -p /workspace/lean && curl -fsSL https://github.com/leanprover/lean4/relea
 LEAN_BIN=/workspace/lean/lean-4.19.0-linux/bin/lean
 if unshare -rnpf --mount-proc true 2>/dev/null; then ISOLATE='unshare -rnpf --mount-proc'
 elif unshare -rn true 2>/dev/null; then ISOLATE='unshare -rn'; log 'WARNING: no private /proc for Lean; relying on the syntax screen to keep proofs from reading process environments'
+elif [[ ${LEAN_ISOLATION:-} == none ]] && setpriv --reuid=65534 --regid=65534 --clear-groups true 2>/dev/null; then
+  # No namespaces in this container. An unprivileged user cannot read another user's /proc/<pid>/environ,
+  # which is where the judge key lives; the network stays reachable, which is what LEAN_ISOLATION=none accepts.
+  ISOLATE='setpriv --reuid=65534 --regid=65534 --clear-groups --no-new-privs'; READABLE=1
+  log 'WARNING: no network namespace; Lean runs as an unprivileged user with an empty environment (LEAN_ISOLATION=none)'
 elif [[ ${LEAN_ISOLATION:-} == none ]]; then ISOLATE=''; log 'WARNING: no network namespace; running Lean with an empty environment only (LEAN_ISOLATION=none)'
 else fail 'NO_NETWORK_NAMESPACE: this container cannot unshare. Rerun with LEAN_ISOLATION=none only if running model-written Lean on a disposable pod without network isolation is acceptable.'
 fi
-printf '#!/bin/bash\nexec env -i PATH=/usr/bin:/bin %s %s "$@"\n' "$ISOLATE" "$LEAN_BIN" > ~/lean-safe && chmod +x ~/lean-safe
+# The verifier writes each source into a private temporary folder; the unprivileged user needs to read that one file.
+OPEN=''; [[ ${READABLE:-0} == 1 ]] && OPEN='for a in "$@"; do [[ -f $a ]] && chmod a+rx "$(dirname "$a")" && chmod a+r "$a"; done'
+mkdir -p /workspace/bin
+printf '#!/bin/bash\n%s\nexec env -i PATH=/usr/bin:/bin %s %s "$@"\n' "$OPEN" "$ISOLATE" "$LEAN_BIN" > /workspace/bin/lean-safe && chmod 755 /workspace/bin/lean-safe
+ln -sf /workspace/bin/lean-safe ~/lean-safe
 ~/lean-safe --version >> ~/out/steps.log 2>&1 || fail LEAN_WRAPPER_FAILED
 
 # --- Python: the pinned training stack, and vLLM in its own environment for the judge server.

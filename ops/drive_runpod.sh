@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Drive an already-running RunPod pod over SSH: sync the repo, start the remote script, pull results
-# until DONE or the deadline. The pod has no OS shutdown timer, so termination is done in the console
-# by whoever launched it; this script prints a loud reminder on every exit.
+# until DONE or the deadline. Billing has a time cap that does not depend on this machine: the remote
+# runner refuses to start unless the pod can remove itself, and removes it a grace period after the
+# deadline or after the job ends (ops/remote_job.sh). This script also removes the pod when it exits,
+# once the results are copied; KEEP_POD=1 skips that, for a relaunch on the same pod within the grace period.
 # Pods for this project live in the RunPod space dedicated to it (docs/preflight-plan.md); do not point this at any other account's pod.
 # Usage: drive_runpod.sh <ssh host> <ssh port> <remote script> <results dir> <deadline minutes>
 set -euo pipefail
@@ -20,7 +22,14 @@ fi
 mkdir -p "$RESULTS"
 SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=.tools/known_hosts -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" "root@$HOST:out/" "$RESULTS/" 2>/dev/null; }
-finish() { echo "copying results"; pull || true; "${SSH[@]}" "root@$HOST" 'rm -f ~/.judge_key' 2>/dev/null || true; date -u +%FT%TZ > "$RESULTS/driver-exit.txt"; echo "REMINDER: terminate the pod in the RunPod console now"; }
+finish() {
+  echo "copying results"; pull || true
+  "${SSH[@]}" "root@$HOST" 'rm -f ~/.judge_key' 2>/dev/null || true
+  date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
+  if [[ ${KEEP_POD:-0} == 1 ]]; then echo "KEEP_POD=1: pod left running; its own timer removes it (out/autostop.log)"
+  elif "${SSH[@]}" "root@$HOST" 'bash pilot-repo/ops/remote_job.sh --remove-now' 2>/dev/null; then echo "pod removal requested; confirm in the RunPod console that it is gone"
+  else echo "REMINDER: could not remove the pod from here. Terminate it in the RunPod console now"; fi
+}
 trap finish EXIT
 for _ in $(seq 20); do "${SSH[@]}" "root@$HOST" true 2>/dev/null && break; sleep 15; done
 "${SSH[@]}" "root@$HOST" true || { echo 'ssh failed'; exit 1; }
@@ -33,7 +42,7 @@ if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && ${
 fi
 # A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
 # The remote log goes inside it so the runner's own errors are pulled with the results.
-"${SSH[@]}" "root@$HOST" "rm -rf out; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
+"${SSH[@]}" "root@$HOST" "rm -rf out; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=${AUTOSTOP_GRACE_SECONDS:-600} nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60))
 while ((SECONDS < END)); do
@@ -45,5 +54,5 @@ while ((SECONDS < END)); do
   fi
   if ((SECONDS % 300 < 60)); then pull || true; fi
 done
-echo 'driver deadline reached; remote process timeout is armed, but terminate the pod now to stop billing'
+echo 'driver deadline reached; the remote timeout and the pod removal timer are armed'
 exit 1

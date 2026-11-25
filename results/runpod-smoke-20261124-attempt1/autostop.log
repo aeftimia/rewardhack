@@ -1,0 +1,4 @@
+ID            	NAME                  	GPU           	IMAGE NAME                                     	STATUS  
+81t5x2otki3u26	associated_salmon_tuna	1 RTX PRO 6000	runpod/pytorch:2.1.0-cu1320-torch280-ubuntu2404	RUNNING	
+2026-11-25T01:48:32Z armed: pod 81t5x2otki3u26 is removed at most 7230s from now
+2026-11-25T01:49:04Z job ended with 1; removing pod in 600s

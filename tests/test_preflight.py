@@ -99,6 +99,42 @@ def test_remote_runner_propagates_failure(tmp_path):
     assert (tmp_path/'out'/'DONE').exists()
 
 
+def test_remote_runner_arms_pod_removal_or_refuses_to_start(tmp_path):
+    """On a RunPod pod the billing time cap is the pod removing itself; without it the job must not start."""
+    import os, time
+    bin_dir = tmp_path/'bin'
+    bin_dir.mkdir()
+    calls = tmp_path/'runpodctl.calls'
+    stubs = dict(timeout='shift 3\nexec "$@"\n', setsid='exec "$@"\n', pkill=f'echo "pkill $@" >> {calls}\n',
+                 runpodctl=f'echo "$@ key=$RUNPOD_API_KEY" >> {calls}\n[[ $2 != pod || $3 != bad ]]\n')
+    for name, body in stubs.items():
+        (bin_dir/name).write_text('#!/bin/bash\n'+body)
+        (bin_dir/name).chmod(0o755)
+    job = tmp_path/'job.sh'
+    job.write_text(f'touch {tmp_path}/job-ran\nexit 0\n')
+    def run(pod, out, grace='1', require='1'):
+        env = dict(os.environ, REMOTE_JOB_OUT=str(tmp_path/out), PATH=str(bin_dir)+':'+os.environ['PATH'],
+                   RUNPOD_POD_ID=pod, RUNPOD_API_KEY='pod-scoped', AUTOSTOP_GRACE_SECONDS=grace, REQUIRE_AUTOSTOP=require)
+        return subprocess.run(['bash', 'ops/remote_job.sh', str(job), '10'], env=env, capture_output=True, text=True)
+    refused = run('bad', 'refused')  # the pod's key cannot even read the pod: no cap, no job
+    assert refused.returncode == 3 and 'NO_AUTOSTOP' in refused.stdout and not (tmp_path/'job-ran').exists()
+    assert (tmp_path/'refused'/'EXIT_CODE').read_text().strip() == '3'
+    assert run('', 'nopod').returncode == 3 and not (tmp_path/'job-ran').exists()
+    assert run('', 'elsewhere', require='0').returncode == 0 and (tmp_path/'job-ran').exists()  # not RunPod: unchanged
+    calls.write_text('')
+    assert run('pod1', 'armed').returncode == 0
+    log = (tmp_path/'armed'/'autostop.log').read_text()
+    assert 'removed at most 41s from now' in log and 'removing pod in 1s' in log  # 10 + 30 kill grace + 1
+    deadline = time.monotonic()+10
+    while 'remove pod pod1' not in calls.read_text() and time.monotonic() < deadline:
+        time.sleep(.2)
+    assert 'remove pod pod1 key=pod-scoped' in calls.read_text()  # after the job ended, with nobody connected
+    assert 'pkill -f runpodctl remove pod' in calls.read_text()  # an earlier job's timers are replaced, not left to fire mid-run
+    now = subprocess.run(['bash', 'ops/remote_job.sh', '--remove-now'], capture_output=True, text=True,
+                         env=dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'], RUNPOD_POD_ID='pod2', REMOTE_JOB_OUT=str(tmp_path/'now')))
+    assert now.returncode == 0 and 'remove pod pod2' in calls.read_text() and not (tmp_path/'now'/'EXIT_CODE').exists()
+
+
 def test_reward_groups_measure_within_prompt_variation():
     from rewardhack.outcomes import reward_groups
     base = dict(exploit=False, genuine=False, verified_refutation=False, body='', format_valid=True, verifier_inconclusive=False)

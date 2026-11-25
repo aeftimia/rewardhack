@@ -1,0 +1,8 @@
+2026-11-25T01:48:32Z start lean
+2026-11-25T01:48:37Z WARNING: no network namespace; Lean runs as an unprivileged user with an empty environment (LEAN_ISOLATION=none)
+Lean (version 4.19.0, x86_64-unknown-linux-gnu, commit 6caaee842e94, Release)
+2026-11-25T01:48:37Z start install
+2026-11-25T01:48:50Z verifier controls passed
+2026-11-25T01:48:50Z start download openai/gpt-oss-20b
+2026-11-25T01:48:50Z start probe
+2026-11-25T01:49:04Z PROBE_FAILED

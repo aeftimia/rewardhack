@@ -70,7 +70,15 @@ def load_model(args, summary):
     if cuda:
         kwargs['device_map'] = 'auto'
     t0 = time.perf_counter()
-    model = AutoModelForCausalLM.from_pretrained(args.model, **kwargs)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(args.model, **kwargs)
+    except ValueError as error:
+        # Some architectures (gpt-oss in transformers 5.17) have no SDPA path and say so at construction.
+        if 'attention implementation' not in str(error):
+            raise
+        kwargs['attn_implementation'] = 'eager'
+        model = AutoModelForCausalLM.from_pretrained(args.model, **kwargs)
+    summary['attn_implementation'] = kwargs['attn_implementation']
     if args.quant != 'none' and args.mode == 'train':
         from peft import prepare_model_for_kbit_training
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
