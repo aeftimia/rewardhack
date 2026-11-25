@@ -69,6 +69,14 @@ fi
 # Everything above refuses a command that could only fail later, on a pod that is already billing. DRIVE_CHECK_ONLY=1 runs just
 # those checks, with placeholder host and port if need be, so they can be made before a pod is deployed (`entrypoints/gate.py ready`).
 if [[ ${DRIVE_CHECK_ONLY:-0} == 1 ]]; then echo 'check passed'; exit 0; fi
+# The first act once the arguments are valid: the launch record (`entrypoints/gate.py ready`) must cover this launch, its commit,
+# ledger, remote script, deadline and the driver settings in this environment, and must not have started one already. It is
+# marked used here. A host under .invalid is exempt: that top-level domain is reserved (RFC 6761) and never resolves, so no pod
+# can be reached there; the driver's own tests use it with ssh stubbed. An ssh_config alias for a .invalid name is the one way
+# around that, and it is not made by accident.
+if [[ $HOST != *.invalid ]]; then
+  bash ops/gate.sh launch --remote "$REMOTE" --deadline "$DEADLINE" || { echo 'not started: the launch check above refused it, before any pod was contacted' >&2; exit 2; }
+fi
 mkdir -p "$RESULTS"
 SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$RESULTS/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" "root@$HOST:out/" "$RESULTS/"; }

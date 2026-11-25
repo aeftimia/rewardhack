@@ -1,18 +1,18 @@
-"""Checks made on a shell command before it runs: one gate for commands that spend money, one for git.
-
-Both are driven by `entrypoints/gate.py hook`, a Claude Code PreToolUse hook on Bash. They read the command,
-never run it, and return the reasons to refuse it. An empty list lets the command through.
+"""The project's gates: one on what spends money, one on what git publishes.
 
 Spend gate. A pod job may start only from a launch record (`entrypoints/gate.py ready`), which is written
 after the tree is clean, the time cap has a stated basis at the project's multiple, the budget check passes
-and the test suite passes. The record names the commit, the ledger, the remote script and the deadline; a
-driver command that differs from it, or a later commit or ledger row, is refused. A remote job script
-started over SSH by any route but `remote_job.sh` with `REQUIRE_AUTOSTOP=1` is refused. Removing a pod is
-never refused. A metered API judge needs a spend cap and real prices on the command line.
+and the test suite passes. The record names the commit, the ledger, the remote script, the deadline and the
+driver settings. `ops/drive_runpod.sh` asks `launch_problems` itself before it reaches for a pod
+(`entrypoints/gate.py launch`), so the check follows the driver however it is started. What cannot live in a
+script the project owns stays in a Claude Code PreToolUse hook on Bash (`command_problems`): a pod created
+with a raw `runpodctl create`, a job script started over SSH around `remote_job.sh` or without
+`REQUIRE_AUTOSTOP=1`, an AWS launch, and a metered API judge with no spend cap. Removing a pod is never refused.
 
-Commit gate. What `git add`, `git commit` or `git push` would publish is read for the owner's withheld
-terms (kept in an untracked file, so the repo does not name them), for secrets, and for binary or very
-large files.
+Commit gate. Git hooks (`ops/githooks`, installed with `entrypoints/gate.py install-hooks`) read the staged
+blobs, the commit message and every commit a push would publish, for the owner's withheld terms (kept in an
+untracked file in the main checkout, so the repo does not name them), for secrets, and for binary, non-UTF-8
+or very large files. Git runs them for every commit, from any worktree, whoever types it.
 """
 import hashlib
 import json
@@ -41,6 +41,9 @@ UNIT_MINUTES = {'s': 1/60, 'min': 1.0, 'h': 60.0}
 BASIS = re.compile(r'\s*(\d+(?:\.\d+)?)\s*x\s+(measured|estimated)\s+(\d+(?:\.\d+)?)\s*(s|min|h)\s*')
 READY = '.tools/venv/bin/python entrypoints/gate.py ready --remote ops/<script>.sh --deadline <minutes> ' \
         "--basis '<2x measured|3x estimated> <time> <s|min|h>' --line <budget line> --hourly <usd> --other-usd <judge cap and other costs> [--set NAME=value ...]"
+# Environment settings ops/drive_runpod.sh reads. The launch record holds the ones a launch was checked with.
+DRIVER_SETTINGS = re.compile(r'SMOKE_[A-Z_]+|LEAN_ISOLATION|JUDGE_KIND|JUDGE_MAX_USD|FORWARD_JUDGE_KEY|AUTOSTOP_GRACE_SECONDS|KEEP_POD')
+CHECK_ONLY = 'DRIVE_CHECK_ONLY'  # set to 1, the driver validates the launch and exits before it reaches for a pod
 
 MAX_BYTES = 15_000_000  # the largest result file tracked on purpose is 11 MB of rows; model files start above this
 SECRET_NAMES = re.compile(r'(^|/)(\.env(\..+)?|\.netrc|id_rsa.*|id_ed25519.*|.*\.pem|.*\.key|.*_key)$')
@@ -52,115 +55,11 @@ SECRETS = [
     ('an AWS access key id', re.compile(r'\bAKIA[0-9A-Z]{16}\b')),
     ('a private key', re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----')),
 ]
-
-# Every shape either gate acts on. A command without one of these is passed without being read further.
-GATED = re.compile(r'\bgit\s+(?:-\S+\s+(?:[^-\s]\S*\s+)?)*(add|commit|push)\b|drive_run|launch_aws\.sh|remote_\w+\.sh'
-                   r'|runpodctl\s+(pod\s+)?(create|deploy)|--judge[ =]api')
-HEREDOC = re.compile(r'''<<-?\s*(['"]?)(\w+)\1[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?=\n|\)|$)''', re.S)
-ASSIGNMENT = re.compile(r'([A-Za-z_]\w*)=(.*)', re.S)
-WRAPPERS = {'bash', 'sh', 'zsh', 'nohup', 'exec', 'time', 'command', 'env', 'setsid', 'sudo', 'caffeinate', 'nice', 'stdbuf',
-            'if', 'then', 'else', 'elif', 'while', 'until', 'do', '!', '{'}
-# Commands that take a script as something to read. Anything else that names the driver without being it is refused as unreadable.
-READERS = {'cat', 'grep', 'rg', 'head', 'tail', 'less', 'wc', 'ls', 'sed', 'awk', 'git', 'diff', 'shellcheck', 'stat', 'file', 'echo', 'printf', 'chmod',
-           'test', '[', '[[', 'find', 'du', 'shasum', 'sha256sum', 'md5', 'sort', 'nl', 'cut'}
-DRIVERS = {'drive_runpod.sh', 'drive_run.sh'}
-SHELLS = {'bash', 'sh', 'zsh', 'dash', 'ksh'}
-INTERPRETER = re.compile(r'python[\d.]*|perl|ruby|node')
-DRIVER_FORM = '`NAME=value ... bash ops/drive_runpod.sh <host> <port> <remote script> <results dir> <deadline>`'
-# Environment settings ops/drive_runpod.sh reads. The launch record holds the ones a launch was checked with.
-DRIVER_SETTINGS = re.compile(r'SMOKE_[A-Z_]+|LEAN_ISOLATION|JUDGE_KIND|JUDGE_MAX_USD|FORWARD_JUDGE_KEY|AUTOSTOP_GRACE_SECONDS|KEEP_POD')
-CHECK_ONLY = 'DRIVE_CHECK_ONLY'  # set to 1, the driver validates the launch and exits before it reaches for a pod
-SSH_WITH_VALUE = set('pioFJLRDEbcelmOQSWw')
+HOOKS = ('pre-commit', 'commit-msg', 'pre-push')  # the files in ops/githooks, each a call to `entrypoints/gate.py <its name>`
 
 
 def git(root, *args, text=True):
     return subprocess.run(['git', '-C', str(root), '-c', 'core.quotepath=off', *args], check=True, capture_output=True, text=text).stdout
-
-
-# --- reading a command ---------------------------------------------------------------------------------------------
-
-def simple_commands(command):
-    """The command as a list of simple commands, each (the operator before it, its tokens), and the text of its here-documents.
-
-    Raises ValueError when the quoting cannot be read.
-    """
-    documents = [match.group(3) for match in HEREDOC.finditer(command)]
-    lexer = shlex.shlex(HEREDOC.sub(' ', command).replace('\n', ' ; '), posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    groups, before, current = [], '', []
-    for token in lexer:
-        if token and not token.strip(';&|()<>'):
-            groups.append((before, current))
-            before, current = token, []
-        else:
-            current.append(token)
-    return [(operator, tokens) for operator, tokens in groups + [(before, current)] if tokens], documents
-
-
-def hidden_driver(before, tokens, words):
-    """Why a simple command that names the pod driver cannot be checked, or None when it is the driver itself or only reads it.
-
-    The launch check reads `bash ops/drive_runpod.sh <five arguments>`. Any other way of naming the driver might run it
-    where the check cannot follow (a variable, a glob, `eval`, a script on stdin), so it is refused, not passed.
-    """
-    if not words:
-        return 'it puts the driver in a shell variable'
-    if any('`' in token for token in tokens):
-        return 'it runs something inside backticks'
-    if before.startswith('<'):
-        return 'it feeds the driver to a shell on standard input'
-    if words[0] in ('bash -c', 'git', 'ssh', 'cd'):
-        return None  # read further by the caller
-    if os.path.basename(words[0]) in DRIVERS:
-        return None
-    if words[0] in READERS:
-        return None
-    return f'it names the driver after `{words[0][:40]}`, which may run it'
-
-
-def command_words(tokens):
-    """Leading `NAME=value` settings as a dict, and the words from the command name on, wrappers such as `nohup bash` dropped.
-
-    `bash -c '<script>'` comes back as (settings, ['bash -c', script]).
-    """
-    settings, index = {}, 0
-    while index < len(tokens):
-        token = tokens[index]
-        assignment = ASSIGNMENT.fullmatch(token)
-        if assignment:
-            settings[assignment.group(1)] = assignment.group(2)
-        elif token == 'timeout':
-            while index+1 < len(tokens) and tokens[index+1].startswith('-'):
-                index += 1
-            index += 1  # the duration
-        elif token in ('bash', 'sh', 'zsh') and index+2 < len(tokens) and re.fullmatch(r'-[a-z]*c', tokens[index+1]):
-            return settings, ['bash -c', tokens[index+2]]
-        elif token not in WRAPPERS:
-            break
-        elif token not in ('export', 'declare', 'typeset'):
-            # `bash -x script`, `caffeinate -i cmd`: the wrapper's own flags are not the command. `bash -s -- args` reads its script from stdin.
-            while index+1 < len(tokens) and tokens[index+1].startswith('-') and tokens[index+1] not in ('-s', '--'):
-                index += 1
-        index += 1
-    return settings, tokens[index:]
-
-
-def ssh_remote_command(words):
-    """The command an `ssh` invocation runs on the far side, as text ('' for an interactive login)."""
-    index = 1
-    while index < len(words) and words[index].startswith('-'):
-        index += 2 if words[index][-1] in SSH_WITH_VALUE and len(words[index]) == 2 else 1
-    return ' '.join(words[index+1:])
-
-
-def flag_value(words, name):
-    """The value given to `--name value` or `--name=value`, or None when the flag is absent."""
-    for index, word in enumerate(words):
-        if word == name and index+1 < len(words):
-            return words[index+1]
-        if word.startswith(name + '='):
-            return word[len(name)+1:]
-    return None
 
 
 # --- the launch record ---------------------------------------------------------------------------------------------
@@ -210,7 +109,7 @@ def driver_check(root, remote, deadline, settings):
 def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, settings, test_command):
     """Make every check a pod launch depends on and write the launch record. Returns (record, problems); no record is written with problems.
 
-    `settings` are the driver's environment settings for this launch (LEAN_ISOLATION, SMOKE_*, ...): the driver command must carry exactly these.
+    `settings` are the driver's environment settings for this launch (LEAN_ISOLATION, SMOKE_*, ...): the driver must run with exactly these.
     """
     root = Path(root)
     problems = []
@@ -267,7 +166,7 @@ def driver_judge_cap(settings):
 
 
 def mark_launched(root):
-    """A record covers one launch: its budget check counted one worst case. Called when a driver command is let through."""
+    """A record covers one launch: its budget check counted one worst case. Called when the driver is let through."""
     path = Path(root)/RECORD
     record = json.loads(path.read_text())
     record['launched_at'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
@@ -286,8 +185,8 @@ def launch_problems(root, remote=None, deadline=None, settings=None):
     if settings is not None and settings != record['settings']:
         def show(values):
             return ' '.join(f'{name}={value}' for name, value in sorted(values.items())) if values else '(none)'
-        problems.append(f"the driver settings on this command are not the ones that were checked.\n    checked: {show(record['settings'])}\n"
-                        f'    command: {show(settings)}')
+        problems.append(f"the driver settings in force are not the ones that were checked.\n    checked: {show(record['settings'])}\n"
+                        f'    in force: {show(settings)}')
     if record['head'] != git(root, 'rev-parse', 'HEAD').strip():
         problems.append(f"the launch record is for commit {record['head'][:7]}, and HEAD has moved since the tests ran")
     dirty = dirty_paths(root)
@@ -302,7 +201,92 @@ def launch_problems(root, remote=None, deadline=None, settings=None):
     return problems + ([f'Settle the launch again before starting it:\n    {READY}'] if problems else [])
 
 
-# --- spend gate ----------------------------------------------------------------------------------------------------
+def driver_launch(root, remote, deadline, environment):
+    """The driver's own check, made before it reaches for a pod. Returns the reasons to refuse; a launch let through is marked as started."""
+    settings = {name: value for name, value in environment.items() if DRIVER_SETTINGS.fullmatch(name)}
+    problems = launch_problems(root, remote, deadline, settings)
+    if not problems:
+        mark_launched(root)
+    return problems
+
+
+# --- the Bash hook: what no project script can check for itself -----------------------------------------------------
+
+# A command without one of these shapes is passed without being read further.
+GATED = re.compile(r'runpodctl|remote_\w+\.sh|drive_run\.sh|launch_aws\.sh|--judge[ =]api')
+REMOTE_SCRIPT = re.compile(r'remote_\w+\.sh')
+HEREDOC = re.compile(r'''<<-?\s*(['"]?)(\w+)\1[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?=\n|\)|$)''', re.S)
+ASSIGNMENT = re.compile(r'([A-Za-z_]\w*)=(.*)', re.S)
+WRAPPERS = {'bash', 'sh', 'zsh', 'nohup', 'exec', 'time', 'command', 'env', 'setsid', 'sudo', 'caffeinate', 'nice', 'stdbuf',
+            'export', 'if', 'then', 'else', 'elif', 'while', 'until', 'do', '!', '{'}
+SSH_WITH_VALUE = set('pioFJLRDEbcelmOQSWw')
+# Machines that bill from the moment they exist, started by a command the hook sees whole. The value says whether these words start one.
+STARTS_A_MACHINE = {
+    'runpodctl': lambda words: bool({'create', 'deploy'} & set(words[1:3])),  # `runpodctl create pod`, `runpodctl pod create`
+    'drive_run.sh': lambda words: True,  # the AWS driver: launches an instance through launch_aws.sh --approved
+    'launch_aws.sh': lambda words: '--approved' in words,  # without --approved it only prints the plan
+}
+
+
+def simple_commands(command):
+    """The command as a list of simple commands (lists of tokens), and the text of its here-documents. Raises ValueError when the quoting cannot be read."""
+    documents = [match.group(3) for match in HEREDOC.finditer(command)]
+    lexer = shlex.shlex(HEREDOC.sub(' ', command).replace('\n', ' ; '), posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    groups, current = [], []
+    for token in lexer:
+        if token and not token.strip(';&|()<>'):
+            groups.append(current)
+            current = []
+        else:
+            current.append(token)
+    return [tokens for tokens in groups + [current] if tokens], documents
+
+
+def command_words(tokens):
+    """Leading `NAME=value` settings as a dict, and the words from the command name on, wrappers such as `nohup bash` dropped.
+
+    `bash -c '<script>'` comes back as (settings, ['bash -c', script]).
+    """
+    settings, index = {}, 0
+    while index < len(tokens):
+        token = tokens[index]
+        assignment = ASSIGNMENT.fullmatch(token)
+        if assignment:
+            settings[assignment.group(1)] = assignment.group(2)
+        elif token == 'timeout':
+            while index+1 < len(tokens) and tokens[index+1].startswith('-'):
+                index += 1
+            index += 1  # the duration
+        elif token in ('bash', 'sh', 'zsh') and index+2 < len(tokens) and re.fullmatch(r'-[a-z]*c', tokens[index+1]):
+            return settings, ['bash -c', tokens[index+2]]
+        elif token not in WRAPPERS:
+            break
+        else:
+            # `bash -x script`, `caffeinate -i cmd`: the wrapper's own flags are not the command. `bash -s -- args` reads its script from stdin.
+            while index+1 < len(tokens) and tokens[index+1].startswith('-') and tokens[index+1] not in ('-s', '--'):
+                index += 1
+        index += 1
+    return settings, tokens[index:]
+
+
+def ssh_remote_command(words):
+    """The command an `ssh` invocation runs on the far side, as text ('' for an interactive login)."""
+    index = 1
+    while index < len(words) and words[index].startswith('-'):
+        index += 2 if words[index][-1] in SSH_WITH_VALUE and len(words[index]) == 2 else 1
+    return ' '.join(words[index+1:])
+
+
+def flag_value(words, name):
+    """The value given to `--name value` or `--name=value`, or None when the flag is absent."""
+    for index, word in enumerate(words):
+        if word == name and index+1 < len(words):
+            return words[index+1]
+        if word.startswith(name + '='):
+            return word[len(name)+1:]
+    return None
+
 
 def judge_problems(words):
     """A metered judge needs its cap and prices on the command line; a judge served from this machine is not metered."""
@@ -333,51 +317,62 @@ def remote_problems(root, settings, words):
     return [f"{name} started directly skips ops/remote_job.sh, which arms the pod's removal timer; start it with ops/drive_runpod.sh"]
 
 
-def driver_problems(root, settings, words, exported, launches):
-    """`words` starts at ops/drive_runpod.sh. A passing launch is noted in `launches`."""
-    arguments = words[1:6]
-    if len(arguments) < 5:
-        return []  # too few arguments: the driver prints its usage and exits before it touches a pod
-    unread = [word for word in arguments if '$' in word or '`' in word]
-    if unread:
-        return [f"the driver's arguments must be written out so the launch can be checked; {' '.join(unread)} is only known to the shell"]
-    if not arguments[4].isdigit():
-        return []  # the driver refuses a deadline that is not a whole number
-    outside = sorted(name for name in exported if DRIVER_SETTINGS.fullmatch(name))
-    if outside:
-        return [f"{', '.join(outside)} is set earlier in the command, where the launch check cannot hold it to the record; "
-                'put driver settings on the driver command itself: NAME=value bash ops/drive_runpod.sh ...']
-    problems = launch_problems(root, remote=arguments[2], deadline=int(arguments[4]),
-                               settings={name: value for name, value in settings.items() if DRIVER_SETTINGS.fullmatch(name)})
-    if not problems:
-        launches.append(arguments[2])
-    return problems
-
-
-def spend_problems(root, settings, words, remote, exported, launches):
+def local_problems(root, words):
     name = os.path.basename(words[0])
-    if remote:
-        return remote_problems(root, settings, words) if re.fullmatch(r'remote_\w+\.sh', name) else []
-    if name == 'drive_runpod.sh':
-        return driver_problems(root, settings, words, exported, launches)
-    if name == 'drive_run.sh' or (name == 'launch_aws.sh' and '--approved' in words) \
-            or (name == 'runpodctl' and {'create', 'deploy'} & set(words[1:3])):
+    if name in STARTS_A_MACHINE and STARTS_A_MACHINE[name](words):
         problems = launch_problems(root)
         return problems and ['a machine that bills is started only once its job can start at once:'] + problems
     return judge_problems(words)
 
 
-# --- commit gate ---------------------------------------------------------------------------------------------------
+def command_problems(root, command, remote=False):
+    """Every reason to refuse this shell command. `remote` marks the far side of an SSH call, where only job scripts are looked for."""
+    if not GATED.search(command):
+        return []
+    try:
+        groups, documents = simple_commands(command)
+    except ValueError as error:
+        return [f'this command starts a pod, a pod job or a metered judge, and its quoting could not be read ({error}). Run that part as a '
+                'command of its own.']
+    problems = []
+    for tokens in groups:
+        settings, words = command_words(tokens)
+        if not words:
+            continue
+        if words[0] == 'bash -c':
+            problems += command_problems(root, words[1], remote)
+        elif remote:
+            problems += remote_problems(root, settings, words) if REMOTE_SCRIPT.fullmatch(os.path.basename(words[0])) else []
+        elif os.path.basename(words[0]) == 'ssh':
+            # What reaches the far side: the command after the host, and any here-document fed to the remote shell.
+            problems += command_problems(root, ssh_remote_command(words), remote=True)
+            problems += [problem for document in documents for problem in command_problems(root, document, remote=True)]
+        else:
+            problems += local_problems(root, words)
+    return problems
+
+
+# --- the commit gate -----------------------------------------------------------------------------------------------
+
+ZERO_ID = re.compile(r'0+')
+GITLINK = '160000'  # a submodule entry: a commit id, with no content of its own in this repository
+SCISSORS = re.compile(r'^\S ------------------------ >8 ------------------------$', re.M)  # `git commit -v`: what follows is the diff, not the message
+
+
+def main_checkout(root):
+    """The working tree that holds the repository's own .git, found from it or from any linked worktree of it."""
+    return Path(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir').strip()).parent
+
 
 def withheld_terms(root):
-    """The owner's patterns, one regular expression per line, from an untracked file. Raises when the file is absent or empty."""
-    path = Path(root)/TERMS
+    """The owner's patterns, one regular expression per line, from an untracked file in the main checkout. Raises when it is absent or empty."""
+    path = main_checkout(root)/TERMS
     if not path.exists():
-        raise FileNotFoundError(f'{TERMS} is not there: it lists, one regular expression per line, what must not be committed. '
+        raise FileNotFoundError(f'{path} is not there: it lists, one regular expression per line, what must not be committed. '
                                 'It is untracked on purpose. Ask the owner for its contents.')
     patterns = [re.compile(line.strip()) for line in path.read_text().splitlines() if line.strip() and not line.startswith('#')]
     if not patterns:
-        raise ValueError(f'{TERMS} lists no patterns')
+        raise ValueError(f'{path} lists no patterns')
     return patterns
 
 
@@ -408,121 +403,84 @@ def content_problems(path, data, terms):
     return text_problems(path, text, terms)
 
 
-def message_texts(words, folder):
-    texts = []
-    for index, word in enumerate(words[:-1]):
-        if word in ('--file', '-F'):
-            if words[index+1] != '-':  # `-F -` reads the here-document, which the caller already holds
-                texts.append(Path(folder, words[index+1]).read_text())
-        elif word == '--message' or re.fullmatch(r'-[a-zA-Z]*m', word):
-            texts.append(words[index+1])
-    return texts + [word.split('=', 1)[1] for word in words if word.startswith('--message=')]
+def changed_blobs(root, *diff):
+    """{(path, blob id)} for each file a `git diff ...` or `git diff-tree ...` command (given without output options) adds or changes."""
+    out = git(root, *diff, '--raw', '-z', '--no-renames', '--diff-filter=ACMT')
+    fields = out.split('\0')
+    blobs = set()
+    for meta, path in zip(fields[0::2], fields[1::2]):
+        _, new_mode, _, new_id, _ = meta.lstrip(':').split(' ')
+        if new_mode != GITLINK:
+            blobs.add((path, new_id))
+    return blobs
 
 
-def git_problems(root, folder, words, documents):
-    """`words` is a git invocation run in `folder`. Other repositories and other subcommands are not this gate's business."""
-    index = 1
-    while index < len(words) and words[index].startswith('-'):
-        if words[index] == '-C' and index+1 < len(words):
-            folder = os.path.join(folder, words[index+1])
-        index += 2 if words[index] in ('-C', '-c') else 1
-    if index >= len(words) or words[index] not in ('add', 'commit', 'push'):
-        return []
-    sub, rest = words[index], words[index+1:]
-    top = subprocess.run(['git', '-C', folder, 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
-    ours = top.returncode == 0 and os.path.samefile(top.stdout.strip(), root)
-    if not ours:
-        return []
+def blob_problems(root, blobs, terms):
+    return [problem for path, blob in sorted(blobs) for problem in content_problems(path, git(root, 'cat-file', 'blob', blob, text=False), terms)]
+
+
+def staged_problems(root):
+    """pre-commit: the files as staged in the index this commit is made from (git passes a temporary one for `commit -a` and `commit <path>`)."""
     terms = withheld_terms(root)
-    files, texts = {}, []
-    if sub == 'add':
-        listed = subprocess.run(['git', '-C', folder, '-c', 'core.quotepath=off', 'add', '--dry-run', *rest], capture_output=True, text=True)
-        if listed.returncode != 0:
-            return [f'`git add --dry-run` does not accept these arguments, so what they would stage cannot be read: {listed.stderr.strip()[:300]}']
-        for line in listed.stdout.splitlines():
-            match = re.fullmatch(r"add '(.*)'", line)
-            if match:
-                files[match.group(1)] = Path(root, match.group(1)).read_bytes()
-    elif sub == 'commit':
-        for path in filter(None, git(root, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z').split('\0')):
-            files[path] = git(root, 'show', ':' + path, text=False)
-        if any(word == '--all' or re.fullmatch(r'-[a-zA-Z]*a[a-zA-Z]*', word) for word in rest):
-            for path in filter(None, git(root, 'diff', '--name-only', '--diff-filter=ACMR', '-z').split('\0')):
-                files[path] = Path(root, path).read_bytes()
-        texts = message_texts(rest, folder) + documents
-    else:
-        # What the current branch would add to its upstream; with no upstream, everything in HEAD.
-        upstream = subprocess.run(['git', '-C', str(root), 'rev-parse', '--verify', '--quiet', '@{u}'], capture_output=True, text=True)
-        if upstream.returncode == 0:
-            base = upstream.stdout.strip()
-            span = f'{base}..HEAD'
-        else:
-            base = git(root, 'hash-object', '-t', 'tree', os.devnull).strip()
-            span = 'HEAD'
-        for path in filter(None, git(root, 'diff', '--name-only', '--diff-filter=ACMR', '-z', base, 'HEAD').split('\0')):
-            files[path] = git(root, 'show', 'HEAD:' + path, text=False)
-        texts = [git(root, 'log', '--format=%B', span)]
-    problems = [problem for path, data in sorted(files.items()) for problem in content_problems(path, data, terms)]
-    for text in texts:
-        problems += text_problems('the commit message', text, terms)
-    return problems
+    return blob_problems(root, changed_blobs(root, 'diff', '--cached'), terms)
 
 
-# --- the hook ------------------------------------------------------------------------------------------------------
+def message_problems(root, message_file):
+    """commit-msg: the message as git will record it, up to the `git commit -v` scissors line. Comment lines are read too."""
+    terms = withheld_terms(root)
+    text = SCISSORS.split(Path(message_file).read_text(), maxsplit=1)[0]
+    return text_problems('the commit message', text, terms)
 
-def command_problems(root, command, folder, remote=False, launches=None, exported=()):
-    """Every reason to refuse this shell command, run in `folder`. `remote` marks the far side of an SSH call.
 
-    `launches`, when given, collects the remote script of each driver launch the command was allowed. `exported` names
-    settings already in force around the command (those in front of a `bash -c` that contains it).
-    """
-    launches = [] if launches is None else launches
-    exported = set(exported)
-    if not GATED.search(command):
-        return []
-    try:
-        groups, documents = simple_commands(command)
-    except ValueError as error:
-        return [f'this command runs git or something that bills, and its quoting could not be read ({error}). Run that part as a '
-                'command of its own, and give a commit message with quotes in it through `git commit -F <file>`.']
+def pushed_commits(root, remote, local_id, remote_id):
+    """The commits a push of `local_id` publishes: those not already on any of this remote's branches as last fetched, nor under `remote_id`."""
+    known = []
+    # The remote's current tip is excluded when this clone has it; when it does not (someone else pushed since the last fetch), the
+    # tracking branches still exclude what was last seen there, and anything else is read: more than the push adds, never less.
+    if not ZERO_ID.fullmatch(remote_id) and subprocess.run(['git', '-C', str(root), 'cat-file', '-e', remote_id + '^{commit}'],
+                                                            capture_output=True).returncode == 0:
+        known.append(remote_id)
+    return git(root, 'rev-list', local_id, '--not', f'--remotes={remote}', *known).split()
+
+
+def push_problems(root, remote, updates):
+    """pre-push: every commit each pushed ref adds, its files as that commit changed them and its message. `updates` are git's stdin lines."""
+    terms = withheld_terms(root)
+    commits = []
+    for line in updates.splitlines():
+        _, local_id, _, remote_id = line.split(' ')
+        if ZERO_ID.fullmatch(local_id):
+            continue  # deleting a remote branch publishes nothing
+        commits += [commit for commit in pushed_commits(root, remote, local_id, remote_id) if commit not in commits]
+    blobs = set()
     problems = []
-    programs = {os.path.basename(token) for _, tokens in groups for token in tokens}
-    scripted = [text for text in documents if 'drive_run' in text
-                and (programs & SHELLS or (re.search(r'subprocess|os\.system|Popen|exec', text) and any(INTERPRETER.fullmatch(p) for p in programs)))]
-    if scripted and not remote:
-        problems.append('this runs a script from a here-document that names the pod driver, where the launch check cannot follow it. '
-                        f'Start the driver as its own command: {DRIVER_FORM}')
-    after_reader = False
-    for before, tokens in groups:
-        settings, words = command_words(tokens)
-        names_driver = not remote and any('drive_run' in token for token in tokens)
-        # `cat ops/drive_runpod.sh | bash -s -- ...`: the driver's text reaches a shell through a pipe, however many readers it passes.
-        piped = before.startswith('|') and after_reader
-        hidden = None
-        if piped and SHELLS & {os.path.basename(token) for token in tokens}:
-            hidden = 'it pipes the driver into a shell'
-        elif names_driver:
-            hidden = hidden_driver(before, tokens, words)
-        after_reader = piped or (names_driver and bool(words) and words[0] in READERS)
-        if hidden:
-            problems.append(f'this command names the pod driver in a form the launch check cannot read: {hidden}. '
-                            f'Start the driver as its own command: {DRIVER_FORM}')
-            continue
-        if not words or words[0] in ('export', 'declare', 'typeset'):
-            # Set for the rest of the command, not for one program: `X=1; cmd` and `export X=1; cmd`.
-            exported |= set(settings) | {match.group(1) for match in map(ASSIGNMENT.fullmatch, words[1:]) if match}
-            continue
-        if words[0] == 'bash -c':
-            # Settings in front of `bash -c` reach everything inside it, like an export.
-            problems += command_problems(root, words[1], folder, remote, launches, exported | set(settings))
-        elif words[0] == 'cd' and len(words) > 1 and not remote:
-            folder = os.path.join(folder, os.path.expanduser(words[1]))
-        elif words[0] == 'ssh' and not remote:
-            problems += command_problems(root, ssh_remote_command(words), folder, remote=True)
-        elif words[0] == 'git' and not remote:
-            problems += git_problems(root, folder, words, documents)
-        else:
-            problems += spend_problems(root, settings, words, remote, exported, launches)
-    if len(launches) > 1 and not problems:
-        problems.append(f'this command starts {len(launches)} launches, and a launch record covers one: its budget check counted one worst case')
-    return problems
+    for commit in commits:
+        blobs |= changed_blobs(root, 'diff-tree', '-r', '--no-commit-id', '--root', '--diff-merges=first-parent', commit)
+        problems += text_problems(f'the message of commit {commit[:9]}', git(root, 'show', '-s', '--format=%B', commit), terms)
+    return blob_problems(root, blobs, terms) + problems
+
+
+HOOK_CHECKS = {'pre-commit': staged_problems, 'commit-msg': message_problems, 'pre-push': push_problems}
+
+
+def linked_worktree(path):
+    return git(path, 'rev-parse', '--path-format=absolute', '--git-dir') != git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+
+
+def install_hooks(repo, hooks):
+    """Point `repo`'s git at the hook scripts in `hooks` (core.hooksPath, an absolute path). Returns the path set.
+
+    Refused when `hooks` lies in a linked worktree of the same repository: removing that worktree would leave
+    git with no hooks to run, which it does without a word, so every later commit would go ungated.
+    """
+    hooks = Path(hooks).resolve()
+    missing = [name for name in HOOKS if not os.access(hooks/name, os.X_OK)]
+    if missing:
+        raise FileNotFoundError(f"no executable {', '.join(missing)} in {hooks}")
+    holder = hooks.parent.parent
+    same_repository = main_checkout(holder) == main_checkout(repo)
+    if same_repository and linked_worktree(holder):
+        raise ValueError(f'{hooks} is in a linked worktree, which goes away with its branch, and git skips hooks it cannot find without a word. '
+                         f'Run install-hooks from the main checkout, {main_checkout(repo)}.')
+    git(repo, 'config', 'core.hooksPath', str(hooks))
+    return hooks

@@ -23,9 +23,9 @@ A time cap is a bound on the worst case. It is not what the run costs: a job tha
 
 ## Hooks
 
-Three checks run before a tool call and refuse it with the reason. They enforce rules above that used to depend on being remembered. A refusal is a finding to act on, not an obstacle to route around.
+Three checks refuse an action with the reason. They enforce rules above that used to depend on being remembered. A refusal is a finding to act on, not an obstacle to route around. The logic of the first two is in `src/rewardhack/gates.py`, run through `entrypoints/gate.py` (`ops/gate.sh` picks the project's Python and the checkout's own library, also from a linked worktree).
 
-- **Spend gate** (`entrypoints/gate.py hook`, on Bash; logic in `src/rewardhack/gates.py`). A pod job starts only from a launch record. Settle the launch first:
+- **Spend gate.** A pod job starts only from a launch record. Settle the launch first:
 
   ```bash
   .tools/venv/bin/python entrypoints/gate.py ready --remote ops/remote_runpod_smoke.sh --deadline 170 --basis '2x measured 85 min' --line gpt-oss-20b-gpu --hourly 2.70 --other-usd 1 --set LEAN_ISOLATION=none --set FORWARD_JUDGE_KEY=1 --set KEEP_POD=1
@@ -37,11 +37,19 @@ Three checks run before a tool call and refuse it with the reason. They enforce 
   - a judge cap (`JUDGE_MAX_USD`, 1 when not given, counted when `FORWARD_JUDGE_KEY=1`) above `--other-usd`;
   - uncommitted changes in what the pod would run, a failed budget check (worst case: the deadline, 15 minutes of provisional timer and the grace period), or failing tests.
 
-  It prints the driver command to use. The driver command must then carry exactly the `--set` settings, on its own command line (an `export` earlier in the command is refused), with the same remote script and deadline, on the same commit and ledger, and with its arguments written out (no `$VAR`). A record covers one launch: it is marked used when a driver command is let through, so a relaunch needs `ready` again. A relaunch after a fix needs the fix committed and `ready` run again (about 2 minutes). A remote job script started over SSH around `remote_job.sh`, or without `REQUIRE_AUTOSTOP=1`, is refused; removing a pod never is. `--judge api` needs `--judge-max-usd` and both prices above zero. A pod deployed in the RunPod console is outside this gate's reach: the rule "deploy only when the driver can start" still rests on doing `ready` first.
-- **Commit gate** (same hook). `git add`, `git commit` and `git push` in this repository are read for the patterns in `.claude/commit-gate-terms.txt` (untracked, so the repository does not name them), for keys and tokens, and for binary files or files over 15 MB. Without the terms file every commit is refused.
+  It prints the driver command to use. `ops/drive_runpod.sh` checks the record itself, as its first act once its arguments are valid and before it touches a pod (`gate.py launch`), however it is started: same remote script and deadline, same commit and ledger, and exactly the `--set` settings in its environment (an exported setting counts like one typed in front of it). A record covers one launch: the driver marks it used when it starts, so a relaunch needs `ready` again. A relaunch after a fix needs the fix committed and `ready` run again (about 2 minutes). A host under `.invalid`, a reserved name that never resolves, skips the check; only the driver's tests use one.
+
+  What no project script can check stays in the Claude Code hook on Bash (`gate.py hook`): a pod created with `runpodctl create` or an AWS launch (`drive_run.sh`, `launch_aws.sh --approved`) needs a current launch record; a remote job script started over SSH around `remote_job.sh`, or without `REQUIRE_AUTOSTOP=1`, is refused; removing a pod never is. `--judge api` needs `--judge-max-usd` and both prices above zero. A pod deployed in the RunPod console is outside this gate's reach: the rule "deploy only when the driver can start" still rests on doing `ready` first.
+- **Commit gate** (git hooks in `ops/githooks`: `pre-commit`, `commit-msg`, `pre-push`). Git itself runs them for every commit and push in this repository and its worktrees, whoever types the command. They read the staged files, the commit message, and every commit a push would publish (each commit's own files and message, so a term added and later removed is still found) for the patterns in `.claude/commit-gate-terms.txt` in the main checkout (untracked, so the repository does not name them; worktrees use the main checkout's copy), for keys and tokens, for secret-named files, and for binary, non-UTF-8 or over-15 MB files. Without the terms file every commit is refused. Once per clone, from the main checkout (not a worktree, whose removal would leave git with no hooks, which it skips without a word):
+
+  ```bash
+  bash ops/gate.sh install-hooks
+  ```
+
+  It sets `core.hooksPath` to this checkout's `ops/githooks`. `git config core.hooksPath` shows whether it is in force. `--no-verify` skips the commit hooks; the pre-push hook still reads what was committed that way.
 - **No silent fallbacks** (`~/.claude/hooks/no-silent-fallbacks`, on Write and Edit, all projects). Besides swallowed errors it refuses a wait with no limit, a single-shot pod removal, an unpinned `pip install` and a network call with no timeout. `.no-silent-fallbacks.json` here adds two project rules: the library calls listed there must name the listed arguments (add a line whenever a library default turns out to have decided something), and a time limit in `ops/*.sh` needs `# cap: 2x measured <time> <unit>` or `# cap: 3x estimated <time> <unit>` on its line or the one above.
 
-The Bash hook is registered in `.claude/settings.json`, which is not tracked:
+The Bash hook (spend gate only) is registered in `.claude/settings.json`, which is not tracked:
 
 ```json
 {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "\"$CLAUDE_PROJECT_DIR/.tools/venv/bin/python\" \"$CLAUDE_PROJECT_DIR/entrypoints/gate.py\" hook", "timeout": 60}]}]}}
