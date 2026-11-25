@@ -143,6 +143,10 @@ def _analyze(spec, paths, seconds):
     context = multiprocessing.get_context('fork')
     receiver, sender = context.Pipe(duplex=False)
     def work():
+        # If the parent is killed while it waits, nobody is left to enforce the deadline, and this child
+        # holds the parent's pilot lock open: it ends itself shortly after the deadline regardless.
+        signal.signal(signal.SIGALRM, signal.SIG_DFL)
+        signal.setitimer(signal.ITIMER_REAL, seconds+5)
         try:
             message = ('ok', pilot.decide(spec, pilot.read_evidence(spec, paths)))
         except (ValueError, OSError) as error:

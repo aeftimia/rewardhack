@@ -563,3 +563,46 @@ def test_expired_active_replay_stops_before_analysis(tmp_path,cheap_decision,mon
     monkeypatch.setattr(pilot,'decide',lambda *a:pytest.fail('expired run must not analyze'))
     result=runner.run(path,out,execute=True)
     assert result['reason']=='time_cap' and result['phase']=='evidence_analysis'
+
+
+def test_stage_reservation_waits_for_a_registry_held_by_a_claim(tmp_path):
+    import threading
+    from rewardhack import budget
+    from rewardhack.state_files import file_lock
+    path,spec=fixture_spec(tmp_path)
+    registry=budget.reservation_path(spec['budget']['ledger'])
+    held,release=threading.Event(),threading.Event()
+    def claimant():
+        with file_lock(registry.with_suffix(registry.suffix+'.lock')):
+            held.set(); release.wait(5)
+    thread=threading.Thread(target=claimant); thread.start(); held.wait(5)
+    threading.Timer(.5,release.set).start()
+    started=time.monotonic()
+    key,problems=runner._reserve(spec,tmp_path/'out',spec['stages'][0],pilot.digest(spec))
+    thread.join()
+    assert key and not problems and time.monotonic()-started>=.4
+
+
+def test_analysis_child_ends_itself_if_the_runner_is_killed_while_waiting(tmp_path):
+    marker=tmp_path/'child'
+    code=('import os,sys,time; from pathlib import Path; from rewardhack import pilot, pilot_runner as r\n'
+          'pilot.read_evidence=lambda spec,paths:paths\n'
+          f'def decide(spec,rows):\n Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(60)\n'
+          'pilot.decide=decide\n'
+          'r._analyze({},[],.5)')
+    env=dict(os.environ,PYTHONPATH=str(Path(runner.__file__).parents[1]))
+    parent=subprocess.Popen([sys.executable,'-c',code],env=env)
+    deadline=time.monotonic()+10
+    while not (marker.exists() and marker.read_text()) and time.monotonic()<deadline:
+        time.sleep(.02)
+    child=int(marker.read_text())
+    parent.kill(); parent.wait()  # before the 0.5 s deadline could be enforced by the parent
+    def alive():
+        try:
+            os.kill(child,0); return True
+        except ProcessLookupError:
+            return False
+    deadline=time.monotonic()+12
+    while alive() and time.monotonic()<deadline:
+        time.sleep(.1)
+    assert not alive()

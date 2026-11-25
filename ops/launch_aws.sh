@@ -15,9 +15,10 @@ PROFILE_ACCOUNT=428141338262
 [[ $(aws sts get-caller-identity --query Account --output text) == "$PROFILE_ACCOUNT" ]] || { echo 'wrong AWS account'; exit 1; }
 # gp3 at about $0.08/GB-month; $0.25 allowance for data transfer and shutdown overhead.
 OTHER=$(python3 -c "print(round($DISK*0.08/730*$HOURS+0.25,2))")
-# Inside a pilot stage the launch consumes the stage's reservation; `check` is read-only and refuses there.
-GUARD=check; [[ -n ${REWARDHACK_PILOT_RESERVATION:-} ]] && GUARD=claim
-python3 entrypoints/budget.py "$GUARD" --line "${LINE:?set LINE to the grant budget line this launch is charged to}" --hourly "$HOURLY" --max-hours "$HOURS" --other-usd "$OTHER"
+GUARD_ARGS=(--line "${LINE:?set LINE to the grant budget line this launch is charged to}" --hourly "$HOURLY" --max-hours "$HOURS" --other-usd "$OTHER")
+# Inside a pilot stage `check` refuses, and the launch must claim from the stage's reservation instead. A claim
+# is consumed for good, so it is made below, only once the launch is approved: a plan must not spend the allowance.
+[[ -n ${REWARDHACK_PILOT_RESERVATION:-} ]] || python3 entrypoints/budget.py check "${GUARD_ARGS[@]}"
 MINUTES=$(python3 -c "print(int($HOURS*60))")
 AMI=$(aws ssm get-parameter --region "$REGION" --name /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-amazon-linux-2023/latest/ami-id --query Parameter.Value --output text)
 USER_DATA=$(printf '#!/bin/bash\nshutdown -h +%s "budget cap"\n' "$MINUTES")
@@ -41,6 +42,7 @@ if ((APPROVED == 0)); then
   echo 'not launched: rerun with --approved after explicit approval'
   exit 0
 fi
+[[ -z ${REWARDHACK_PILOT_RESERVATION:-} ]] || python3 entrypoints/budget.py claim "${GUARD_ARGS[@]}"
 KEY=rewardhack; KEY_FILE=.tools/$KEY.pem
 if [[ ! -f $KEY_FILE ]]; then
   aws ec2 create-key-pair --region "$REGION" --key-name "$KEY" --query KeyMaterial --output text > "$KEY_FILE"; chmod 600 "$KEY_FILE"

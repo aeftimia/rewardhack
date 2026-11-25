@@ -165,8 +165,8 @@ The full reservation still counts toward grant caps for other consumers. Recorde
 therefore conservatively block further claims until separately reconciled; claims never bypass an
 already overcommitted grant line. The ordinary `check` command remains read-only, includes all
 reservations and refuses to authorize launches when the pilot reservation variable is set; older
-stage scripts using `check` must switch to explicit `claim`. `ops/launch_aws.sh` claims when the
-variable is set and checks otherwise. Arbitrary
+stage scripts using `check` must switch to explicit `claim`. `ops/launch_aws.sh` checks outside a
+stage; inside one it claims, and only once the launch is approved, so printing a plan spends nothing. Arbitrary
 stage programs must follow the claim-before-launch protocol: the wrapper cannot discover or price
 network requests hidden inside a command. Wall-time limits bound each
 command and the overall pilot. Pure evidence reading and posterior analysis run in a forked

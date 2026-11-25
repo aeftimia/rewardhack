@@ -125,7 +125,13 @@ def test_run_started_from_an_adapter_has_unknown_update_count_and_equals_options
     record,=rows
     assert (record['variant'],record['adapter'],record['model'])==('hint','/a','m')
     assert record['messages']==prompt(task['statement'],'hint','typed')
-    assert record['policy_updates'] is None and record['provenance']=='rl_induced'
+    assert record['policy_updates'] is None and record['run_policy_updates']==0 and record['provenance']=='rl_induced'
+    # The summary an HF run now writes: recorded values win, and an absent adapter or empty switches fall back to argv.
+    from rewardhack.export_transcripts import run_meta
+    meta=run_meta(dict(model='m2',revision='r',prompt_variant='nocheat',adapter=None,template_kwargs={'enable_thinking':True},
+                       argv=['train','--model','other','--prompt-variant','hint']),'x/y')
+    assert (meta['model'],meta['revision'],meta['variant'],meta['adapter'],meta['thinking'])==('m2','r','nocheat',None,True)
+    assert run_meta(dict(adapter=None,template_kwargs={},prompt_variant=None,argv=['--adapter','/a','--prompt-variant=hint']),'x/y')['adapter']=='/a'
     import os, stat
     umask=os.umask(0); os.umask(umask)
     assert stat.S_IMODE((root/'out.jsonl').stat().st_mode)==0o666 & ~umask

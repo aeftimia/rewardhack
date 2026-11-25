@@ -252,8 +252,10 @@ def export(results, out, tasks=None):
                             raise ValueError('follow-on report mode differs from its opening prompt')
                         messages = prompt(tasks[opener['task_id']]['statement'], meta['variant'], mode) + [
                             {'role': 'assistant', 'content': opener['raw']}, follow_on(task['statement'])]
-                    # A run started from an adapter was already trained by an unrecorded number of updates.
-                    policy_updates = None if meta['adapter'] else update_count(history, summary, row, updates)
+                    # A run started from an adapter was already trained by an unrecorded number of updates:
+                    # the total is unknown there, and the count within this run is kept beside it.
+                    run_updates = update_count(history, summary, row, updates)
+                    policy_updates = None if meta['adapter'] else run_updates
                     trained = bool(meta['adapter']) or bool(policy_updates)
                     provenance = ('rl_induced' if trained else 'training_unknown' if policy_updates is None
                                   else 'hinted' if meta['variant'] == 'hint' else 'natural')
@@ -271,7 +273,7 @@ def export(results, out, tasks=None):
                     disclosure = DISCLOSURE.get(reading['category'], reading['category']) if reading else 'unread'
                     record = dict(schema=SCHEMA, id=hashlib.sha256(f'{run}|{rel}|{i}'.encode()).hexdigest()[:16], run=run,
                                   source_file=rel, source_line=i, source_sha256=file_hash, repo_commit=commit, **meta,
-                                  policy_updates=policy_updates, provenance=provenance, taskset=task['taskset'],
+                                  policy_updates=policy_updates, run_policy_updates=run_updates, provenance=provenance, taskset=task['taskset'],
                                   task_id=task['id'], group=task['group'], family=task['family'], tier=task['tier'],
                                   statement=task['statement'], statement_true=task['true'], turn=turn, conversation=row.get('conversation'),
                                   report_mode=mode, typed_claim=row.get('claim') if mode == 'typed' else None,
