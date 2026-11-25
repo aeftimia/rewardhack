@@ -5,6 +5,7 @@ reward differs. Entrypoint: `entrypoints/run.py`.
 """
 import hashlib
 import json
+import math
 import resource
 import subprocess
 import sys
@@ -289,6 +290,12 @@ def prepare_training(model, tokenizer, tasks, args, summary):
             if bad:
                 raise FloatingPointError(f'non-finite gradient at step {state.global_step+1} in {len(bad)} tensors, first {bad[0]}')
 
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            # Finite gradients whose total norm overflows are clipped to zero and pass the check above; the logged norm shows it.
+            norm = (logs or {}).get('grad_norm')  # fallback-ok: evaluation and end-of-training log entries carry no gradient norm, and absent means there is nothing to check
+            if norm is not None and not math.isfinite(norm):
+                raise FloatingPointError(f'the gradient norm is {norm} at step {state.global_step}')
+
         def on_step_begin(self, args, state, control, **kwargs):
             timing['step_start'] = time.perf_counter()
 
@@ -334,8 +341,9 @@ def prepare_training(model, tokenizer, tasks, args, summary):
     summary['trainer'] = {'lr_schedule': trainer.args.lr_scheduler_type, 'router_aux_loss_coef': trainer.router_aux_loss_coef,
                           'aux_loss_enabled': trainer.aux_loss_enabled, 'scale_rewards': args.scale_rewards, 'max_grad_norm': args.max_grad_norm,
                           'arguments_in_effect': trainer.args.to_dict(),
-                          # What TRL generates with, after the model's own generation config has filled what we left unset.
-                          'generation_in_effect': trainer.generation_config.to_dict(),
+                          # What TRL passes to `generate`. The model's own generation config (`summary['generation_config']`)
+                          # then fills whatever is unset here, inside `generate`: the two together are what is in effect.
+                          'generation_passed_by_trl': trainer.generation_config.to_dict(),
                           'lora_target_modules': sorted({name.split('.')[-1] for name, module in trainer.model.named_modules() if hasattr(module, 'lora_A')})}
     def fit():
         t0 = time.perf_counter()

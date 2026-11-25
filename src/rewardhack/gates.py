@@ -54,14 +54,19 @@ SECRETS = [
 ]
 
 # Every shape either gate acts on. A command without one of these is passed without being read further.
-GATED = re.compile(r'\bgit\s+(?:-\S+\s+(?:[^-\s]\S*\s+)?)*(add|commit|push)\b|drive_run\w*\.sh|launch_aws\.sh|remote_\w+\.sh'
+GATED = re.compile(r'\bgit\s+(?:-\S+\s+(?:[^-\s]\S*\s+)?)*(add|commit|push)\b|drive_run|launch_aws\.sh|remote_\w+\.sh'
                    r'|runpodctl\s+(pod\s+)?(create|deploy)|--judge[ =]api')
 HEREDOC = re.compile(r'''<<-?\s*(['"]?)(\w+)\1[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?=\n|\)|$)''', re.S)
 ASSIGNMENT = re.compile(r'([A-Za-z_]\w*)=(.*)', re.S)
 WRAPPERS = {'bash', 'sh', 'zsh', 'nohup', 'exec', 'time', 'command', 'env', 'setsid', 'sudo', 'caffeinate', 'nice', 'stdbuf',
             'if', 'then', 'else', 'elif', 'while', 'until', 'do', '!', '{'}
 # Commands that take a script as something to read. Anything else that names the driver without being it is refused as unreadable.
-READERS = {'cat', 'grep', 'rg', 'head', 'tail', 'less', 'wc', 'ls', 'sed', 'awk', 'git', 'diff', 'shellcheck', 'stat', 'file', 'echo', 'printf', 'chmod'}
+READERS = {'cat', 'grep', 'rg', 'head', 'tail', 'less', 'wc', 'ls', 'sed', 'awk', 'git', 'diff', 'shellcheck', 'stat', 'file', 'echo', 'printf', 'chmod',
+           'test', '[', '[[', 'find', 'du', 'shasum', 'sha256sum', 'md5', 'sort', 'nl', 'cut'}
+DRIVERS = {'drive_runpod.sh', 'drive_run.sh'}
+SHELLS = {'bash', 'sh', 'zsh', 'dash', 'ksh'}
+INTERPRETER = re.compile(r'python[\d.]*|perl|ruby|node')
+DRIVER_FORM = '`NAME=value ... bash ops/drive_runpod.sh <host> <port> <remote script> <results dir> <deadline>`'
 # Environment settings ops/drive_runpod.sh reads. The launch record holds the ones a launch was checked with.
 DRIVER_SETTINGS = re.compile(r'SMOKE_[A-Z_]+|LEAN_ISOLATION|JUDGE_KIND|JUDGE_MAX_USD|FORWARD_JUDGE_KEY|AUTOSTOP_GRACE_SECONDS|KEEP_POD')
 CHECK_ONLY = 'DRIVE_CHECK_ONLY'  # set to 1, the driver validates the launch and exits before it reaches for a pod
@@ -75,21 +80,42 @@ def git(root, *args, text=True):
 # --- reading a command ---------------------------------------------------------------------------------------------
 
 def simple_commands(command):
-    """The command as a list of simple commands (token lists), and the text of its here-documents.
+    """The command as a list of simple commands, each (the operator before it, its tokens), and the text of its here-documents.
 
     Raises ValueError when the quoting cannot be read.
     """
     documents = [match.group(3) for match in HEREDOC.finditer(command)]
     lexer = shlex.shlex(HEREDOC.sub(' ', command).replace('\n', ' ; '), posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
-    groups, current = [], []
+    groups, before, current = [], '', []
     for token in lexer:
         if token and not token.strip(';&|()<>'):
-            groups.append(current)
-            current = []
+            groups.append((before, current))
+            before, current = token, []
         else:
             current.append(token)
-    return [group for group in groups + [current] if group], documents
+    return [(operator, tokens) for operator, tokens in groups + [(before, current)] if tokens], documents
+
+
+def hidden_driver(before, tokens, words):
+    """Why a simple command that names the pod driver cannot be checked, or None when it is the driver itself or only reads it.
+
+    The launch check reads `bash ops/drive_runpod.sh <five arguments>`. Any other way of naming the driver might run it
+    where the check cannot follow (a variable, a glob, `eval`, a script on stdin), so it is refused, not passed.
+    """
+    if not words:
+        return 'it puts the driver in a shell variable'
+    if any('`' in token for token in tokens):
+        return 'it runs something inside backticks'
+    if before.startswith('<'):
+        return 'it feeds the driver to a shell on standard input'
+    if words[0] in ('bash -c', 'git', 'ssh', 'cd'):
+        return None  # read further by the caller
+    if os.path.basename(words[0]) in DRIVERS:
+        return None
+    if words[0] in READERS:
+        return None
+    return f'it names the driver after `{words[0][:40]}`, which may run it'
 
 
 def command_words(tokens):
@@ -334,9 +360,6 @@ def spend_problems(root, settings, words, remote, exported, launches):
         return remote_problems(root, settings, words) if re.fullmatch(r'remote_\w+\.sh', name) else []
     if name == 'drive_runpod.sh':
         return driver_problems(root, settings, words, exported, launches)
-    if name not in READERS and any(os.path.basename(word) == 'drive_runpod.sh' for word in words[1:]):
-        return [f'this names ops/drive_runpod.sh after `{words[0]}`, and whether that runs it cannot be told. Start the driver as '
-                '`NAME=value ... bash ops/drive_runpod.sh <host> <port> <remote script> <results dir> <deadline>`.']
     if name == 'drive_run.sh' or (name == 'launch_aws.sh' and '--approved' in words) \
             or (name == 'runpodctl' and {'create', 'deploy'} & set(words[1:3])):
         problems = launch_problems(root)
@@ -447,13 +470,14 @@ def git_problems(root, folder, words, documents):
 
 # --- the hook ------------------------------------------------------------------------------------------------------
 
-def command_problems(root, command, folder, remote=False, launches=None):
+def command_problems(root, command, folder, remote=False, launches=None, exported=()):
     """Every reason to refuse this shell command, run in `folder`. `remote` marks the far side of an SSH call.
 
-    `launches`, when given, collects the remote script of each driver launch the command was allowed.
+    `launches`, when given, collects the remote script of each driver launch the command was allowed. `exported` names
+    settings already in force around the command (those in front of a `bash -c` that contains it).
     """
     launches = [] if launches is None else launches
-    exported = set()
+    exported = set(exported)
     if not GATED.search(command):
         return []
     try:
@@ -462,14 +486,35 @@ def command_problems(root, command, folder, remote=False, launches=None):
         return [f'this command runs git or something that bills, and its quoting could not be read ({error}). Run that part as a '
                 'command of its own, and give a commit message with quotes in it through `git commit -F <file>`.']
     problems = []
-    for tokens in groups:
+    programs = {os.path.basename(token) for _, tokens in groups for token in tokens}
+    scripted = [text for text in documents if 'drive_run' in text
+                and (programs & SHELLS or (re.search(r'subprocess|os\.system|Popen|exec', text) and any(INTERPRETER.fullmatch(p) for p in programs)))]
+    if scripted and not remote:
+        problems.append('this runs a script from a here-document that names the pod driver, where the launch check cannot follow it. '
+                        f'Start the driver as its own command: {DRIVER_FORM}')
+    after_reader = False
+    for before, tokens in groups:
         settings, words = command_words(tokens)
+        names_driver = not remote and any('drive_run' in token for token in tokens)
+        # `cat ops/drive_runpod.sh | bash -s -- ...`: the driver's text reaches a shell through a pipe, however many readers it passes.
+        piped = before.startswith('|') and after_reader
+        hidden = None
+        if piped and SHELLS & {os.path.basename(token) for token in tokens}:
+            hidden = 'it pipes the driver into a shell'
+        elif names_driver:
+            hidden = hidden_driver(before, tokens, words)
+        after_reader = piped or (names_driver and bool(words) and words[0] in READERS)
+        if hidden:
+            problems.append(f'this command names the pod driver in a form the launch check cannot read: {hidden}. '
+                            f'Start the driver as its own command: {DRIVER_FORM}')
+            continue
         if not words or words[0] in ('export', 'declare', 'typeset'):
             # Set for the rest of the command, not for one program: `X=1; cmd` and `export X=1; cmd`.
             exported |= set(settings) | {match.group(1) for match in map(ASSIGNMENT.fullmatch, words[1:]) if match}
             continue
         if words[0] == 'bash -c':
-            problems += command_problems(root, words[1], folder, remote, launches)
+            # Settings in front of `bash -c` reach everything inside it, like an export.
+            problems += command_problems(root, words[1], folder, remote, launches, exported | set(settings))
         elif words[0] == 'cd' and len(words) > 1 and not remote:
             folder = os.path.join(folder, os.path.expanduser(words[1]))
         elif words[0] == 'ssh' and not remote:
@@ -478,4 +523,6 @@ def command_problems(root, command, folder, remote=False, launches=None):
             problems += git_problems(root, folder, words, documents)
         else:
             problems += spend_problems(root, settings, words, remote, exported, launches)
+    if len(launches) > 1 and not problems:
+        problems.append(f'this command starts {len(launches)} launches, and a launch record covers one: its budget check counted one worst case')
     return problems

@@ -37,7 +37,7 @@ exit 0
 '''
     env = dict(os.environ, PATH=write_stubs(tmp_path, ssh=ssh, rsync=rsync, sleep='exit 0\n'), JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', KEEP_POD='1' if keep_pod else '0',
                LEAN_ISOLATION='none')
-    command = ['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'results'), '1']
+    command = ['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'results'), '240']
     if close_stdout:
         command = ['bash', '-c', 'exec "$@" >&-', 'driver']+command
     result = subprocess.run(command, env=env, capture_output=True, text=True)
@@ -148,7 +148,7 @@ def refused(tmp_path, results, **env):
     calls.write_text('')
     path = write_stubs(tmp_path, ssh=f'echo ssh >> {calls}\n', rsync=f'echo rsync >> {calls}\n', sleep='exit 0\n')
     base = dict(os.environ, PATH=path, JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none')
-    result = subprocess.run(['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', results, '1'],
+    result = subprocess.run(['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', results, '240'],
                             env=dict(base, **env), capture_output=True, text=True)
     return result.returncode, result.stdout, calls.read_text()
 
@@ -180,6 +180,19 @@ def test_the_driver_can_check_a_command_without_a_pod(tmp_path):
 
 def test_each_job_script_states_its_deadline():
     import re
-    for script, minutes in (('ops/remote_runpod_smoke.sh', 170), ('ops/remote_runpod_genbench.sh', 60)):
+    for script, minutes in (('ops/remote_runpod_smoke.sh', 170), ('ops/remote_runpod_genbench.sh', 65)):
         stated = re.search(r'^# deadline: (\d+)$', open(script).read(), re.M)
         assert stated and int(stated.group(1)) == minutes, script
+
+
+def test_a_pod_judge_run_needs_its_longer_deadline(tmp_path):
+    calls = tmp_path/'calls'
+    calls.write_text('')
+    path = write_stubs(tmp_path, ssh=f'echo ssh >> {calls}\n', rsync=f'echo rsync >> {calls}\n', sleep='exit 0\n')
+    env = dict(os.environ, PATH=path, JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none', DRIVE_CHECK_ONLY='1')
+    def check(minutes):
+        return subprocess.run(['bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'r'), minutes],
+                              env=env, capture_output=True, text=True)
+    short = check('170')
+    assert short.returncode == 2 and 'at least 240' in short.stdout and calls.read_text() == ''
+    assert check('240').returncode == 0

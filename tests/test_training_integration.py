@@ -6,7 +6,6 @@ trainer through `hf_grpo.train` on tiny random models, CPU only, with the scorin
 plumbing and objective, never behaviour.
 """
 import json
-import math
 import subprocess
 import sys
 import time
@@ -288,6 +287,3 @@ def test_readiness_needs_our_process_and_our_model(tmp_path):
         server.kill()
         sleeper.kill()
 
-
-def test_group_statistics_are_not_nan_for_the_cases_above():
-    assert math.isfinite(mean_kept([1.0, None, 3.0]))

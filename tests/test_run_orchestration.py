@@ -186,3 +186,17 @@ def test_non_finite_gradients_stop_the_run_before_they_reach_the_adapter(tmp_pat
     from safetensors.torch import load_file
     saved = load_file(str(next(tmp_path.iterdir())/'adapter-at-failure'/'adapter_model.safetensors'))
     assert all(bool(torch.isfinite(tensor).all()) for tensor in saved.values())
+
+
+def test_an_overflowed_gradient_norm_stops_the_run(tmp_path, monkeypatch):
+    """Finite gradients whose total norm overflows are clipped to zero and so pass the per-tensor check; the norm itself is the evidence."""
+    from transformers import Trainer
+    real = Trainer.log
+
+    def log(self, logs, *args, **kwargs):
+        if 'grad_norm' in logs:
+            logs = dict(logs, grad_norm=float('inf'))
+        return real(self, logs, *args, **kwargs)
+    monkeypatch.setattr(Trainer, 'log', log)
+    with pytest.raises(FloatingPointError, match='gradient norm is inf'):
+        train(tmp_path, monkeypatch, REWARDS['first of the group'], steps=3)

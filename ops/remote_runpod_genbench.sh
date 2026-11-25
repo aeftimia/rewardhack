@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# deadline: 60
+# deadline: 65
 # vLLM generation benchmark for gpt-oss-20b on one pod (docs/notes-2026-11-21.md, sections 54 to 56). About 13 minutes if it goes as estimated; its inner limits add up to
-# about 55 (install, a 15 minute readiness wait, a 35 minute benchmark limit), so drive it with a 60 minute deadline.
+# about 61 (a 10 minute install limit, a 15 minute readiness wait, a 35 minute benchmark limit), so drive it with a 65 minute deadline.
 # No Lean, no judge, no key, no training. A vLLM server holds the base model in 30% of the card, the share left beside a
 # trainer that peaks at 62 GiB. Questions: does it load the trainer's LoRA adapter, can it replace it in place, and how
 # fast does it generate at 4 to 32 concurrent answers.

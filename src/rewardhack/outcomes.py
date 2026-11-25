@@ -349,6 +349,9 @@ def judge_failing(rows):
     noisy. This asks for evidence instead: the chance of seeing this many failures or more at a true rate of 5% is under 1
     in 1,000. One failure in twenty readings does not reach that; three in three, or six in ten, do.
 
+    That is the chance at each look, and training looks after every batch: a judge whose true rate sits at the 5% limit
+    itself is stopped in about one long run in seven, one at 2% in none of 20,000 simulated runs of 10,000 readings.
+
     The test is made twice: over every reading so far, and over the latest 200. Late in a long run thousands of good
     readings would otherwise hide a judge that has just started failing a third of the time.
     """

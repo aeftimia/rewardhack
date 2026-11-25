@@ -38,6 +38,8 @@ finish() {
   # Whatever ended the runner, the job must not outlive it: the driver would report this exit code, copy partial results
   # and remove the pod while the job still ran.
   if [[ -n ${JOB:-} ]] && kill -0 -- "-$JOB"; then kill -9 -- "-$JOB"; fi
+  # By session as well: a `timeout` inside the job puts its command in a process group of its own, which the line above misses.
+  if [[ -n ${JOB:-} ]]; then pkill -9 -s "$JOB"; fi
   rm -f "$HOME/.judge_key"  # never outlives the job, whichever remote script ran and however it ended
   printf '%s\n' "$code" > "$OUT/EXIT_CODE.tmp"
   mv "$OUT/EXIT_CODE.tmp" "$OUT/EXIT_CODE"
@@ -71,6 +73,7 @@ if [[ -s $PIDS ]]; then
   read -r OLD_RUNNER OLD_GROUP < "$PIDS"
   if kill -0 "$OLD_RUNNER"; then echo "stopping earlier runner $OLD_RUNNER"; kill -9 "$OLD_RUNNER"; fi
   if kill -0 -- "-$OLD_GROUP"; then echo "stopping earlier job group $OLD_GROUP"; kill -9 -- "-$OLD_GROUP"; fi
+  pkill -9 -s "$OLD_GROUP"  # and whatever in that job's session had a process group of its own (commands run under an inner `timeout`)
   # A killed 60 GB process takes a moment to give the card back; the new job's self-test reads the card's memory.
   for _ in $(seq 30); do
     kill -0 -- "-$OLD_GROUP" || break

@@ -56,6 +56,16 @@ while IFS='=' read -r name value; do
   fi
   SMOKE_ENV+="$name=$value "
 done < <(env | grep '^SMOKE_' || true)
+# The benchmark job needs the trained adapter, which is not in git and is copied by hand; the job would find it missing only on the pod.
+if [[ $REMOTE == ops/remote_runpod_genbench.sh ]]; then
+  [[ -s payload/adapter/adapter_model.safetensors && -s payload/adapter/adapter_config.json ]] || {
+    echo 'payload/adapter is missing or empty: copy the trained adapter there first (the command is at the top of ops/remote_runpod_genbench.sh)'; exit 2; }
+fi
+# With the judge served on the pod the smoke script has a second install and download, a 15 minute readiness wait and up to 30 minutes
+# of judge validation on top of its 170 minute budget.
+if [[ $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == pod && $DEADLINE -lt 240 ]]; then
+  echo 'JUDGE_KIND=pod needs a deadline of at least 240 minutes for the smoke script: its limits add up to about 234'; exit 2
+fi
 # Everything above refuses a command that could only fail later, on a pod that is already billing. DRIVE_CHECK_ONLY=1 runs just
 # those checks, with placeholder host and port if need be, so they can be made before a pod is deployed (`entrypoints/gate.py ready`).
 if [[ ${DRIVE_CHECK_ONLY:-0} == 1 ]]; then echo 'check passed'; exit 0; fi

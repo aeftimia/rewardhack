@@ -92,6 +92,45 @@ def test_the_launch_check_is_not_skipped_by_how_the_driver_is_invoked(repo, comm
     assert bool(still) == ('$D' in command or 'xargs' in command), still  # the two the gate cannot read stay refused
 
 
+ARGS = DRIVER[len('bash ops/drive_runpod.sh'):]
+
+
+@pytest.mark.parametrize('command', [
+    f"bash <<'EOF'\n{DRIVER}\nEOF",
+    f"bash <<< '{DRIVER}'",
+    f'eval "{DRIVER}"',
+    f'echo `{DRIVER}`',
+    f'bash -s --{ARGS} < ops/drive_runpod.sh',
+    f'cat ops/drive_runpod.sh | bash -s --{ARGS}',
+    f'S=ops/drive_runpod.sh; bash $S{ARGS}',
+    f'bash ops/drive_run*.sh{ARGS}',
+    f'env -S "{DRIVER}"',
+    f"python3 -c 'import subprocess; subprocess.run(\"{DRIVER}\", shell=True)'",
+    f"python3 - <<'EOF'\nimport subprocess\nsubprocess.run('{DRIVER}', shell=True)\nEOF",
+    f"KEEP_POD=1 bash -c '{DRIVER}'",
+    f"JUDGE_MAX_USD=50 FORWARD_JUDGE_KEY=1 bash -c '{DRIVER}'",
+    f'{DRIVER} ; {DRIVER}',
+    f'{DRIVER} || {DRIVER}',
+])
+def test_a_driver_the_check_cannot_follow_is_refused_with_or_without_a_record(repo, command):
+    assert problems(repo, command), command
+    settle(repo)
+    assert problems(repo, command), command
+
+
+@pytest.mark.parametrize('command', [
+    'cat ops/drive_runpod.sh | head -20',
+    'grep -c SMOKE ops/drive_runpod.sh && wc -l ops/drive_runpod.sh',
+    '[[ -f ops/drive_runpod.sh ]] && echo present',
+    'bash -n ops/drive_runpod.sh',
+    'git log --oneline -- ops/drive_runpod.sh | cat',
+    "git commit -q -F - <<'EOF'\nThe driver, ops/drive_runpod.sh, refuses a misspelt setting\nEOF",
+    "bash -c 'grep -n trap ops/drive_runpod.sh'",
+])
+def test_reading_the_driver_is_still_let_through(repo, command):
+    assert problems(repo, command) == []
+
+
 def test_the_driver_is_asked_before_anything_is_deployed_and_the_grace_is_counted(repo):
     assert 'LEAN_ISOLATION=required cannot work' in settle(repo, settings=dict(LEAN_ISOLATION='required'))[1][0]
     assert 'not settings ops/drive_runpod.sh reads: SMOKE_steps' in settle(repo, settings=dict(SMOKE_steps='4'))[1][0]
