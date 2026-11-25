@@ -4,3 +4,33 @@ __pycache__/
 .DS_Store
 .pytest_cache/
 *.egg-info/
+
+# secrets and local settings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_key
+id_rsa*
+id_ed25519*
+.netrc
+.claude/
+
+# local environments and build output
+.venv/
+venv/
+build/
+dist/
+
+# model weights
+*.safetensors
+*.pt
+*.pth
+*.gguf
+
+# setup noise from pod runs
+results/**/download*.log
+results/**/install*.log
+results/**/vllm-install.log
+results/**/*.rescore.log
