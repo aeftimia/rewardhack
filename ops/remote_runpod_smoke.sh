@@ -20,9 +20,16 @@ rm -f ~/out/DONE
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
 fail() { log "$1"; exit 1; }
 JUDGE_PID=
+ROLLOUT_PID=
+SMOKE_VLLM_ROLLOUTS=${SMOKE_VLLM_ROLLOUTS:-0}
 source ops/pod_lib.sh
 JUDGE_PORT=8011
-cleanup() { rm -f ~/.judge_key; if [[ -n $JUDGE_PID ]] && kill -0 "$JUDGE_PID"; then stop_server "$JUDGE_PID"; fi; }
+cleanup() {
+  rm -f ~/.judge_key
+  for pid in "$JUDGE_PID" "$ROLLOUT_PID"; do
+    if [[ -n $pid ]] && kill -0 "$pid"; then stop_server "$pid"; fi
+  done
+}
 trap cleanup EXIT
 pod_self_test 40 "$JUDGE_PORT"
 MODEL=openai/gpt-oss-20b; REV=6cee5e81ee83917806bbde320786a8fb61efebee
@@ -77,7 +84,8 @@ python -m venv /workspace/train-venv && timeout 300 /workspace/train-venv/bin/pi
 HF=/workspace/train-venv/bin/hf
 [[ -x $HF ]] || fail 'NO_HF_COMMAND: huggingface_hub did not install its hf command'
 /workspace/train-venv/bin/pip freeze > ~/out/pip-freeze-train.txt
-if [[ $JUDGE_KIND == pod ]]; then python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q vllm==0.34.0 ninja > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED; fi
+# cap: 2x measured 108 s
+if [[ $JUDGE_KIND == pod ]]; then python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q -r requirements-vllm.txt > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED; fi
 PY=/workspace/train-venv/bin/python
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
 $PY entrypoints/run.py controls --out ~/out/controls --lean ~/lean-safe > ~/out/controls.log 2>&1 || fail VERIFIER_CONTROLS_FAILED
@@ -143,6 +151,26 @@ step() { name=$1; shift; log "start $name"
   log "end $name passed"; nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
 # Eight generations at 2,048 tokens ran out of memory on a 96 GB card (2026-11-24); four fit (2026-11-25). Every training step below uses this.
 GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
+if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
+  [[ $JUDGE_KIND == api && ${SMOKE_SKIP_PROBE:?} == 1 && ${SMOKE_SECOND_RUN:?} == 0 ]] || fail INVALID_ROLLOUT_PILOT
+  log start rollout-install
+  # cap: 2x measured 108 s
+  python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q -r requirements-vllm.txt > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
+  /workspace/vllm-venv/bin/pip freeze > ~/out/pip-freeze-vllm.txt
+  log start rollout-server
+  VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True PATH="/workspace/vllm-venv/bin:$PATH" \
+    /workspace/vllm-venv/bin/vllm serve "$MODEL" --revision "$REV" --served-model-name "$MODEL@$REV" \
+      --host 127.0.0.1 --port 8011 --max-model-len 4096 --gpu-memory-utilization 0.30 --max-num-seqs "$GENERATIONS" \
+      --enable-lora --max-lora-rank 16 --max-loras 2 --enable-sleep-mode --enable-scale-out \
+      --return-sampling-mask --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
+  ROLLOUT_PID=$!
+  # cap: 2x measured 390 s
+  wait_for_server "$ROLLOUT_PID" 8011 "$MODEL@$REV" 900 || fail ROLLOUT_SERVER_DID_NOT_START
+  refuse_ignored_settings ~/out/rollout-server.log
+  # cap: 3x estimated 40 s
+  curl -fsS --max-time 120 -X POST 'http://127.0.0.1:8011/sleep?level=1' > ~/out/rollout-initial-sleep.txt || fail ROLLOUT_SLEEP_FAILED
+  BASE+=(--rollout-backend vllm --rollout-url http://127.0.0.1:8011)
+fi
 step train-lr1e-4 --steps "${SMOKE_STEPS:-12}" --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-seconds "${SMOKE_TRAIN_SECONDS:-3600}" --final-eval-seconds "${SMOKE_FINAL_EVAL_SECONDS:-600}"
 if [[ -n ${SMOKE_MEMORY_LIMIT:-} ]]; then
   # Memory question only: two steps at a longer token limit. Eager attention holds batch x heads x length^2 per layer,

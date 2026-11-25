@@ -102,10 +102,11 @@ def test_a_cap_without_a_basis_at_the_multiple_is_refused(repo, deadline, basis,
     assert record is None and reason in refused[0] and not (repo / gates.RECORD).exists()
 
 
-def test_failing_tests_a_dirty_tree_or_a_spent_budget_write_no_record(repo):
+@pytest.mark.parametrize('dirty', ['ops/new.sh', 'requirements-vllm.txt'])
+def test_failing_tests_a_dirty_tree_or_a_spent_budget_write_no_record(repo, dirty):
     assert 'tests do not pass' in settle(repo, tests=FAIL)[1][0]
     assert 'budget' in settle(repo, launch_cap=1.0)[1][0]
-    (repo / 'ops' / 'new.sh').write_text('echo\n')
+    (repo / dirty).write_text('uncommitted\n')
     assert 'uncommitted' in settle(repo)[1][0]
     assert not (repo / gates.RECORD).exists()
 

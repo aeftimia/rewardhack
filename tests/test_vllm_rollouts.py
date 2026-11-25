@@ -1,0 +1,200 @@
+"""External HTTP protocol failures and real TRL updates using replayed support."""
+import json
+import math
+import time
+from types import SimpleNamespace
+
+import httpx
+import pytest
+
+from rewardhack.vllm_rollouts import AdapterRollouts, check_args
+
+
+@pytest.fixture
+def backend(tmp_path):
+    args = SimpleNamespace(out=tmp_path, rollout_url='http://127.0.0.1:8011', model='model', revision='revision',
+                           mode='train', quant='none', rollout_backend='vllm', seed=7, max_completion_length=2)
+    backend = AdapterRollouts(args, 1)
+    yield backend
+    backend.close()
+
+
+def connect(backend, handler):
+    backend.client.close()
+    backend.client = httpx.Client(base_url=backend.args.rollout_url, transport=httpx.MockTransport(handler))
+
+
+def choice(token=3):
+    return dict(token_ids=[token, 1], finish_reason='stop', sampling_mask=[[3, 4], [1, 2]],
+                logprobs={'content': [dict(token_id=t, logprob=-math.log(2)) for t in [token, 1]]})
+
+
+def test_parallel_responses_preserve_group_order_and_unique_seeds(backend):
+    seen = []
+    def handler(request):
+        body = json.loads(request.content)
+        seen.append(body)
+        index = body['sampling_params']['seed']-7
+        time.sleep((3-index)*0.005)
+        return httpx.Response(200, json={'choices': [choice(3+index % 2)]})
+    connect(backend, handler)
+    ids, logs, masks = backend.completions([[8], [8], [9], [9]], seed=7, max_tokens=2)
+    assert ids == [[3, 1], [4, 1], [3, 1], [4, 1]]
+    assert masks == [[[3, 4], [1, 2]]]*4 and len(logs) == 4
+    assert sorted(b['sampling_params']['seed'] for b in seen) == [7, 8, 9, 10]
+    assert all(b['sampling_params']['ignore_eos'] and b['sampling_params']['stop_token_ids'] == [1] for b in seen)
+    assert all(b['sampling_params']['output_kind'] == 2 for b in seen)
+
+
+@pytest.mark.parametrize('damage', ['missing_mask', 'wrong_support', 'misaligned', 'nonfinite', 'missing_stop', 'extra', 'http'])
+def test_invalid_rollouts_fail_instead_of_training(backend, damage):
+    row = choice()
+    if damage == 'missing_mask': del row['sampling_mask']
+    if damage == 'wrong_support': row['sampling_mask'][0] = [4]
+    if damage == 'misaligned': row['logprobs']['content'][0]['token_id'] = 4
+    if damage == 'nonfinite': row['logprobs']['content'][0]['logprob'] = None
+    if damage == 'missing_stop': row['token_ids'][-1] = 2; row['logprobs']['content'][-1]['token_id'] = 2
+    connect(backend, lambda request: httpx.Response(503 if damage == 'http' else 200,
+        json={'choices': [row, row] if damage == 'extra' else [row]}))
+    with pytest.raises((ValueError, KeyError, httpx.HTTPStatusError)):
+        backend.completions([[8]], seed=7, max_tokens=2)
+
+
+@pytest.mark.parametrize('wrong', ['version', 'model', 'logprobs', 'mask', 'awake'])
+def test_preflight_checks_server_contract(backend, wrong):
+    responses = {
+        '/version': {'version': 'wrong' if wrong == 'version' else '0.34.0'},
+        '/v1/models': {'data': [{'id': 'wrong' if wrong == 'model' else 'model@revision'}]},
+        '/server_info': {'vllm_config': {'model_config': {'logprobs_mode': 'raw_logprobs' if wrong == 'logprobs' else 'processed_logprobs',
+                                                       'return_sampling_mask': wrong != 'mask'}}},
+        '/is_sleeping': {'is_sleeping': wrong != 'awake'},
+    }
+    connect(backend, lambda request: httpx.Response(200, json=responses[request.url.path]))
+    with pytest.raises((ValueError, RuntimeError)):
+        backend.preflight()
+
+
+def test_generation_failure_sleeps_server_and_propagates(backend, monkeypatch):
+    import torch
+    from safetensors.torch import save_file
+    class Model:
+        def save_pretrained(self, path, **kwargs):
+            save_file({'lora_B': torch.ones(1)}, str(path/'adapter_model.safetensors'))
+    trainer = SimpleNamespace(model=Model(), state=SimpleNamespace(global_step=0), tools=None,
+                              accelerator=SimpleNamespace(num_processes=1))
+    backend.checked_reload = True
+    sleeping, calls = [True], []
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path == '/wake_up': sleeping[0] = False
+        if request.url.path == '/sleep': sleeping[0] = True
+        if request.url.path == '/inference/v1/generate': return httpx.Response(503)
+        return httpx.Response(200, json={'is_sleeping': sleeping[0], 'success': True})
+    connect(backend, handler)
+    with pytest.raises(httpx.HTTPStatusError):
+        backend.generate(trainer, [[8], [8]], 2)
+    assert sleeping[0] and calls[-2:] == ['/sleep', '/is_sleeping']
+    assert json.loads(backend.log.read_text())['status'] == 'failed'
+
+
+def test_reload_requires_changed_weights_and_restoration(backend, monkeypatch):
+    import torch
+    from safetensors.torch import save_file, load_file
+    save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
+    (backend.path/'adapter_config.json').write_text('{}')
+    active = [backend.path]
+    monkeypatch.setattr(backend, 'load', lambda path: active.__setitem__(0, path))
+    def sample(*args, **kwargs):
+        value = float(load_file(str(active[0]/'adapter_model.safetensors'))['layer.lora_B.weight'].sum())
+        return [[3]], [[-1-value]], None
+    monkeypatch.setattr(backend, 'completions', sample)
+    backend.verify_reload([8])
+    assert backend.checked_reload and active[0] == backend.path
+    assert float(load_file(str(backend.path/'adapter_model.safetensors'))['layer.lora_B.weight'].sum()) == 0
+    monkeypatch.setattr(backend, 'completions', lambda *a, **kw: ([[3]], [[-1]], None))
+    with pytest.raises(RuntimeError, match='A/B/A'):
+        backend.verify_reload([8])
+
+
+def test_replayed_support_reaches_real_trl_loss(tmp_path, monkeypatch):
+    torch = pytest.importorskip('torch')
+    from test_training_integration import train, REWARDS, cosine
+    from trl import GRPOTrainer
+    real = GRPOTrainer._get_per_token_logps_and_entropies
+    seen = []
+    def inspect(self, *args, **kwargs):
+        mask = kwargs['sampling_mask']
+        assert mask is not None
+        seen.append(mask.detach().clone())
+        result = real(self, *args, **kwargs)
+        # The tiny model is nearly uniform: two-token support gives log(1/2),
+        # whereas accidentally using its full 16-token vocabulary gives log(1/16).
+        assert bool((result[0] > -1).all())
+        return result
+    monkeypatch.setattr(GRPOTrainer, '_get_per_token_logps_and_entropies', inspect)
+    class Rollouts:
+        def generate(self, trainer, prompts, num_generations):
+            assert trainer.eos_token_ids == [self.stops] == [1]
+            return ([[3+i % 2, 1] for i in range(len(prompts))],
+                    [[-math.log(2)]*2 for _ in prompts], [[[3, 4], [1, 2]] for _ in prompts])
+    def run(reward, steps=1):
+        return train(tmp_path, monkeypatch, reward, steps=steps, rollouts=Rollouts(), rollout_backend='vllm')
+    positive = run(REWARDS['first of the group'])
+    negative = run(lambda i, raw, step: -float(i == 0))
+    assert cosine(positive.change, negative.change) < -0.99
+    assert float(positive.change.abs().max()) > 1e-4
+    assert float(run(lambda i, raw, step: 1.0).change.abs().max()) < 1e-7
+    assert len(run(REWARDS['first of the group'], steps=2).log) == 2
+    assert len(seen) >= 10
+    assert positive.summary['rollout_backend']['sampling_mask'] is True
+
+
+def test_external_rollouts_refuse_unsupported_configuration(backend):
+    check_args(backend.args)
+    backend.args.quant = '4bit'
+    with pytest.raises(ValueError, match='unquantized'):
+        check_args(backend.args)
+
+
+def test_every_batch_reloads_current_adapter_and_sleeps(backend):
+    import torch
+    from safetensors.torch import save_file, load_file
+    value, loaded, sleeping, seeds = [0.0], [0.0], [True], []
+    class Model:
+        def save_pretrained(self, path, **kwargs):
+            (path/'adapter_config.json').write_text('{}')
+            save_file({'layer.lora_B.weight': torch.tensor([value[0]])}, str(path/'adapter_model.safetensors'))
+    trainer = SimpleNamespace(model=Model(), state=SimpleNamespace(global_step=0), tools=None,
+                              accelerator=SimpleNamespace(num_processes=1))
+    def handler(request):
+        path = request.url.path
+        if path == '/wake_up': sleeping[0] = False
+        if path == '/sleep': sleeping[0] = True
+        if path == '/v1/load_lora_adapter':
+            from pathlib import Path
+            folder = Path(json.loads(request.content)['lora_path'])
+            loaded[0] = float(load_file(str(folder/'adapter_model.safetensors'))['layer.lora_B.weight'].sum())
+        if path == '/inference/v1/generate':
+            assert not sleeping[0]
+            params = json.loads(request.content)['sampling_params']
+            assert params['temperature'] > 0 and params['top_k'] > 0
+            if params['max_tokens'] == 1:
+                row = dict(token_ids=[3], finish_reason='length', sampling_mask=[[3, 4]],
+                           logprobs={'content': [dict(token_id=3, logprob=-1-loaded[0])]})
+            else:
+                seeds.append(params['seed'])
+                assert loaded[0] == pytest.approx(value[0])
+                row = choice()
+            return httpx.Response(200, json={'choices': [row]})
+        return httpx.Response(200, json={'is_sleeping': sleeping[0], 'success': True})
+    connect(backend, handler)
+    for step in range(2):
+        trainer.state.global_step = step
+        value[0] = step*0.2
+        ids, logs, masks = backend.generate(trainer, [[8], [8]], 2)
+        assert sleeping[0] and ids == [[3, 1]]*2 and masks == [[[3, 4], [1, 2]]]*2
+    records = [json.loads(line) for line in backend.log.read_text().splitlines()]
+    assert all(row['status'] == 'completed' for row in records)
+    assert records[0]['adapter_sha256'] != records[1]['adapter_sha256']
+    assert 'reload_check' in records[0] and 'reload_check' not in records[1]
+    assert sorted(seeds) == [7, 8, 9, 10]

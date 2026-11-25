@@ -9,20 +9,20 @@ description = "Verifiable buggy-grader environment (Lean 4) for studying learned
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-  "numpy==2.5.4",
+  "numpy==2.5.5",
   "openai==2.54.0",
+  "httpx==0.28.1",
   "pydantic==2.14.4",
   "scipy==1.18.1",
 ]
 
 [project.optional-dependencies]
-# TRL GRPO path for rented GPUs (entrypoints/run.py). Pinned to the versions the pilot ran with.
+# TRL GRPO path for rented GPUs (entrypoints/run.py). See notes section 63 for upgrade validation.
 # TRL's GRPO import loads its vLLM client, which imports requests even when vLLM is not used.
-train = ["torch==2.15.0", "trl==1.14.1", "peft==0.21.0", "transformers==5.17.0", "datasets==5.1.0", "accelerate==1.15.0", "requests==2.34.2", "bitsandbytes; sys_platform == 'linux'"]
+train = ["torch==2.15.0", "trl==1.19.0", "peft==0.21.0", "transformers==5.17.0", "datasets==5.2.0", "accelerate==1.15.0", "requests==2.34.2", "bitsandbytes==0.50.2; sys_platform == 'linux'"]
 # Free local probes and RL on Apple silicon (entrypoints/local_mlx.py).
 mlx = ["mlx-lm"]
-# Large-model inference probes (entrypoints/probe_vllm.py).
-vllm = ["vllm"]
+# vLLM has incompatible Torch/NumPy constraints; install requirements-vllm.txt in a separate environment.
 dev = ["pytest>=8"]
 
 [tool.setuptools.packages.find]

@@ -81,7 +81,7 @@ def run_args(tmp_path, **overrides):
         scale_rewards='group', max_grad_norm=1.0, router_aux_loss_coef=0.0, lora_rank=2, max_completion_length=6, eval_samples=2, eval_limit=2,
         train_limit=4, save_every=99, stop_no_variation=99, seed=3, max_seconds=600, final_eval_seconds=60,
         judge='none', judge_model=None, judge_revision=None, judge_url='http://127.0.0.1:1/v1', judge_key_env='UNUSED', judge_usd_in=0.0, judge_usd_out=0.0,
-        judge_extra={}, judge_max_usd=None, dry_run=False)
+        judge_extra={}, judge_max_usd=None, dry_run=False, rollout_backend='transformers', rollout_url='http://127.0.0.1:8011')
     vars(args).update(overrides)
     return args
 

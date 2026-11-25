@@ -1,0 +1,6 @@
+# Standalone serving environment: do not install the project or its [train] extra here.
+# The HTTP rollout client lives in the training environment.
+vllm==0.34.0
+transformers==5.22.2
+numpy==2.3.5
+ninja==1.13.2

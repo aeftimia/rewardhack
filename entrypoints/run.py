@@ -6,7 +6,7 @@
 import argparse
 from pathlib import Path
 
-from rewardhack import judge, reporting, retry_options
+from rewardhack import judge, reporting, retry_options, vllm_rollouts
 from rewardhack.hf_grpo import run
 from rewardhack.outcomes import ARMS
 from rewardhack.prompts import VARIANTS
@@ -56,10 +56,12 @@ def main():
     ap.add_argument('--max-seconds', type=int, default=3600)
     ap.add_argument('--final-eval-seconds', type=int, default=600, help='reserved after training for the after-evaluation')
     reporting.add_arguments(ap)
+    vllm_rollouts.add_arguments(ap)
     retry_options.add_arguments(ap)
     judge.add_arguments(ap)
     args = ap.parse_args()
     judge.check_reward_args(ap, args)
+    vllm_rollouts.check_args(args)
     run(args)
 
 

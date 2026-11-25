@@ -54,7 +54,7 @@ RETRY_SECONDS = 120  # default allowance of second checks per phase: two retries
 
 
 def stop_ids(model, tokenizer):
-    """Use the tokenizer EOS shared by pinned TRL's generation and completion masking.
+    """Use the tokenizer EOS explicitly set in our TRL generation and completion mask.
 
     Evaluation explicitly supplies this ID too; a model-only stop token must not
     make a capped training answer look complete.

@@ -33,6 +33,7 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', **settings):
     ('ops/remote_runpod_genbench.sh', dict(SMOKE_STEPS='4'), 'reads no SMOKE_* setting'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='0'), 'AUTOSTOP_GRACE_SECONDS must be'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='179'), 'at least 180'),
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0'), 'vLLM pilot needs API judge'),
 ])
 def test_the_driver_refuses_before_it_reaches_for_the_pod(tmp_path, remote, settings, said):
     code, output, reached = drive(tmp_path, remote, **settings)

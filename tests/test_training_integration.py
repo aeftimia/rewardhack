@@ -44,7 +44,7 @@ def tiny(kind):
     return model, tokenizer
 
 
-def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None, extra=None, **overrides):
+def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None, extra=None, rollouts=None, **overrides):
     """Run `hf_grpo.train` with `reward_of(position in batch, completion text, step)` in place of Lean and the judge.
 
     None from `reward_of` is a rollout the verifier could not decide. Returns the adapter's change, TRL's log,
@@ -70,10 +70,11 @@ def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None
     args = SimpleNamespace(out=out, lean='unused', arm='report_correct', penalty=0.5, judge_fn=None, report_mode='prose', verifier_retry_seconds=RETRY_SECONDS, num_generations=GENERATIONS,
                            prompts_per_step=1, steps=steps, learning_rate=1e-2, lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0, beta=0.0, seed=7,
                            adapter=None, lora_rank=2, max_completion_length=6, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
-                           save_every=99, stop_no_variation=99, train_deadline=time.monotonic()+3600)
+                           save_every=99, stop_no_variation=99, train_deadline=time.monotonic()+3600,
+                           rollout_backend='transformers', rollout_url='http://127.0.0.1:8011')
     vars(args).update(overrides)
     summary = dict(rollouts={})
-    fit = hf_grpo.prepare_training(model, tokenizer, TASKS, args, summary)
+    fit = hf_grpo.prepare_training(model, tokenizer, TASKS, args, summary, rollouts=rollouts)
     start = {name: p.detach().clone() for name, p in model.named_parameters() if p.requires_grad}
     torch.manual_seed(31415)  # what the before-evaluation does between building the trainer and training
     fit()
@@ -148,6 +149,34 @@ def test_schedule_and_objective_are_the_ones_asked_for(tmp_path, monkeypatch):
     decaying = train(tmp_path, monkeypatch, REWARDS['first of the group'], steps=3, lr_schedule='linear')
     rates = [row['learning_rate'] for row in decaying.log]
     assert rates[0] > rates[1] > rates[2], 'the linear option should be the one that decays'
+
+
+def test_model_only_stops_do_not_truncate_trl_completion_masks(tmp_path, monkeypatch):
+    from transformers import LogitsProcessorList
+    from trl import GRPOTrainer
+    model, tokenizer = tiny('plain')
+    model.generation_config.eos_token_id = [1, 4]
+    generate = model.generate
+    class Emit:
+        def __init__(self): self.position = 0
+        def __call__(self, ids, scores):
+            scores.fill_(-float('inf'))
+            scores[:, 1 if self.position == 2 else 4] = 0
+            self.position += 1
+            return scores
+    def controlled(**kwargs):
+        assert kwargs['generation_config'].eos_token_id == 1
+        return generate(**kwargs, logits_processor=LogitsProcessorList([Emit()]))
+    monkeypatch.setattr(model, 'generate', controlled)
+    single_turn = GRPOTrainer._generate_single_turn
+    def observe(self, *args, **kwargs):
+        assert self.eos_token_ids == [1]
+        result = single_turn(self, *args, **kwargs)
+        assert result[0] == [[4, 4, 1]]*GENERATIONS
+        return result
+    monkeypatch.setattr(GRPOTrainer, '_generate_single_turn', observe)
+    run = train(tmp_path, monkeypatch, REWARDS['first of the group'], built=(model, tokenizer))
+    assert run.log[0]['completions/mean_length'] == 3
 
 
 def test_a_mixture_of_experts_model_trains_on_the_reward_alone(tmp_path, monkeypatch):

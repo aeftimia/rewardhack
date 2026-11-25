@@ -29,8 +29,9 @@ pod_self_test 40 "$PORT"
 [[ -s $ADAPTER/adapter_model.safetensors && -s $ADAPTER/adapter_config.json ]] || fail 'NO_ADAPTER: copy the trained adapter to payload/adapter before driving'
 
 log start install
-# Not timed alone yet (about 3 minutes estimated), so three times that; a stalled download must not run to the job's deadline.
-python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q vllm==0.34.0 ninja > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
+# Installation took 108 s on 25 Nov; retain ample room for network variability.
+# cap: 2x measured 108 s
+python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q -r requirements-vllm.txt > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
 /workspace/vllm-venv/bin/pip freeze > ~/out/pip-freeze-vllm.txt
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
 

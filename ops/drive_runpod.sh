@@ -10,6 +10,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ $# == 5 ]] || { echo 'need host port remote-script results-dir deadline-minutes'; exit 2; }
 HOST=$1 PORT=$2 REMOTE=$3 RESULTS=$4 DEADLINE=$5
+SMOKE_VLLM_ROLLOUTS=${SMOKE_VLLM_ROLLOUTS:-0}
+[[ $SMOKE_VLLM_ROLLOUTS == 0 || $SMOKE_VLLM_ROLLOUTS == 1 ]] || { echo 'SMOKE_VLLM_ROLLOUTS must be 0 or 1'; exit 2; }
+if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
+  [[ ${JUDGE_KIND:?vLLM pilot needs JUDGE_KIND=api} == api && ${SMOKE_SKIP_PROBE:?vLLM pilot needs SMOKE_SKIP_PROBE=1} == 1 && ${SMOKE_SECOND_RUN:?vLLM pilot needs SMOKE_SECOND_RUN=0} == 0 ]] || {
+    echo 'vLLM pilot needs API judge, SMOKE_SKIP_PROBE=1 and SMOKE_SECOND_RUN=0'; exit 2;
+  }
+fi
 [[ $REMOTE =~ ^ops/[a-zA-Z0-9_-]+\.sh$ && -f $REMOTE && $DEADLINE =~ ^[1-9][0-9]*$ ]] || { echo 'the remote script must be an existing ops/*.sh and the deadline a whole number of minutes'; exit 2; }
 if [[ $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == api ]]; then
   [[ ${FORWARD_JUDGE_KEY:-} == 1 && -n ${OPENAI_API_KEY:-} ]] || {

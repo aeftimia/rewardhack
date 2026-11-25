@@ -30,7 +30,7 @@ RECORD = Path('.tools') / 'launch-ready.json'
 LEDGER = Path('spending') / 'ledger.csv'
 TERMS = Path('.claude') / 'commit-gate-terms.txt'
 # What the pod runs is the working tree under these paths (ops/drive_runpod.sh copies it), so they must match the tested commit.
-SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements.txt')
+SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements.txt', 'requirements-vllm.txt')
 # A pod can bill outside the job's own deadline: for the provisional timer the driver arms before the job starts,
 # and for the grace after the deadline before the pod removes itself.
 PROVISIONAL_MINUTES = 15

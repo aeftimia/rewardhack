@@ -15,7 +15,7 @@ RAW = json.dumps(dict(established='True', proof_body='by trivial', report='Prove
 @pytest.fixture
 def args(tmp_path):
     return SimpleNamespace(out=tmp_path, lean='must-not-run', arm='report_correct', penalty=.5, report_mode='prose', verifier_retry_seconds=RETRY_SECONDS,
-                           judge_fn=lambda row: dict(claim='OK', raw=''), eval_samples=1,
+                           judge_fn=lambda row: dict(claim='OK', raw=''), eval_samples=1, rollout_backend='transformers',
                            max_completion_length=4, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
                            num_generations=1, prompts_per_step=1, steps=1, learning_rate=.01,
                            beta=0, seed=0, adapter=True, lora_rank=1, lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0)
@@ -235,7 +235,8 @@ def test_real_trl_generation_uses_same_stop_as_cutoff_detector(tmp_path):
     model = GPT2LMHeadModel(GPT2Config(vocab_size=5, n_layer=1, n_head=1, n_embd=8,
                                      bos_token_id=3, eos_token_id=[1, 4], pad_token_id=0))
     config = GRPOConfig(output_dir=str(tmp_path), use_cpu=True, bf16=False, report_to='none',
-                        num_generations=2, per_device_train_batch_size=2, max_completion_length=4)
+                        num_generations=2, per_device_train_batch_size=2, max_completion_length=4,
+                        generation_kwargs={'eos_token_id': outcomes.stop_ids(model, tokenizer)})
     trainer = GRPOTrainer(model=model, args=config, reward_funcs=lambda completions, **kw: [0.] * len(completions),
                           train_dataset=Dataset.from_list([{'prompt': 'hello'}]), processing_class=tokenizer)
     assert trainer.generation_config.eos_token_id == outcomes.stop_ids(model, tokenizer) == 1

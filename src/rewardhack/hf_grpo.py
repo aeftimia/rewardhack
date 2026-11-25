@@ -210,7 +210,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
                 tokens_per_second=generated/max(t_gen, 1e-9), completions_per_hour=len(rows)/max(t_gen+t_lean, 1e-9)*3600)
 
 
-def prepare_training(model, tokenizer, tasks, args, summary):
+def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     import torch
     from datasets import Dataset
     from peft import LoraConfig
@@ -220,6 +220,10 @@ def prepare_training(model, tokenizer, tasks, args, summary):
     report_mode = args.report_mode
     summary['report_mode'] = report_mode
     stops = stop_ids(model, tokenizer)  # the same stop IDs as `evaluate`, so both paths agree on a finished answer
+    if (args.rollout_backend == 'vllm') != (rollouts is not None):
+        raise ValueError('the requested rollout backend must match the supplied backend')
+    if rollouts is not None:
+        rollouts.stops = stops
     timing = {'step_start': 0.0, 'rollout': [], 'lean': [], 'update': [], 'reward_end': 0.0}
     sink = (args.out/'training-rollouts.jsonl').open('w')
     groups, undecided, lost = [], [], []
@@ -323,14 +327,35 @@ def prepare_training(model, tokenizer, tasks, args, summary):
                         # size of a reward gap is invisible within a group; 'none' keeps it. See --scale-rewards.
                         scale_rewards=args.scale_rewards, max_grad_norm=args.max_grad_norm, optim='adamw_torch', weight_decay=0.0,
                         warmup_steps=0, adam_beta1=0.9, adam_beta2=0.999, adam_epsilon=1e-8,
-                        logging_nan_inf_filter=False)  # a NaN loss is logged as NaN, and stops the run below
+                        logging_nan_inf_filter=False, generation_kwargs={'eos_token_id': stops},
+                        vllm_importance_sampling_correction=True, vllm_importance_sampling_mode='sequence_mask',
+                        vllm_importance_sampling_clip_max=3.0, vllm_importance_sampling_clip_min=None)
     dataset = Dataset.from_list([{'prompt': prompt(t['statement'], args.prompt_variant, report_mode), 'statement': t['statement']} for t in tasks])
     class VerifiedTrainer(VerifierMaskMixin, GRPOTrainer):
-        pass
+        def _generate_single_turn(self, prompt_ids, images, multimodal_fields, num_generations, has_tool_images=False):
+            if rollouts is None:
+                return super()._generate_single_turn(prompt_ids, images, multimodal_fields, num_generations, has_tool_images)
+            if images is not None or multimodal_fields or has_tool_images:
+                raise ValueError('external adapter rollouts are text-only')
+            return rollouts.generate(self, prompt_ids, num_generations)
 
     trainer = VerifiedTrainer(model=model, args=config, reward_funcs=reward_fn, train_dataset=dataset, processing_class=tokenizer, callbacks=[Instrument()],
                           peft_config=None if args.adapter else LoraConfig(task_type='CAUSAL_LM', r=args.lora_rank, lora_alpha=2*args.lora_rank,
                                                                            target_modules='all-linear', lora_dropout=0.0))
+    # TRL 1.19 unions model-only stops into its completion mask. Keep that mask
+    # aligned with our explicit generation stop and evaluation cutoff detector.
+    trainer.eos_token_ids = [stops]
+    if rollouts is not None:
+        # Initialize without TRL's native VLLMGeneration (which imports the other
+        # environment's Torch and transfers full weights). The overridden method
+        # above supplies tokens/logprobs; this flag enables TRL's existing ratio
+        # computation and loss correction. Guarded to TRL 1.19.0 by check_args.
+        trainer.use_vllm = True
+        trainer.vllm_mode = 'server'
+        summary['rollout_backend'] = dict(kind='vllm-adapter-server', url=args.rollout_url,
+            logprobs='processed_logprobs', sampling_mask=True, correction='sequence_mask', correction_max=3.0)
+    else:
+        summary['rollout_backend'] = dict(kind='transformers')
     before = {n: p.detach().cpu().clone() for n, p in trainer.model.named_parameters() if p.requires_grad}
     summary['trainable_parameters'] = sum(p.numel() for p in before.values())
     summary['trainer'] = {'lr_schedule': trainer.args.lr_scheduler_type, 'router_aux_loss_coef': trainer.router_aux_loss_coef,
@@ -389,7 +414,13 @@ def run(args):
     hard_deadline = time.monotonic()+args.max_seconds
     sampler = GpuSampler()
     sampler.start()
+    rollouts = None
     try:
+        from .vllm_rollouts import AdapterRollouts, check_args
+        check_args(args)
+        if args.rollout_backend == 'vllm':
+            rollouts = AdapterRollouts(args, [])
+            rollouts.preflight()  # prove the server is sleeping before loading the training model
         summary['controls'] = controls(args.lean)
         summary['lean'] = subprocess.check_output([args.lean, '--version'], text=True).strip()
         print('controls passed', flush=True)
@@ -420,7 +451,7 @@ def run(args):
             return
         # Built before the before-evaluation is paid for: a trainer the libraries refuse to construct fails here, in seconds.
         # The adapter starts as an exact no-op (its B matrices are zero), so the before-evaluation still measures the base policy.
-        fit = prepare_training(model, tokenizer, training, args, summary)
+        fit = prepare_training(model, tokenizer, training, args, summary, rollouts=rollouts)
         summary['before'] = evaluate(model, tokenizer, evaluation, args, 'before')
         print('before', summary['before'], flush=True)
         model = fit()
@@ -438,6 +469,8 @@ def run(args):
         raise
     finally:
         deadline.disarm()
+        if rollouts is not None:
+            rollouts.close()
         gpu = sampler.summary()
         meter = None if args.judge_fn is None else args.judge_fn.meter
         summary['judge_usage'] = meter.totals if meter else None

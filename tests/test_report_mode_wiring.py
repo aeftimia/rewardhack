@@ -171,7 +171,7 @@ def test_hf_training_routes_typed_prompt_and_reward(monkeypatch, tmp_path):
     weight = torch.nn.Parameter(torch.ones(1))
     model = SimpleNamespace(named_parameters=lambda: iter([('weight', weight)]), named_modules=lambda: iter([]))
     args = SimpleNamespace(report_mode='typed', verifier_retry_seconds=RETRY_SECONDS, out=tmp_path, arm='baseline', lean='stub', penalty=0,
-                           judge_fn=None, num_generations=1, max_completion_length=8, adapter=True,
+                           judge_fn=None, num_generations=1, max_completion_length=8, adapter=True, rollout_backend='transformers',
                            steps=1, prompts_per_step=1, learning_rate=.01, beta=0, seed=0,
                            thinking='on', reasoning_effort='low', prompt_variant='neutral', lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0)
     summary = dict(rollouts={})
