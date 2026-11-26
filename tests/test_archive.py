@@ -19,7 +19,9 @@ args = args[2:]
 root = Path(os.environ['FAKE_S3'])
 def path(uri):
     return root / uri.removeprefix('s3://')
-if args[:3] == ['s3', 'cp', '--recursive']:
+if args[:3] == ['s3', 'cp', '--recursive'] and os.environ.get('FAKE_S3_FAIL'):
+    sys.exit('upload failed')
+elif args[:3] == ['s3', 'cp', '--recursive']:
     source, target = Path(args[3]), path(args[4])
     assert '--storage-class' in args and args[args.index('--storage-class')+1] == 'STANDARD_IA'
     assert args[args.index('--checksum-algorithm')+1] == 'SHA256'
@@ -168,3 +170,23 @@ def test_prune_never_deletes_the_run_folder_itself(tmp_path):
     assert archive(tmp_path, 'upload', run)[0] == 0
     assert archive(tmp_path, 'prune', run)[0] == 0
     assert (run/'steps.jsonl').exists() and not (run/'adapter-step8').exists()
+
+
+def test_an_interrupted_reupload_leaves_nothing_to_prune(tmp_path, run):
+    """Round 34: a re-upload that failed after rewriting the manifest left the old ARCHIVED, and prune trusted it while S3
+    held the older bytes of a same-size checkpoint."""
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    (run/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x03' * 1000)
+    assert archive(tmp_path, 'upload', run, FAKE_S3_FAIL='1')[0] != 0
+    code, output = archive(tmp_path, 'prune', run)
+    assert code == 2 and 'upload it first' in output and (run/'train-a'/'trainer'/'checkpoint-60').exists()
+
+
+def test_prune_refuses_a_manifest_written_after_the_mark(tmp_path, run):
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    assert manifest('write', run, run/'SHA256SUMS').returncode == 0 and (run/'SHA256SUMS').read_text()
+    (run/'SHA256SUMS').write_text((run/'SHA256SUMS').read_text() + '')
+    (run/'train-a'/'extra.json').write_text('{}')
+    assert manifest('write', run, run/'SHA256SUMS').returncode == 0
+    code, output = archive(tmp_path, 'prune', run)
+    assert code == 1 and 'not the manifest its ARCHIVED mark covers' in output

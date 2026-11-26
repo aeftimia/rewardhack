@@ -18,6 +18,7 @@ need_folder() {
   [[ $NAME =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "the folder name becomes the run's key and must be letters, digits, '.', '_' or '-': $NAME"; exit 2; }
   URI=s3://$ARCHIVE_BUCKET/$ARCHIVE_PREFIX/$NAME
 }
+manifest_hash() { python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$1/SHA256SUMS"; }
 # Every local file of the run present in the bucket at its local size; the manifest must name exactly the folder's files.
 check_listed() {
   local local_list remote_list missing
@@ -34,6 +35,8 @@ case $COMMAND in
   upload)
     [[ $# == 2 ]] || { echo 'upload <results folder>'; exit 2; }
     need_folder "$2"
+    # An earlier mark no longer holds once the manifest is rewritten: only a finished upload marks the run again (round 34).
+    rm -f "$2/ARCHIVED"
     python3 ops/sha256_manifest.py write "$2" "$2/SHA256SUMS"
     # Every file is sent, every time: `s3 sync` skips a file of the same size with an older modification time, which a final
     # copy from a pod can have after an interim one was archived (review round 33). Only the top-level names the manifest
@@ -43,12 +46,15 @@ case $COMMAND in
     # The bytes sent are the bytes hashed: nothing changed here between the manifest and the end of the copy.
     python3 ops/sha256_manifest.py verify "$2" "$2/SHA256SUMS" > /dev/null || { echo "$2 changed during the upload: run it again" >&2; exit 1; }
     check_listed "$2"
-    printf '%s %s\n' "$(date -u +%FT%TZ)" "$URI" > "$2/ARCHIVED"
+    # The mark names the manifest it covers: prune refuses a manifest written since.
+    printf '%s %s %s\n' "$(date -u +%FT%TZ)" "$URI" "$(manifest_hash "$2")" > "$2/ARCHIVED"
     ;;
   prune)
     [[ $# == 2 ]] || { echo 'prune <results folder>'; exit 2; }
     need_folder "$2"
     [[ -s $2/ARCHIVED ]] || { echo "$2 has not been archived (no ARCHIVED): upload it first"; exit 2; }
+    read -r _ _ marked < "$2/ARCHIVED"
+    [[ $marked == "$(manifest_hash "$2")" ]] || { echo "$2/SHA256SUMS is not the manifest its ARCHIVED mark covers: upload it again" >&2; exit 1; }
     # The local copy is still the one archived (a file rewritten at the same size since would not show in the listing).
     python3 ops/sha256_manifest.py verify "$2" "$2/SHA256SUMS" > /dev/null || { echo "$2 changed since it was archived: upload it again" >&2; exit 1; }
     check_listed "$2"
