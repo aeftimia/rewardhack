@@ -53,7 +53,11 @@ OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
 # (a relaunch on a kept pod keeps /workspace, including a partial download).
 LARGE_CACHE=$HF_HOME/hub/models--${GPT_OSS_120B/\//--}
 # The size field only: the path du prints after it has digits of its own (gpt-oss-120b), which `tr` alone kept (round 29).
-if [[ -d $LARGE_CACHE ]]; then LARGE_HERE_GB=$(du -s -BG "$LARGE_CACHE" | cut -f1 | tr -dc 0-9); else LARGE_HERE_GB=0; fi
+# A failed or unreadable du ends the job with its reason in the log, not with stderr alone (review round 30).
+if [[ -d $LARGE_CACHE ]]; then
+  LARGE_HERE_GB=$(du -s -BG "$LARGE_CACHE" | cut -f1 | tr -dc 0-9) || fail "SELF_TEST: du could not size the partial $GPT_OSS_120B download in $LARGE_CACHE"
+  [[ $LARGE_HERE_GB =~ ^[0-9]+$ ]] || fail "SELF_TEST: du sized the partial $GPT_OSS_120B download in $LARGE_CACHE as '$LARGE_HERE_GB'"
+else LARGE_HERE_GB=0; fi
 LARGE_NEED_GB=(0 $((LARGE_HERE_GB < 70 ? 70 - LARGE_HERE_GB : 0)))  # indexed by SMOKE_PROBE_LARGE
 WORKSPACE_NEED_GB=$((40 + ${LARGE_NEED_GB[$SMOKE_PROBE_LARGE]}))
 pod_self_test "$WORKSPACE_NEED_GB" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
@@ -205,7 +209,7 @@ judged "$PY" entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" "${FUNDED[@
 # More than 5% of answers cut off at the token limit: the limit goes up before anything else changes.
 # More than 5% of answers the verifier could not decide: look at the verifier before paying for training.
 # A rule the probe could not evaluate (no rows to judge it by) is None there and stops the job here: it is not a "no".
-PROBE=$("$PY" -m rewardhack.probe_rules ~/out/probe/summary.json) || fail PROBE_SUMMARY_UNREADABLE
+PROBE=$("$PY" -m rewardhack.probe_rules rules ~/out/probe/summary.json) || fail PROBE_SUMMARY_UNREADABLE
 read -r LIMIT CHECK_VERIFIER PROBE_LINE <<< "$PROBE"
 log "probe: $PROBE_LINE; training with --max-completion-length $LIMIT"
 if [[ $CHECK_VERIFIER == 1 ]]; then fail PROBE_VERIFIER_UNDECIDED; fi
@@ -307,7 +311,13 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
          --model "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" --taskset hard --tasks false --max-seconds "$seconds" --samples "$samples" \
          --max-tokens "$tokens" --max-model-len $((tokens + PROMPT_ROOM_TOKENS)) --chunk-prompts "$chunk" --template-kwargs "{\"reasoning_effort\": \"$effort\"}" > ~/out/"$name".log 2>&1; then
       log "end $name passed"
-    else log "end $name FAILED exit=$?"; PROBE_FAILED+=("$name"); fi
+    else
+      # What its summary says: a stage stopped at its own --max-seconds exits 1 like a crash, but keeps every finished chunk
+      # (rows_written), and its error says which it was (review round 30).
+      code=$?
+      said=$("$PY" -m rewardhack.probe_rules stage ~/out/"$name"/summary.json) || said='its summary.json could not be read (see the job log)'
+      log "end $name FAILED exit=$code: $said"; PROBE_FAILED+=("$name")
+    fi
   done
   ((${#PROBE_FAILED[@]} == 0)) || fail "PROBE_LARGE_FAILED ${PROBE_FAILED[*]}"
 fi

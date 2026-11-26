@@ -296,7 +296,7 @@ def row_provenance(args, stage):
     """What each row this run writes in `stage` says about where it came from (provenance.meta)."""
     return provenance.meta(model=args.model, revision=args.revision, arm=args.arm, penalty=args.penalty, stage=stage,
                            report_mode=args.report_mode, taskset=args.taskset, variant=args.prompt_variant, template=template_kwargs(args),
-                           run=args.out.name)
+                           run=args.out.name, **{name: provenance.STAGES[stage][name] for name in provenance.SELECTION})
 
 
 def reasons(args):
@@ -748,8 +748,9 @@ def run(args):
         from .judge import from_args
         args.judge_fn = from_args(args)
         data = split(taskset_rows(args.taskset))
-        evaluation = stratified_limit(data['evaluation'], args.eval_limit)
-        training = stratified_limit(data['train'], args.train_limit)
+        # The splits each stage samples, as its rows' provenance states them (every statement of each).
+        evaluation = stratified_limit(data[provenance.STAGES['before']['part']], args.eval_limit)
+        training = stratified_limit(data[provenance.STAGES['training']['part']], args.train_limit)
         (args.out/'tasks.json').write_text(json.dumps({'train': training, 'evaluation': evaluation}, indent=1, ensure_ascii=False)+'\n')
         import peft
         import torch

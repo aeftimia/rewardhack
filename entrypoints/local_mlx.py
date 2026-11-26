@@ -7,7 +7,7 @@ from rewardhack import judge, reporting, retry_options
 from rewardhack.mlx_rl import run
 from rewardhack.outcomes import ARMS
 from rewardhack.prompts import VARIANTS
-from rewardhack.tasks import TASKSETS
+from rewardhack.tasks import SELECTIONS, TASKSETS
 
 
 def main():
@@ -19,7 +19,7 @@ def main():
     ap.add_argument('--revision', default='545dc4251c05440727734bcd94334791f6ab0192')
     ap.add_argument('--variant', choices=sorted(VARIANTS), default='neutral')
     ap.add_argument('--taskset', choices=TASKSETS, default='v1')
-    ap.add_argument('--tasks', choices=['all', 'true', 'false'], default='all')
+    ap.add_argument('--tasks', choices=SELECTIONS, default='all')
     ap.add_argument('--thinking', action='store_true')
     ap.add_argument('--arm', choices=ARMS, default='baseline')
     ap.add_argument('--penalty', type=float, default=0.0, help='λ of the report_correct arm')

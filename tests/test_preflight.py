@@ -103,7 +103,7 @@ def test_remote_runner_propagates_failure(tmp_path):
                REQUIRE_AUTOSTOP='0')
     result = subprocess.run(['bash', 'ops/remote_job.sh', str(job), '10'], env=env)
     assert result.returncode == 7
-    assert len((tmp_path/'pids').read_text().split()) == 2  # runner and job group, for a relaunch to stop
+    assert not (tmp_path/'pids').exists()  # recorded while the job ran (test_round2_regressions), removed once it ended (round 30)
     assert (tmp_path/'out'/'EXIT_CODE').read_text().strip() == '7'
     assert (tmp_path/'out'/'DONE').exists()
 

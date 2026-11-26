@@ -18,6 +18,7 @@ from .budget import nonnegative_finite
 
 REQUEST_SECONDS = 600  # per attempt: a long reasoning answer from a hosted model, with nothing rented waiting on it
 REQUEST_RETRIES = 3    # after the first attempt
+PART = 'train'         # the split sampled: the evaluation split stays held out for trained models
 
 from .prompts import follow_on, prompt
 from .tasks import select_tasks, taskset_rows
@@ -42,7 +43,7 @@ def run(args):
     report_mode = args.report_mode
     meter = Meter(0.0, 0.0) if served_here(args.base_url) else Meter(*price(args.model))  # prices: model_io.PRICES
     args.out.mkdir(parents=True, exist_ok=True)
-    tasks = select_tasks(args.taskset, args.tasks, limit=args.limit)
+    tasks = select_tasks(args.taskset, args.tasks, PART, limit=args.limit)
     false_pool = [t for t in taskset_rows(args.taskset) if not t['true']]
     jobs = [(task, index) for index in range(args.samples) for task in tasks]
     started = time.perf_counter()
@@ -93,7 +94,8 @@ def run(args):
         row = unscored_row(task, index, result, turn, conversation, meter.add(result['usage'])['reasoning'], report_mode)
         # A model never trained here; its revision is the snapshot the provider says served the answer.
         row['meta'] = provenance.meta(model=args.model, revision=result['model'], arm=None, penalty=None, stage='untrained',
-                                      report_mode=report_mode, taskset=args.taskset, variant=args.variant, run=args.out.name,
+                                      report_mode=report_mode, taskset=args.taskset, tasks=args.tasks, part=PART,
+                                      variant=args.variant, run=args.out.name,
                                       template={'reasoning_effort': args.reasoning_effort, 'extra_body': args.extra_body})
         rows.append(row)
         jsonl.write(sink, row)

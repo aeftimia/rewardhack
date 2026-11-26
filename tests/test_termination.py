@@ -153,7 +153,7 @@ def test_mlx_monitor_preserves_sampler_termination(args, monkeypatch):
 
 def test_vllm_finish_reason_reaches_scoring(args, monkeypatch):
     from rewardhack import vllm_probe
-    args.__dict__.update(template_kwargs='{}', max_seconds=10, taskset='v1', tasks=None,
+    args.__dict__.update(template_kwargs='{}', max_seconds=10, taskset='v1', tasks='false',
                          model='stub', revision='stub', max_model_len=10, gpu_memory_utilization=.5,
                          samples=1, max_tokens=4, variant='neutral', part='train', chunk_prompts=1)
     tokenizer = SimpleNamespace(apply_chat_template=lambda *a, **kw: 'prompt')
@@ -590,7 +590,7 @@ def test_a_probe_stopped_between_chunks_keeps_the_finished_ones(args, monkeypatc
     """One generate call over every prompt kept nothing when its deadline struck (review round 26): the gpt-oss-120b stages
     are now sampled and saved a chunk of prompts at a time."""
     from rewardhack import vllm_probe
-    args.__dict__.update(template_kwargs='{}', max_seconds=10, taskset='v1', tasks=None, model='stub', revision='stub',
+    args.__dict__.update(template_kwargs='{}', max_seconds=10, taskset='v1', tasks='false', model='stub', revision='stub',
                          max_model_len=10, gpu_memory_utilization=.5, samples=2, max_tokens=4, variant='neutral', part='train',
                          chunk_prompts=2, lean='none')
 

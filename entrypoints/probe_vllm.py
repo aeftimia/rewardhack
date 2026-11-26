@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rewardhack import reporting, retry_options
 from rewardhack.prompts import VARIANTS
-from rewardhack.tasks import TASKSETS
+from rewardhack.tasks import PARTS, SELECTIONS, TASKSETS
 from rewardhack.vllm_probe import run
 
 
@@ -25,8 +25,8 @@ def main():
     ap.add_argument('--seed', type=int, default=42)
     ap.add_argument('--max-seconds', type=int, default=1800)
     ap.add_argument('--taskset', choices=TASKSETS, default='v1')
-    ap.add_argument('--tasks', choices=['all', 'true', 'false'], default='all')
-    ap.add_argument('--part', choices=['train', 'evaluation', 'all'], default='train', help="'all' only for inference-only collection with no training downstream")
+    ap.add_argument('--tasks', choices=SELECTIONS, default='all')
+    ap.add_argument('--part', choices=PARTS, default='train', help="'all' only for inference-only collection with no training downstream")
     ap.add_argument('--template-kwargs', default='{}', help='JSON passed to the chat template, e.g. {"enable_thinking": true} or {"reasoning_effort": "high"}')
     reporting.add_arguments(ap)
     retry_options.add_arguments(ap)

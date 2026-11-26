@@ -46,6 +46,9 @@ finish() {
   # By session as well: a `timeout` inside the job puts its command in a process group of its own, which the line above misses.
   if [[ -n ${JOB:-} ]]; then pkill -9 -s "$JOB"; fi
   rm -f "$HOME/.judge_key"  # never outlives the job, whichever remote script ran and however it ended
+  # The pids file names a running job for a relaunch to stop; once this job has ended it names nothing (review round 30).
+  # Only this runner's own line: a relaunch that already replaced it kills this runner with KILL, which runs no trap.
+  if [[ -n ${PIDS:-} && -s $PIDS ]] && read -r runner _ < "$PIDS" && [[ $runner == "$$" ]]; then rm -f "$PIDS"; fi
   printf '%s\n' "$code" > "$OUT/EXIT_CODE.tmp"
   mv "$OUT/EXIT_CODE.tmp" "$OUT/EXIT_CODE"
   touch "$OUT/DONE"
@@ -85,6 +88,7 @@ if [[ -s $PIDS ]]; then
     kill -0 -- "-$OLD_GROUP" || break
     sleep 1
   done
+  rm -f "$PIDS"  # names a stopped job now; a later relaunch must not signal its ids once they are reused
 fi
 if can_remove; then
   AUTOSTOP=1

@@ -69,8 +69,8 @@ def run(args):
         t_gen, generated, t_lean = 0.0, 0, 0.0
         # A model never trained here: no arm or λ (provenance.STAGES).
         row_provenance = provenance.meta(model=args.model, revision=args.revision, arm=None, penalty=None, stage='untrained',
-                                         report_mode=report_mode, taskset=args.taskset, variant=args.variant, template=template_kwargs,
-                                         run=args.out.name)
+                                         report_mode=report_mode, taskset=args.taskset, tasks=args.tasks, part=args.part,
+                                         variant=args.variant, template=template_kwargs, run=args.out.name)
         with (args.out/'rows.jsonl').open('w') as sink:
             for start in range(0, len(tasks), args.chunk_prompts):
                 chunk = slice(start, start + args.chunk_prompts)

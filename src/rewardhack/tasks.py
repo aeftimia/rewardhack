@@ -13,6 +13,9 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 
 TASKSETS = ('v1', 'hard')
+# What `select_tasks` takes: which statements (`which`, a run's --tasks) and which split (`part`, a run's --part).
+SELECTIONS = ('all', 'true', 'false')
+PARTS = ('train', 'evaluation', 'all')
 
 HARD_MOD_TRUE = '''by
   intro n h

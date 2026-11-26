@@ -109,6 +109,7 @@ def test_a_terminated_runner_takes_its_job_with_it(tmp_path):
         runner.send_signal(signal.SIGTERM)
         assert runner.wait(timeout=10) == 143
         assert (tmp_path/'out'/'EXIT_CODE').read_text().strip() == '143'
+        assert not pids.exists(), 'the pids file outlived the job it names'
         time.sleep(0.3)
         assert subprocess.run(['pgrep', '-g', str(group)], capture_output=True).stdout == b'', 'the job outlived its runner'
     finally:

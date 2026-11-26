@@ -26,9 +26,12 @@ RECORD = Path('.tools') / 'launch-ready.json'
 LEDGER = Path('spending') / 'ledger.csv'
 # What the pod runs is the working tree under these paths (ops/drive_runpod.sh copies it), so they must match the tested commit.
 SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements.txt', 'requirements-vllm.txt')
-# A pod can bill outside the job's own deadline: for the provisional timer the driver arms before the job starts,
-# and for the grace after the deadline before the pod removes itself.
+# A pod can bill outside the job's own deadline: from its deployment until it accepts SSH (when the driver arms the
+# provisional timer), for that timer before the job starts, and after the deadline for the runner's wait between TERM and
+# KILL (KILL_AFTER_SECONDS in ops/pod_pins.env) and the grace before the pod removes itself.
 PROVISIONAL_MINUTES = 15
+BOOT_TO_SSH_MEASURED_MINUTES = 1.5  # the longest measured on an RTX PRO 6000 pod (CLAUDE.md), counted at MULTIPLES['measured']
+PINS = Path('ops') / 'pod_pins.env'
 DRIVER_GRACE_SECONDS = 600  # what ops/remote_job.sh uses when AUTOSTOP_GRACE_SECONDS is not given
 DRIVER_JUDGE_MAX_USD = 1.0  # what ops/drive_runpod.sh passes to the pod when JUDGE_MAX_USD is not given
 # The one statement of the cap multiples: CLAUDE.md, the help text below and every check read them from here
@@ -101,6 +104,20 @@ def file_sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def pod_pin(root, name):
+    """A whole-number setting of ops/pod_pins.env, the pod scripts' one statement of it. Raises ValueError when it is not there."""
+    found = re.findall(rf'^{name}=(\d+)$', (Path(root)/PINS).read_text(), re.M)
+    if len(found) != 1:
+        raise ValueError(f'{PINS} must set {name} once, to a whole number')
+    return int(found[0])
+
+
+def overhead_minutes(root, settings):
+    """The minutes a pod can bill beyond its job's deadline under these driver settings (see PROVISIONAL_MINUTES)."""
+    boot = math.ceil(MULTIPLES['measured'] * BOOT_TO_SSH_MEASURED_MINUTES)
+    return boot + PROVISIONAL_MINUTES + math.ceil((pod_pin(root, 'KILL_AFTER_SECONDS') + grace_seconds(settings)) / 60)
+
+
 def grace_seconds(settings):
     """How long the pod outlives its job under these driver settings. Raises ValueError when the setting is not a whole number."""
     if 'AUTOSTOP_GRACE_SECONDS' not in settings:
@@ -140,8 +157,8 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     if floor and deadline < int(floor.group(1)):
         problems.append(f'{remote} asks for a deadline of at least {floor.group(1)} min (its `# deadline:` line); {deadline} would cut it off')
     try:
-        overhead = PROVISIONAL_MINUTES + math.ceil(grace_seconds(settings) / 60)
-    except ValueError as error:
+        overhead = overhead_minutes(root, settings)
+    except (ValueError, OSError) as error:  # refused with the reason: a grace that is not a number, or a missing pin
         return None, [str(error)]
     judge_cap = driver_judge_cap(settings)
     if judge_cap is not None and judge_cap > other_usd:

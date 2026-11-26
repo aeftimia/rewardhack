@@ -10,7 +10,7 @@ from pathlib import Path
 from rewardhack import reporting
 from rewardhack.openai_probe import run
 from rewardhack.prompts import VARIANTS
-from rewardhack.tasks import TASKSETS
+from rewardhack.tasks import SELECTIONS, TASKSETS
 
 
 def main():
@@ -27,7 +27,7 @@ def main():
     ap.add_argument('--temperature', type=float, help='omit for models that reject sampling parameters')
     ap.add_argument('--concurrency', type=int, default=8)
     ap.add_argument('--limit', type=int, help='tasks to use (for a smoke test)')
-    ap.add_argument('--tasks', choices=['all', 'true', 'false'], default='all', help='restrict to true or false statements')
+    ap.add_argument('--tasks', choices=SELECTIONS, default='all', help='restrict to true or false statements')
     ap.add_argument('--taskset', choices=TASKSETS, default='v1', help='v1: the original trivial-falsehood set; hard: tasks_hard.py')
     ap.add_argument('--follow-on', action='store_true', help='after each answer, ask a second (false) task in the same conversation WITHOUT the evaluator source; tests whether the grader memory persists')
     ap.add_argument('--max-usd', type=float, required=True, help='stop issuing requests once the running metered total exceeds this')

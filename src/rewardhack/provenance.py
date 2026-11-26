@@ -4,40 +4,66 @@ The prior for the next run's stopping rule is a hierarchical fit across models a
 logit(rate) = model effect + λ effect + per-cell noise, one fit per outcome. Its input is counts per cell. So that results
 can be read without joins or guessing, every row a run writes carries `meta` (see `meta`), stated once here.
 
-Rows written before schema 1 have no `meta`. `cells` takes theirs from the `summary.json` beside them, using only what
-that summary states (its own fields, or a flag present in its `argv`); a field it does not state is never assumed, and the
-file is reported as refused instead.
+Rows written before schema 1 have no `meta`, and schema 1 lacks `tasks` and `part`. `cells` takes what is missing from the
+`summary.json` beside them, using only what that summary states (its own fields, or a flag present in its `argv`, whose
+absence means the entrypoint's default, see HISTORICAL_DEFAULTS); a field it does not state is never assumed, and the file
+is reported as refused instead.
 """
 import json
-from collections import defaultdict
 from pathlib import Path
 
 from . import jsonl, reporting
 from .outcomes import ARMS
 from .prompts import VARIANTS
+from .tasks import PARTS, SELECTIONS
 
-SCHEMA = 1
+SCHEMA = 2
 # Where a row was sampled, and what that says: whether the model was trained under an arm (so the row has an arm and λ),
-# and whether the run's steps.jsonl counts its prompt groups. `untrained` is a model never trained here (vLLM or API probes).
+# whether the run's steps.jsonl counts its prompt groups, and, for the trainer's stages, which statements and split it
+# used. The trainer has trained on the training split and evaluated on the evaluation split, every statement of each,
+# since its first commit (e36d7ea; the probe stage since b396791, which records `probe_split: train`), so these columns
+# also hold for its rows written before schema 2. `untrained` is a model never trained here (vLLM or API probes), whose
+# run states its own selection.
 STAGES = {
-    'training': dict(trained=True, steps=True),
-    'before': dict(trained=True, steps=False),
-    'after': dict(trained=True, steps=False),
-    'probe': dict(trained=True, steps=False),
-    'untrained': dict(trained=False, steps=False),
+    'training': dict(trained=True, steps=True, tasks='all', part='train'),
+    'before': dict(trained=True, steps=False, tasks='all', part='evaluation'),
+    'after': dict(trained=True, steps=False, tasks='all', part='evaluation'),
+    'probe': dict(trained=True, steps=False, tasks='all', part='train'),
+    'untrained': dict(trained=False, steps=False, tasks=None, part=None),
 }
-FIELDS = ('schema', 'model', 'revision', 'arm', 'penalty', 'stage', 'report_mode', 'taskset', 'variant', 'template', 'run')
-# The row files, by the stage their rows belong to.
-ROW_FILES = {'training-rollouts.jsonl': 'training', 'before-evaluation.jsonl': 'before', 'after-evaluation.jsonl': 'after',
-             'probe-evaluation.jsonl': 'probe', 'rows.rescored.jsonl': 'untrained'}
+SELECTION = ('tasks', 'part')
+FIELDS = ('schema', 'model', 'revision', 'arm', 'penalty', 'stage', 'report_mode', 'taskset', *SELECTION, 'variant',
+          'template', 'run')
+# What a probe used when its recorded argv did not give --tasks or --part: these defaults are unchanged in every probe
+# entrypoint and in `tasks.select_tasks` since the first commit (e36d7ea), so an argv without the flag states them.
+HISTORICAL_DEFAULTS = {'tasks': 'all', 'part': 'train'}
+
+
+def views(stem):
+    """A stream's row files in order of preference: the rescored view over the raw one."""
+    return (f'{stem}.rescored.jsonl', f'{stem}.jsonl')
+
+
+# The row files of each stage, in order of preference; one file per run folder and stage is read. API probes also write
+# `rows.ok.*`, their rows without failed requests. The transcript export (export_transcripts.row_files) prefers the same.
+VIEWS = {'training': views('training-rollouts'), 'before': views('before-evaluation'), 'after': views('after-evaluation'),
+         'probe': views('probe-evaluation'),
+         'untrained': ('rows.ok.rescored.jsonl', 'rows.rescored.jsonl', 'rows.ok.jsonl', 'rows.jsonl')}
 # The outcomes the prior is fitted to, as each row records them.
 OUTCOMES = {'genuine': lambda row: bool(row['genuine']), 'refutation': lambda row: bool(row['verified_refutation']),
             'exploit': lambda row: bool(row['exploit'])}
 
 
-def meta(*, model, revision, arm, penalty, stage, report_mode, taskset, variant, template, run):
+def preferred(run_dir, names):
+    """The first of `names` present in `run_dir`, or None."""
+    return next((run_dir/name for name in names if (run_dir/name).exists()), None)
+
+
+def meta(*, model, revision, arm, penalty, stage, report_mode, taskset, tasks, part, variant, template, run):
     """The provenance a row carries. `arm` and `penalty` are given exactly when the stage's model is trained under an arm;
-    `variant` is the prompt's permission variant (prompts.VARIANTS), a condition of its own."""
+    `variant` is the prompt's permission variant (prompts.VARIANTS), a condition of its own; `tasks` and `part` are which
+    statements and which split were sampled (tasks.select_tasks), fixed by the stage for the trainer's stages. `run` is the
+    run folder's name, a label only: `cells` identifies a run by its path."""
     trained = STAGES[stage]['trained']
     if trained != (arm is not None) or trained != (penalty is not None):
         raise ValueError(f'a {stage} row has an arm and a penalty exactly when its model is trained here')
@@ -45,10 +71,15 @@ def meta(*, model, revision, arm, penalty, stage, report_mode, taskset, variant,
         raise ValueError(f'unknown arm {arm!r}')
     if variant not in VARIANTS:
         raise ValueError(f'unknown prompt variant {variant!r}')
+    if tasks not in SELECTIONS or part not in PARTS:
+        raise ValueError(f'unknown task selection {tasks!r} or split {part!r}')
+    if STAGES[stage]['part'] is not None and (tasks, part) != (STAGES[stage]['tasks'], STAGES[stage]['part']):
+        raise ValueError(f"a {stage} row samples tasks={STAGES[stage]['tasks']!r} part={STAGES[stage]['part']!r}, not {tasks!r} {part!r}")
     if not (model and revision and run and report_mode and taskset and isinstance(template, dict)):
         raise ValueError('model, revision, run, report mode, task set and the template settings are required')
     return dict(schema=SCHEMA, model=model, revision=revision, arm=arm, penalty=float(penalty) if trained else None,
-                stage=stage, report_mode=report_mode, taskset=taskset, variant=variant, template=template, run=run)
+                stage=stage, report_mode=report_mode, taskset=taskset, tasks=tasks, part=part, variant=variant,
+                template=template, run=run)
 
 
 def stamp(rows, provenance):
@@ -79,13 +110,33 @@ def variant_stated(summary):
     return found[0] if found else None
 
 
-def from_summary(path, stage):
-    """Provenance for a pre-schema row file, from what its summary.json states; raises ValueError naming what is missing."""
+def read_summary(path):
+    """The summary.json beside a row file."""
     summary_path = path.parent/'summary.json'
     if not summary_path.is_file():
         raise ValueError('no summary.json beside it')
-    summary = json.loads(summary_path.read_text())
+    return json.loads(summary_path.read_text())
+
+
+def selection(path, stage):
+    """`tasks` and `part` of a row file written before schema 2: fixed by the stage for the trainer's stages, else what the
+    run's summary.json states. `tasks` is read from argv only: a probe summary's own `tasks` field is a count of tasks."""
+    if STAGES[stage]['part'] is not None:
+        return {name: STAGES[stage][name] for name in SELECTION}
+    summary = read_summary(path)
+    if 'argv' not in summary:
+        raise ValueError('its summary.json has no argv, so which statements and split it sampled is not stated')
+    given = dict(tasks=flag(summary['argv'], 'tasks'), part=stated(summary, 'part', 'part'))
+    # fallback-ok: a flag absent from a recorded argv took the entrypoint's default, unchanged since the first commit
+    return {name: HISTORICAL_DEFAULTS[name] if value is None else value for name, value in given.items()}
+
+
+def from_summary(path, stage):
+    """Provenance for a pre-schema row file, from what its summary.json states; raises ValueError naming what is missing."""
+    summary = read_summary(path)
     trained = STAGES[stage]['trained']
+    if not trained and stated(summary, 'adapter', 'adapter') is not None:
+        raise ValueError('its summary.json names an adapter: a trained model, not an untrained probe')
     mode = stated(summary, 'report_mode', 'report-mode')
     found = dict(model=stated(summary, 'model', 'model'), revision=stated(summary, 'revision', 'revision'),
                  # fallback-ok: a run that states no report mode predates them, and every such run was prose (reporting.HISTORICAL_MODE)
@@ -97,50 +148,80 @@ def from_summary(path, stage):
     missing = [name for name in needed if found[name] is None]
     if missing:
         raise ValueError(f"its summary.json does not state {', '.join(missing)}")
-    return meta(stage=stage, run=str(path.parent), **found)
+    return meta(stage=stage, run=path.parent.name, **found, **selection(path, stage))
+
+
+def upgraded(provenance, path, stage):
+    """A stamped row's provenance in the current schema: schema 1 had no `tasks` or `part`."""
+    if provenance['schema'] == 1:
+        kept = {name: provenance[name] for name in FIELDS if name != 'schema' and name not in SELECTION}
+        return meta(**kept, **selection(path, stage))
+    if provenance['schema'] != SCHEMA:
+        raise ValueError(f"unknown provenance schema {provenance['schema']!r}")
+    return provenance
 
 
 def count_file(path, stage):
-    """(key, counts) of one row file, or None when it has no row of its own to count. Raises when its provenance is unclear
-    or a count cannot be read, so that a file refused part way adds nothing."""
+    """(provenance, counts) of one row file, or None when it has no row of its own to count. Raises when its provenance
+    is unclear or a count cannot be read, so that a file refused part way adds nothing."""
     rows = [row for row in jsonl.read(path) if 'copied_from' not in row and 'partial_batch' not in row]
     if not rows:
         return None
+    if any('scored' in row and row['scored'] is False for row in rows):
+        raise ValueError('it holds unscored rows: rescore them (entrypoints/rescore.py) and the rescored file is read')
     # Every row of one file has the same provenance: stamped rows carry it, older files take it from their summary.
     stamped = [row['meta'] for row in rows if 'meta' in row]
     if stamped and (len(stamped) != len(rows) or any(other != stamped[0] for other in stamped)):
         raise ValueError('its rows do not all carry the same provenance')
-    provenance = stamped[0] if stamped else from_summary(path, stage)
-    # One entry per run and stage: runs differ in length and batch shape, so the fit treats each as its own unit inside its
-    # (model, arm, λ) cell instead of the counts being pooled here.
-    key = tuple((name, json.dumps(provenance[name], sort_keys=True)) for name in FIELDS if name != 'schema')
+    provenance = upgraded(stamped[0], path, stage) if stamped else from_summary(path, stage)
+    if provenance['stage'] != stage:
+        raise ValueError(f"its rows say stage {provenance['stage']!r}, its name says {stage!r}")
     found = dict(answers=len(rows), **{outcome: sum(read(row) for row in rows) for outcome, read in OUTCOMES.items()})
     if STAGES[stage]['steps']:
         lines = [line for line in jsonl.read(path.parent/'steps.jsonl') if 'copied_from' not in line]
         found.update(groups=sum(line['mixed_groups'] + line['zero_advantage_groups'] for line in lines),
                      mixed_groups=sum(line['mixed_groups'] for line in lines))
-    return key, found
+    return provenance, found
 
 
 def cells(root):
-    """Counts per run and stage (with its model, revision, arm, penalty, report mode, task set and template) of every row
-    file under `root`, and the files refused with why. A cell counts answers and each of OUTCOMES; training cells also count prompt
-    groups and the mixed ones (reward variation) from the run's steps.jsonl. Rows copied from another run, and rows of a
-    batch that was cut short, are counted where they belong: in the original run, and in no step."""
-    counts = defaultdict(lambda: defaultdict(int))
-    refused = []
-    for path in sorted(Path(root).rglob('*.jsonl')):
-        if path.name not in ROW_FILES:
-            continue
-        try:
-            counted = count_file(path, ROW_FILES[path.name])
-        except (KeyError, ValueError, OSError) as error:  # reported to the caller in `refused`, never counted
-            refused.append((str(path), f'{type(error).__name__}: {error}'))
-            continue
-        if counted is None:
-            continue  # only rows counted in another run, or none at all
-        key, found = counted
-        for name, value in found.items():
-            counts[key][name] += value
-    table = [dict({name: json.loads(value) for name, value in key}, **cell) for key, cell in counts.items()]
+    """Counts per run and stage of every row file under `root`, and every other .jsonl file there with why it was not
+    counted (`refused`). A run is its folder's path under `root` (`run`): a folder name alone is shared by runs of
+    different jobs. Each entry has the run's provenance (FIELDS but the schema and the folder's name), answers and each of
+    OUTCOMES; training entries also count prompt groups and the mixed ones (reward variation) from the run's steps.jsonl.
+    Rows copied from another run, and rows of a batch that was cut short, are counted where they belong: in the original
+    run, and in no step. Runs are never pooled here: they differ in length and batch shape, so the fit treats each as its
+    own unit inside its (model, arm, λ) cell."""
+    root = Path(root)
+    files = sorted(root.rglob('*.jsonl'))
+    chosen = {}  # path -> stage, one per run folder and stage
+    for run_dir in sorted({path.parent for path in files}):
+        for stage, names in VIEWS.items():
+            path = preferred(run_dir, names)
+            if path is not None:
+                chosen[path] = stage
+    table, refused = [], []
+    for path in files:
+        if path in chosen:
+            try:
+                counted = count_file(path, chosen[path])
+            except (KeyError, ValueError, OSError) as error:  # reported to the caller in `refused`, never counted
+                refused.append((str(path), f'{type(error).__name__}: {error}'))
+                continue
+            if counted is not None:  # None: only rows counted in another run, or none at all
+                provenance, found = counted
+                kept = {name: provenance[name] for name in FIELDS if name not in ('schema', 'run')}
+                table.append(dict(kept, run=path.parent.relative_to(root).as_posix(), **found))
+        elif path.name == 'steps.jsonl' and preferred(path.parent, VIEWS['training']) in chosen:
+            continue  # read with the training rows beside it
+        else:
+            refused.append((str(path), unread(path)))
     return table, refused
+
+
+def unread(path):
+    """Why `cells` does not read `path`."""
+    for names in VIEWS.values():
+        if path.name in names:
+            return f'not read: {preferred(path.parent, names).name} is the preferred view of the same rows'
+    return 'not read: not a row file of any stage (provenance.VIEWS)'

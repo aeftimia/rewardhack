@@ -62,10 +62,16 @@ in_env() {
 # Fetch a model's weights at a pinned revision into HF_HOME, without the copies vLLM and transformers do not read.
 # Usage: DOWNLOAD_WAIT=<s> fetch_model <repo> <revision>, with a cap comment beside the call; the log is
 # ~/out/download-<repo name>.log. Needs HF (an `hf` command) from the caller.
+# A failed attempt is retried once with what is left of DOWNLOAD_WAIT (review round 30: the 5 Nov gpt-oss-120b download
+# failed mid-transfer); hf keeps the files the first attempt finished. An attempt that used up the wait is not retried.
 fetch_model() {
-  timeout "${DOWNLOAD_WAIT:?the caller sets DOWNLOAD_WAIT}" "$HF" download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' \
-    > ~/out/download-"${1##*/}".log 2>&1
+  local end=$((SECONDS + ${DOWNLOAD_WAIT:?the caller sets DOWNLOAD_WAIT})) out=~/out/download-"${1##*/}".log
+  if fetch_attempt "$1" "$2" "$DOWNLOAD_WAIT" > "$out" 2>&1; then return 0; fi
+  if ((end - SECONDS <= 0)); then log "download $1 used its whole limit of $DOWNLOAD_WAIT s (see $out)"; return 1; fi
+  log "retry download $1 after a failure (see $out): $((end - SECONDS)) s left of its limit"
+  fetch_attempt "$1" "$2" $((end - SECONDS)) >> "$out" 2>&1
 }
+fetch_attempt() { timeout "$3" "$HF" download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*'; }
 
 # Seconds-long checks of what the job assumes about the machine, before any install or download is paid for.
 # Usage: pod_self_test <free GB needed under /workspace> <free GB needed for ~/out> <port that must be free>...

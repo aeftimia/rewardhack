@@ -16,6 +16,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from . import jsonl
+from .provenance import VIEWS, preferred, views
 from .prompts import follow_on, prompt
 from .reporting import validate_mode
 from .tasks import task_index
@@ -61,21 +62,15 @@ def run_meta(summary, run):
 
 def row_files(run_dir):
     """One preferred scored view per stream; never export raw and rescored copies twice."""
-    def first(names):
-        return next((run_dir/name for name in names if (run_dir/name).exists()), None)
-
-    probe = first(('rows.ok.rescored.jsonl', 'rows.rescored.jsonl', 'rows.ok.jsonl', 'rows.jsonl'))
-    if probe:
-        yield probe, 0
-    streams = [('rollouts', 'mlx_training'), ('training-rollouts', 'hf_training'),
-               ('probe-evaluation', 0), ('before-evaluation', 0), ('after-evaluation', 'hf_after')]
-    for stem, updates in streams:
-        path = first((stem+'.rescored.jsonl', stem+'.jsonl'))
+    streams = [(VIEWS['untrained'], 0), (views('rollouts'), 'mlx_training'), (VIEWS['training'], 'hf_training'),
+               (VIEWS['probe'], 0), (VIEWS['before'], 0), (VIEWS['after'], 'hf_after')]
+    for names, updates in streams:
+        path = preferred(run_dir, names)
         if path:
             yield path, updates
     steps = sorted({int(p.name.split('step')[1].split('.')[0]) for p in run_dir.glob('monitor-step*.jsonl')})
     for step in steps:
-        yield first((f'monitor-step{step}.rescored.jsonl', f'monitor-step{step}.jsonl')), ('mlx_monitor', step)
+        yield preferred(run_dir, views(f'monitor-step{step}')), ('mlx_monitor', step)
 
 
 def report_mode(row, summary):

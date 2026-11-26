@@ -201,7 +201,7 @@ def test_a_relaunch_stops_the_earlier_job_first(tmp_path):
         assert result.returncode == 0, result.stdout+result.stderr
         assert old_runner.wait(timeout=5) == -9 and old_job.wait(timeout=5) == -9
         assert subprocess.run(['pgrep', '-g', str(old_job.pid)], capture_output=True).stdout == b'', 'a child of the earlier job survived'
-        assert pids.read_text().split()[0] != str(old_runner.pid)
+        assert not pids.exists(), 'the pids file outlived the job it names'
     finally:
         for process in (old_runner, old_job):
             if process.poll() is None:
