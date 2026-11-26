@@ -32,6 +32,8 @@ dist/
 results/**/adapter*/
 # resumable trainer checkpoints: weights, optimizer state and random state
 results/**/checkpoint-*/
+# TensorBoard event files (binary; the commit gate refuses binary files): the same metrics are in training-log.json
+results/**/tensorboard/
 payload/
 
 # setup noise from pod runs
