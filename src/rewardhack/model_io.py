@@ -133,12 +133,16 @@ class Meter:
 
 
 def local_reader(model_id, revision, max_tokens):
-    """Load an MLX model once and return a non-thinking prompt-to-text callable."""
+    """Load an MLX model once and return a non-thinking prompt-to-text callable. The model reads one prompt at a time:
+    the callable holds a lock, since rows are scored concurrently (outcomes.score_concurrently)."""
+    import threading
     from mlx_lm import generate, load
     model, tokenizer = load(model_id, revision=revision)
+    lock = threading.Lock()
 
     def ask(prompt):
         ids = tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], add_generation_prompt=True,
                                              tokenize=False, enable_thinking=False)
-        return generate(model, tokenizer, ids, max_tokens=max_tokens, verbose=False)
+        with lock:
+            return generate(model, tokenizer, ids, max_tokens=max_tokens, verbose=False)
     return ask

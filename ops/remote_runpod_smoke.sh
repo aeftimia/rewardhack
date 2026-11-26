@@ -85,18 +85,32 @@ printf '#!/bin/bash\n%s\nexec env -i PATH=/usr/bin:/bin %s %s "$@"\n' "$OPEN" "$
 ln -sf /workspace/bin/lean-safe ~/lean-safe
 ~/lean-safe --version >> ~/out/steps.log 2>&1 || fail LEAN_WRAPPER_FAILED
 
-# --- Python: the pinned training stack, and vLLM in its own environment for the judge server.
+# --- Python: the pinned training stack, and vLLM in its own environment (judge server or rollouts). uv installs the same
+# pins as pip, several times faster (owner, 26 Nov); the vLLM environment installs in the background, beside the training
+# one, the verifier checks and the model download. On 26 Nov with pip, in series: training install and checks 137 s, vLLM 222 s.
 log start install
 # Limits on the steps that fetch from the network, so a stalled connection ends in minutes and not at the job's deadline:
-# the install took 81 s when timed, the 13 GB download 3.5 to 5.1 minutes; vLLM's install has not been timed alone (about 3 minutes estimated).
-# cap: 2x measured 81 s
-python -m venv /workspace/train-venv && timeout 300 /workspace/train-venv/bin/pip install -q torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED
+# the install took 81 s when timed, the 13 GB download 0.5 to 5.1 minutes, the vLLM install 222 s (all with pip).
+python -m venv /workspace/uv-venv && /workspace/uv-venv/bin/pip install -q uv==0.13.8 > ~/out/install-uv.log 2>&1 || fail UV_INSTALL_FAILED
+UV=/workspace/uv-venv/bin/uv
+VLLM_INSTALL_PID=
+if [[ $JUDGE_KIND == pod || $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
+  ( $UV venv -q --python "$(command -v python)" /workspace/vllm-venv \
+      && timeout 600 $UV pip install -q --python /workspace/vllm-venv/bin/python -r requirements-vllm.txt ) > ~/out/install-vllm.log 2>&1 &  # cap: 2x measured 222 s
+  VLLM_INSTALL_PID=$!
+fi
+# Where the vLLM environment is needed: wait for its background install, its own failure code if it failed.
+vllm_installed() {
+  wait "$VLLM_INSTALL_PID" || fail VLLM_INSTALL_FAILED
+  $UV pip freeze --python /workspace/vllm-venv/bin/python > ~/out/pip-freeze-vllm.txt
+}
+$UV venv -q --python "$(command -v python)" /workspace/train-venv \
+  && timeout 300 $UV pip install -q --python /workspace/train-venv/bin/python torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED  # cap: 2x measured 81 s
 # The `hf` command comes with huggingface_hub itself; the `[cli]` extra asked for until 25 Nov does not exist, and pip stepped back through versions looking for it.
 HF=/workspace/train-venv/bin/hf
 [[ -x $HF ]] || fail 'NO_HF_COMMAND: huggingface_hub did not install its hf command'
-/workspace/train-venv/bin/pip freeze > ~/out/pip-freeze-train.txt
-# cap: 2x measured 108 s
-if [[ $JUDGE_KIND == pod ]]; then python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q -r requirements-vllm.txt > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED; fi
+$UV pip freeze --python /workspace/train-venv/bin/python > ~/out/pip-freeze-train.txt
+if [[ $JUDGE_KIND == pod ]]; then vllm_installed; fi
 PY=/workspace/train-venv/bin/python
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
 $PY entrypoints/run.py controls --out ~/out/controls --lean ~/lean-safe > ~/out/controls.log 2>&1 || fail VERIFIER_CONTROLS_FAILED
@@ -178,10 +192,8 @@ GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
 PROMPTS=4
 if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   [[ $JUDGE_KIND == api && ${SMOKE_SKIP_PROBE:?} == 1 && ${SMOKE_SECOND_RUN:?} == 0 ]] || fail INVALID_ROLLOUT_PILOT
-  log start rollout-install
-  # cap: 2x measured 108 s
-  python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q -r requirements-vllm.txt > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
-  /workspace/vllm-venv/bin/pip freeze > ~/out/pip-freeze-vllm.txt
+  log start rollout-install  # the wait for the background install started with the training one
+  vllm_installed
   log start rollout-server
   # The context holds the prompt (a few hundred tokens) and an answer of up to LIMIT: 2,048 tokens of room for the prompt.
   # A fixed 4,096 refused every request once LIMIT was 4,096 (review round 6); the rollout client also checks each request.

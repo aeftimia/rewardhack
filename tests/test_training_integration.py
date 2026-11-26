@@ -53,6 +53,8 @@ def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None
     """
     if not timeouts_stop:
         monkeypatch.setattr(hf_grpo, 'verifier_failing', lambda rows: False)
+    # The scripted scorer below numbers answers in the order it is called: one at a time, so that order is the batch's.
+    monkeypatch.setattr(outcomes, 'SCORING_WORKERS', 1)
     template = outcomes.score('unused', TASKS[0], '', 'baseline', truncated=True)  # a cut-off row needs neither Lean nor a judge; the fields below are then scripted
     handed, step = [], [0]
 

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import deadline, jsonl
 from .gpu import GpuSampler
-from .outcomes import accumulate, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
+from .outcomes import accumulate, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, ScoringStopped, verifier_advice, completion_truncated, reward_groups, score, score_concurrently, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import split, stratified_limit, taskset_rows
@@ -365,15 +365,21 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, r
             task, completions, seconds = next(drawn)
             scoring_started = time.monotonic()
             t_gen += seconds
-            for new in completions:
-                generated += sum(token != tokenizer.pad_token_id for token in new)
+            generated += sum(token != tokenizer.pad_token_id for new in completions for token in new)
+
+            def scored(new, task=task):
                 raw = tokenizer.decode(new, skip_special_tokens=report_mode == 'typed' or not reasons(args))
-                t0 = time.perf_counter()
                 truncated = completion_truncated(new, stops, args.max_completion_length)
-                row = score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries, report_mode=report_mode)
-                t_lean += time.perf_counter()-t0
-                rows.append(row)
-                jsonl.write(sink, row)
+                return score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries, report_mode=report_mode)
+            t0 = time.perf_counter()
+            try:
+                scored_rows = score_concurrently(scored, completions)  # a task's samples at once
+            except ScoringStopped as stopped:
+                jsonl.write_rows(sink, stopped.done)  # scored and paid for: kept, as when scoring was one row at a time
+                raise stopped.__cause__
+            t_lean += time.perf_counter()-t0
+            rows.extend(scored_rows)
+            jsonl.write_rows(sink, scored_rows)
             if judge_failing(rows):
                 raise RuntimeError(f"the judge is failing in the {stage} evaluation: {judge_advice(rows)}")
             completed += 1
@@ -458,25 +464,26 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     def reward_fn(completions, statement, **kwargs):
         t0 = time.perf_counter()
         timing['rollout'].append(t0-timing['step_start'])
-        rows = []
         # Counts on from the checkpoint in a resumed run. Every row carries it, so a reader can tell the original run's rows
         # past a checkpoint, which the resumed run generates again, from those before it.
         step = trainer.state.global_step+1
         completion_ids = kwargs.get('completion_ids')
         if completion_ids is None:
             raise ValueError('TRL must supply completion_ids to determine whether each answer stopped')
-        for completion, claim, token_ids in zip(completions, statement, completion_ids, strict=True):
+        def scored(answer):
+            completion, claim, token_ids = answer
             raw = completion[-1]['content'] if isinstance(completion, list) else completion
             truncated = completion_truncated(token_ids, stops, args.max_completion_length)
-            try:
-                rows.append(dict(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated,
-                                       retries=retries, report_mode=report_mode), step=step))
-            except BaseException:
-                # A stop mid-batch (deadline, judge streak, spend cap) keeps what was already scored and paid for.
-                # Marked, because these rows are in no step, no tally and no complete prompt group.
-                jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in rows))
-                summary['partial_batch_rows'] = len(rows)
-                raise
+            return dict(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated,
+                              retries=retries, report_mode=report_mode), step=step)
+        try:
+            rows = score_concurrently(scored, list(zip(completions, statement, completion_ids, strict=True)))
+        except ScoringStopped as stopped:
+            # A stop mid-batch (deadline, judge streak, spend cap) keeps what was already scored and paid for.
+            # Marked, because these rows are in no step, no tally and no complete prompt group.
+            jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in stopped.done))
+            summary['partial_batch_rows'] = len(stopped.done)
+            raise stopped.__cause__
         rewards = training_rewards(rows, args.num_generations)
         trainer._verifier_keep = [training_keep(row) for row in rows]
         note_undecided(rows)

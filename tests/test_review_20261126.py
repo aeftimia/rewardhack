@@ -136,3 +136,36 @@ def test_a_long_server_call_near_the_deadline_still_scores_every_sample_it_paid_
     # With too little time left for the scoring itself, it still stops between tasks.
     clock[0] = 0.0
     assert hf_grpo.evaluate(model, tokenizer, TASKS[:4], args, 'after', stop_at=303.0, rollouts=Server(), adapter_model=object())['incomplete']
+
+
+def test_concurrent_scoring_keeps_item_order_and_every_finished_result_on_a_failure():
+    """Scoring runs on a thread pool (owner, 26 Nov). Results come back in item order whatever order they finish in, and a
+    failure leaves the results that did finish, so rows already paid for are kept as a partial batch."""
+    import threading
+    import time
+    from rewardhack import outcomes
+    started = threading.Barrier(4)
+    def slow_first(item):
+        started.wait(timeout=10)  # all four run at once, or this test would deadlock and time out
+        time.sleep(0.05 * (4 - item))
+        return item * 10
+    assert outcomes.score_concurrently(slow_first, [0, 1, 2, 3]) == [0, 10, 20, 30]
+    def fails_on_two(item):
+        if item == 2:
+            raise RuntimeError('judge spend cap reached')
+        return item
+    with pytest.raises(outcomes.ScoringStopped) as stopped:
+        outcomes.score_concurrently(fails_on_two, [0, 1, 2, 3])
+    assert stopped.value.done == [0, 1, 3] and 'spend cap' in str(stopped.value.__cause__)
+
+
+def test_the_retry_allowance_holds_under_concurrent_scoring():
+    import threading
+    from rewardhack import outcomes
+    budget = outcomes.RetryBudget(60)
+    takers = [threading.Thread(target=lambda: [budget.take(1) for _ in range(100)]) for _ in range(8)]
+    for t in takers:
+        t.start()
+    for t in takers:
+        t.join()
+    assert budget.left == 0 and budget.denied == 740

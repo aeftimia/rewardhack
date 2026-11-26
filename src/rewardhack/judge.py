@@ -21,6 +21,7 @@ with the model-read labels under results/report-reading/. Entrypoint: `entrypoin
 import json
 import random
 import re
+import threading
 from collections import Counter
 from types import SimpleNamespace
 from typing import Literal
@@ -162,22 +163,30 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
     extra_body = {'response_format': SCHEMA, **extra}
 
     meter.totals.update(truncated=0, unreadable=0, last_error=None)
+    # Rows are scored concurrently (outcomes.score_concurrently): the totals change under a lock, the request runs outside
+    # it. The cap is checked before each request, so up to the number of requests already in flight (at most a batch, about
+    # $0.0003 each at gpt-5.4-nano prices) can land after it is reached.
+    lock = threading.Lock()
+    meter.lock = lock
+
     def ask(prompt):
-        if max_usd is not None and meter.totals['usd'] >= max_usd:
-            raise RuntimeError(f"judge spend cap ${max_usd} reached at ${meter.totals['usd']:.2f}")  # stop the run: an unjudged reward is not a reward
+        with lock:
+            if max_usd is not None and meter.totals['usd'] >= max_usd:
+                raise RuntimeError(f"judge spend cap ${max_usd} reached at ${meter.totals['usd']:.2f}")  # stop the run: an unjudged reward is not a reward
         result = call(args, [{'role': 'user', 'content': prompt}], timeout=REQUEST_SECONDS, retries=REQUEST_RETRIES, extra_body=extra_body)
-        meter.totals['requests'] += 1
-        if 'error' in result:
-            meter.totals['errors'] += 1
-            if 'usage' in result:
-                meter.add(result['usage'])  # a reply that arrived in an unusable shape was still billed
-            return '', result['error']
-        # On a priced judge this raises when the reply's tokens cannot be counted: it would run past its spend cap unseen.
-        meter.add(result['usage'])
-        meter.totals['served_model'] = result['model']  # the name the provider resolved an alias to
-        if result['finish'] == 'length':
-            meter.totals['truncated'] += 1
-            return '', f'reply cut off at {ANSWER_TOKENS} tokens'
+        with lock:
+            meter.totals['requests'] += 1
+            if 'error' in result:
+                meter.totals['errors'] += 1
+                if 'usage' in result:
+                    meter.add(result['usage'])  # a reply that arrived in an unusable shape was still billed
+                return '', result['error']
+            # On a priced judge this raises when the reply's tokens cannot be counted: it would run past its spend cap unseen.
+            meter.add(result['usage'])
+            meter.totals['served_model'] = result['model']  # the name the provider resolved an alias to
+            if result['finish'] == 'length':
+                meter.totals['truncated'] += 1
+                return '', f'reply cut off at {ANSWER_TOKENS} tokens'
         return result['raw'], None
     return ask, meter
 
@@ -201,6 +210,7 @@ def make_judge(kind, model=None, revision=None, base_url=OPENAI_URL, key_env='OP
     ask, meter = (local_reader(model, revision, ANSWER_TOKENS), None) if kind == 'local' else _api(model, base_url, key_env, usd_per_m_input, usd_per_m_output, extra or {}, max_usd)
 
     streak = 0
+    lock = threading.Lock()  # rows are scored concurrently: the streak counts consecutive failed readings as they finish
 
     def judge(row):
         nonlocal streak
@@ -209,20 +219,23 @@ def make_judge(kind, model=None, revision=None, base_url=OPENAI_URL, key_env='OP
         result = ask(judge_prompt(row))
         raw, error = (result, None) if kind == 'local' else result
         claim = claim_of(raw)
-        if error is None and claim == 'UNPARSED':
-            error = f'reply is not one valid complete checklist: {read_checklist(raw)[1]}'
-            if meter:
-                meter.totals['unreadable'] += 1
-        if error is not None:
-            streak += 1
-            if meter:
-                meter.totals['last_error'] = error
-            if streak >= MAX_STREAK:
-                raise RuntimeError(f'judge failed {streak} times in a row; last: {error}')
-            # `judge_error` marks a reading that failed, as opposed to a report read as dishonest: the row is
-            # scored fail-closed but is left out of training and of the honesty rates (`outcomes.score`).
-            return {'claim': 'UNPARSED', 'raw': compact(raw), 'judge_error': error, 'judge_asked': True}
-        streak = 0
+        with lock:
+            if error is None and claim == 'UNPARSED':
+                error = f'reply is not one valid complete checklist: {read_checklist(raw)[1]}'
+                if meter:
+                    with meter.lock:
+                        meter.totals['unreadable'] += 1
+            if error is not None:
+                streak += 1
+                if meter:
+                    with meter.lock:
+                        meter.totals['last_error'] = error
+                if streak >= MAX_STREAK:
+                    raise RuntimeError(f'judge failed {streak} times in a row; last: {error}')
+                # `judge_error` marks a reading that failed, as opposed to a report read as dishonest: the row is
+                # scored fail-closed but is left out of training and of the honesty rates (`outcomes.score`).
+                return {'claim': 'UNPARSED', 'raw': compact(raw), 'judge_error': error, 'judge_asked': True}
+            streak = 0
         return {'claim': claim, 'raw': compact(raw), 'judge_asked': True}
     judge.meter = meter
     return judge

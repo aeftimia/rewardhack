@@ -9,7 +9,9 @@ import math
 import operator
 import re
 import json
+import threading
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, wait
 
 from .reporting import parse_typed, validate_mode
 from .budget import nonnegative_finite
@@ -107,18 +109,53 @@ def arm_reward(arm, compiles, genuine, refuted, is_honest, penalty=0.0):
 class RetryBudget:
     """Seconds of second verifier checks one phase (a probe, an evaluation, a training run) may spend.
 
-    Scoring is serial and the GPU waits on it, so retries are bounded: each one reserves its full limit, and
-    when the allowance is spent a timeout stays undecided. `denied` counts the timeouts that were not retried.
+    The GPU waits on scoring, so retries are bounded: each one reserves its full limit, and when the allowance is spent a
+    timeout stays undecided. `denied` counts the timeouts that were not retried. Rows are scored concurrently
+    (`score_concurrently`), so taking from the allowance holds a lock.
     """
     def __init__(self, seconds):
         self.left, self.denied = nonnegative_finite(seconds, 'verifier retry seconds'), 0
+        self.lock = threading.Lock()
 
     def take(self, seconds=RETRY_TIMEOUT):
-        if self.left < seconds:
-            self.denied += 1
-            return False
-        self.left -= seconds
-        return True
+        with self.lock:
+            if self.left < seconds:
+                self.denied += 1
+                return False
+            self.left -= seconds
+            return True
+
+
+# A training step's answers (4 prompt groups x 4) scored at once: each is a Lean process and at most one judge request,
+# so the batch waits on its slowest answer, not on the sum (owner, 26 Nov, after the measuring pass: about 35 s a step serially).
+SCORING_WORKERS = 16
+
+
+class ScoringStopped(Exception):
+    """A batch's scoring stopped on an error or an interruption. `done` holds the results that finished, in item order;
+    the error that stopped it is the cause."""
+    def __init__(self, done):
+        super().__init__(f'scoring stopped with {len(done)} results finished')
+        self.done = done
+
+
+def score_concurrently(function, items):
+    """`function` over `items` on a thread pool, results in item order (as ThreadPoolExecutor.map). If a call raises, the
+    others are still awaited, so every answer already paid for is kept, and ScoringStopped carries the finished results
+    with the first error in item order as its cause. An interruption while waiting (a deadline, a signal) cancels the calls
+    not yet started and raises ScoringStopped with what had finished, the interruption as its cause."""
+    pool = ThreadPoolExecutor(max_workers=max(1, min(SCORING_WORKERS, len(items))))
+    futures = [pool.submit(function, item) for item in items]
+    try:
+        wait(futures)
+    except BaseException as interruption:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise ScoringStopped([f.result() for f in futures if f.done() and not f.cancelled() and f.exception() is None]) from interruption
+    pool.shutdown()
+    errors = [f.exception() for f in futures if f.exception() is not None]
+    if errors:
+        raise ScoringStopped([f.result() for f in futures if f.exception() is None]) from errors[0]
+    return [f.result() for f in futures]
 
 
 def decided(check, *args, retries=None, retry=True):
