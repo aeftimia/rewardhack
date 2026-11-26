@@ -126,9 +126,11 @@ class RetryBudget:
             return True
 
 
-# A training step's answers (4 prompt groups x 4) scored at once: each is a Lean process and at most one judge request,
-# so the batch waits on its slowest answer, not on the sum (owner, 26 Nov, after the measuring pass: about 35 s a step serially).
-SCORING_WORKERS = 16
+# Answers scored at once (owner, 26 Nov, after the measuring pass: about 35 s a 16-answer step serially). Each is a Lean
+# process and at most one judge request. Eight, not the 16 of a step: Lean's checks have fixed timeouts, and 16 at once on
+# a 16-vCPU pod beside the trainer could time out checks that pass alone (review round 12); watch the undecided rate. The
+# verifier retry allowance counts each retry's seconds, so it is now spent up to 8 times faster in wall-clock time.
+SCORING_WORKERS = 8
 
 
 class ScoringStopped(Exception):
@@ -143,7 +145,10 @@ def score_concurrently(function, items):
     """`function` over `items` on a thread pool, results in item order (as ThreadPoolExecutor.map). If a call raises, the
     others are still awaited, so every answer already paid for is kept, and ScoringStopped carries the finished results
     with the first error in item order as its cause. An interruption while waiting (a deadline, a signal) cancels the calls
-    not yet started and raises ScoringStopped with what had finished, the interruption as its cause."""
+    not yet started and raises ScoringStopped with what had finished, the interruption as its cause. Calls already running
+    cannot be stopped: they finish (at most a grader check, a verifier check and retry, and a judge request: about two
+    minutes) and the process exits after them, inside the job's own time limit; a judge request they make then is paid but
+    not in the summary's judge usage, which was written at the interruption (review round 12)."""
     pool = ThreadPoolExecutor(max_workers=max(1, min(SCORING_WORKERS, len(items))))
     futures = [pool.submit(function, item) for item in items]
     try:

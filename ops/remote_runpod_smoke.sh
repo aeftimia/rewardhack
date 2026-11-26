@@ -93,9 +93,12 @@ log start install
 # the install took 81 s when timed, the 13 GB download 0.5 to 5.1 minutes, the vLLM install 222 s (all with pip).
 python -m venv /workspace/uv-venv && /workspace/uv-venv/bin/pip install -q uv==0.13.8 > ~/out/install-uv.log 2>&1 || fail UV_INSTALL_FAILED
 UV=/workspace/uv-venv/bin/uv
+# uv's cache of unpacked wheels (two torch and CUDA sets) stays off the disk ~/out is checked for (review round 12).
+export UV_CACHE_DIR=/workspace/uv-cache
 VLLM_INSTALL_PID=
+# --clear: since uv 0.10, `uv venv` refuses an existing environment, which a relaunch on a kept pod has (review round 12).
 if [[ $JUDGE_KIND == pod || $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
-  ( $UV venv -q --python "$(command -v python)" /workspace/vllm-venv \
+  ( $UV venv -q --clear --python "$(command -v python)" /workspace/vllm-venv \
       && timeout 600 $UV pip install -q --python /workspace/vllm-venv/bin/python -r requirements-vllm.txt ) > ~/out/install-vllm.log 2>&1 &  # cap: 2x measured 222 s
   VLLM_INSTALL_PID=$!
 fi
@@ -104,7 +107,7 @@ vllm_installed() {
   wait "$VLLM_INSTALL_PID" || fail VLLM_INSTALL_FAILED
   $UV pip freeze --python /workspace/vllm-venv/bin/python > ~/out/pip-freeze-vllm.txt
 }
-$UV venv -q --python "$(command -v python)" /workspace/train-venv \
+$UV venv -q --clear --python "$(command -v python)" /workspace/train-venv \
   && timeout 300 $UV pip install -q --python /workspace/train-venv/bin/python torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED  # cap: 2x measured 81 s
 # The `hf` command comes with huggingface_hub itself; the `[cli]` extra asked for until 25 Nov does not exist, and pip stepped back through versions looking for it.
 HF=/workspace/train-venv/bin/hf
@@ -113,8 +116,10 @@ $UV pip freeze --python /workspace/train-venv/bin/python > ~/out/pip-freeze-trai
 if [[ $JUDGE_KIND == pod ]]; then vllm_installed; fi
 PY=/workspace/train-venv/bin/python
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
-$PY entrypoints/run.py controls --out ~/out/controls --lean ~/lean-safe > ~/out/controls.log 2>&1 || fail VERIFIER_CONTROLS_FAILED
-log 'verifier controls passed'
+# The verifier checks run beside the model download (owner, 26 Nov); they are joined, with their own failure code, before
+# anything uses Lean's verdicts.
+$PY entrypoints/run.py controls --out ~/out/controls --lean ~/lean-safe > ~/out/controls.log 2>&1 &
+CONTROLS_PID=$!
 
 # --- Downloads (both ungated; no Hugging Face token on this pod).
 PAIRS=("$MODEL $REV"); [[ $JUDGE_KIND == pod ]] && PAIRS+=("$JUDGE $JUDGE_REV")
@@ -122,6 +127,8 @@ for pair in "${PAIRS[@]}"; do set -- $pair
   # cap: 2x measured 5.1 min
   log "start download $1"; timeout 660 $HF download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-"${1##*/}".log 2>&1 || fail "DOWNLOAD_FAILED $1"
 done
+wait "$CONTROLS_PID" || fail VERIFIER_CONTROLS_FAILED
+log 'verifier controls passed'
 
 if [[ $JUDGE_KIND == api ]]; then
 # JUDGE_MAX_USD bounds the whole script: the cap is enforced per process, split over the processes that call the judge.
@@ -197,9 +204,11 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   log start rollout-server
   # The context holds the prompt (a few hundred tokens) and an answer of up to LIMIT: 2,048 tokens of room for the prompt.
   # A fixed 4,096 refused every request once LIMIT was 4,096 (review round 6); the rollout client also checks each request.
+  # CUDA graphs are captured for decode batches of up to 32 tokens (16 sequences use at most 16): the default captured 166
+  # sizes up to 1,024 on this card, most of a 125 s engine start (measuring pass). Larger batches (prefill) run eagerly.
   VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True PATH="/workspace/vllm-venv/bin:$PATH" \
     /workspace/vllm-venv/bin/vllm serve "$MODEL" --revision "$REV" --served-model-name "$MODEL@$REV" \
-      --host 127.0.0.1 --port 8011 --max-model-len $((LIMIT + 2048)) --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) \
+      --host 127.0.0.1 --port 8011 --max-model-len $((LIMIT + 2048)) --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) --max-cudagraph-capture-size 32 \
       --enable-lora --max-lora-rank 16 --max-loras 2 --enable-sleep-mode --enable-scale-out \
       --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
   ROLLOUT_PID=$!
