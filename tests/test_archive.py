@@ -8,7 +8,7 @@ import pytest
 from conftest import PROJECT
 from test_driver_refusals import drive
 
-# The stand-in: `s3 sync` copies files (minus --exclude names at the top), `s3api list-objects-v2` prints key and size,
+# The stand-in: `s3 cp --recursive` copies files (minus --exclude names at the top), `s3api list-objects-v2` prints key and size,
 # `s3 presign` prints a URL. FAKE_S3 is the folder holding the bucket.
 FAKE_AWS = r'''
 import os, shutil, sys
@@ -19,8 +19,8 @@ args = args[2:]
 root = Path(os.environ['FAKE_S3'])
 def path(uri):
     return root / uri.removeprefix('s3://')
-if args[:2] == ['s3', 'sync']:
-    source, target = Path(args[2]), path(args[3])
+if args[:3] == ['s3', 'cp', '--recursive']:
+    source, target = Path(args[3]), path(args[4])
     assert '--storage-class' in args and args[args.index('--storage-class')+1] == 'STANDARD_IA'
     assert args[args.index('--checksum-algorithm')+1] == 'SHA256'
     excluded = {args[i+1] for i, a in enumerate(args) if a == '--exclude'}
@@ -149,3 +149,22 @@ def test_qwen_launches_pass_every_check(tmp_path, settings, deadline):
     """The measuring pass at 127 minutes; the 60-step run, 71 + (12,000 + 810)/60 = 284.5 of 285 minutes."""
     code, output, reached = drive(tmp_path, deadline=deadline, **settings)
     assert code != 2 and 'invalid' not in output and 'does not read' not in output and reached
+
+
+def test_prune_refuses_a_local_copy_changed_since_the_upload(tmp_path, run):
+    """Round 33: a file rewritten at the same size passes a listing by size; the local hashes are checked first."""
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    (run/'train-a'/'adapter-step8'/'weights.bin').write_bytes(b'\x02' * 1000)
+    code, output = archive(tmp_path, 'prune', run)
+    assert code == 1 and 'changed since it was archived' in output and (run/'train-a'/'adapter-step8').exists()
+
+
+def test_prune_never_deletes_the_run_folder_itself(tmp_path):
+    """Round 33: a run folder named like a snapshot matched find's own starting point."""
+    run = tmp_path/'adapter-step40'
+    (run/'adapter-step8').mkdir(parents=True)
+    (run/'adapter-step8'/'w.bin').write_bytes(b'\x01')
+    (run/'steps.jsonl').write_text('{}')
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    assert archive(tmp_path, 'prune', run)[0] == 0
+    assert (run/'steps.jsonl').exists() and not (run/'adapter-step8').exists()

@@ -10,6 +10,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source ops/archive.env
 AWS=(aws --region "$ARCHIVE_REGION")
+# macOS's own /usr/bin/python3 is 3.9; the manifest needs hashlib.file_digest (3.11).
+python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' || { echo "python3 here is $(python3 --version 2>&1); 3.11 or later is needed: put the project's venv first on PATH" >&2; exit 2; }
 need_folder() {
   [[ -d $1 ]] || { echo "no folder $1"; exit 2; }
   NAME=${1%/}; NAME=${NAME##*/}
@@ -33,9 +35,13 @@ case $COMMAND in
     [[ $# == 2 ]] || { echo 'upload <results folder>'; exit 2; }
     need_folder "$2"
     python3 ops/sha256_manifest.py write "$2" "$2/SHA256SUMS"
-    # Only the top-level names the manifest leaves out (sha256_manifest.NOT_THE_RUN) are left here; the manifest goes too.
-    "${AWS[@]}" s3 sync "$2" "$URI" --storage-class "$ARCHIVE_STORAGE_CLASS" --checksum-algorithm SHA256 \
+    # Every file is sent, every time: `s3 sync` skips a file of the same size with an older modification time, which a final
+    # copy from a pod can have after an interim one was archived (review round 33). Only the top-level names the manifest
+    # leaves out (sha256_manifest.NOT_THE_RUN) stay here; the manifest goes too. S3 checks each part's SHA-256 on arrival.
+    "${AWS[@]}" s3 cp --recursive "$2" "$URI" --storage-class "$ARCHIVE_STORAGE_CLASS" --checksum-algorithm SHA256 \
       --exclude known_hosts --exclude ARCHIVED --no-progress
+    # The bytes sent are the bytes hashed: nothing changed here between the manifest and the end of the copy.
+    python3 ops/sha256_manifest.py verify "$2" "$2/SHA256SUMS" > /dev/null || { echo "$2 changed during the upload: run it again" >&2; exit 1; }
     check_listed "$2"
     printf '%s %s\n' "$(date -u +%FT%TZ)" "$URI" > "$2/ARCHIVED"
     ;;
@@ -43,9 +49,12 @@ case $COMMAND in
     [[ $# == 2 ]] || { echo 'prune <results folder>'; exit 2; }
     need_folder "$2"
     [[ -s $2/ARCHIVED ]] || { echo "$2 has not been archived (no ARCHIVED): upload it first"; exit 2; }
+    # The local copy is still the one archived (a file rewritten at the same size since would not show in the listing).
+    python3 ops/sha256_manifest.py verify "$2" "$2/SHA256SUMS" > /dev/null || { echo "$2 changed since it was archived: upload it again" >&2; exit 1; }
     check_listed "$2"
     # Only what can be fetched back for a resume or an analysis; rows, logs, summaries and the final adapter stay here.
-    find "$2" -type d \( -name 'adapter-step*' -o -path '*/trainer/checkpoint-*' \) -prune -print -exec rm -r {} +
+    # Below the run folder only (-mindepth 1), and only snapshot and checkpoint folders by their numbered names.
+    find "$2" -mindepth 1 -type d \( -name 'adapter-step[0-9]*' -o -path '*/trainer/checkpoint-[0-9]*' \) -prune -print -exec rm -rf {} +
     ;;
   presign)
     [[ $# -ge 3 ]] || { echo 'presign <run name> <path in the run>...'; exit 2; }
