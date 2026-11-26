@@ -1,5 +1,14 @@
 # Project instructions
 
+## Package version (owner, 2026-11-26)
+
+Other projects now install `rewardhack`, so its version in `pyproject.toml` tells them what changed. Bump it in the
+same commit as any change to the package (`src/rewardhack/`, its dependencies or its data files), following semantic
+versioning. While the version is 0.x: raise the minor number (0.1.3 → 0.2.0) for anything another project could notice,
+such as a changed or removed function, argument, default, file format, or training behaviour; raise the patch number
+(0.2.0 → 0.2.1) for fixes and internal changes that leave all of that as it was. Changes only to `entrypoints/`, `ops/`,
+`tests/` or `docs/` need no bump. Say the new version in the commit message.
+
 ## Paid pods (RunPod or any other metered machine)
 
 A pod bills from the moment it is deployed, and nothing limits that until the job's runner arms the pod's own removal timer (`ops/remote_job.sh`, started by `ops/drive_runpod.sh`). These rules close that gap.

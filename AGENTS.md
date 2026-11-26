@@ -5,6 +5,14 @@ source for the project's paid-pod rules, time caps, launch records, commit gate,
 and no-silent-fallbacks policy. Its instructions apply to Codex too. Keep the
 original Claude instructions and hooks intact; support for Codex is additive.
 
+## Package version
+
+Other projects install `rewardhack`. Every commit that changes the package
+(`src/rewardhack/`, its dependencies or data files) also bumps `version` in
+`pyproject.toml` by semantic versioning, as `CLAUDE.md` ("Package version")
+spells out: while at 0.x, the minor number for anything another project could
+notice, the patch number for fixes that change none of that.
+
 ## Codex hook equivalents
 
 - `.codex/hooks.json` registers the spend gate on `Bash` and the no-silent-fallbacks
