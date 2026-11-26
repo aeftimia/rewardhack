@@ -130,7 +130,7 @@ def driver_check(root, remote, deadline, settings):
         return [f'ops/drive_runpod.sh has no {CHECK_ONLY} mode, so its refusals would only be met with a pod already billing']
     # Paths relative to the repository, as the driver is run: it refuses a results path with a space in it.
     done = subprocess.run(['bash', 'ops/drive_runpod.sh', 'check.invalid', '22', remote, str(RECORD.parent/'driver-check'), str(deadline)],
-                          cwd=root, env={**os.environ, **settings, CHECK_ONLY: '1'}, capture_output=True, text=True)
+                          cwd=root, env={**os.environ, **settings, CHECK_ONLY: '1'}, capture_output=True, text=True, check=False)
     if done.returncode != 0 or 'check passed' not in done.stdout:
         said = '\n    '.join((done.stdout + done.stderr).strip().splitlines()[-6:])
         return [f'ops/drive_runpod.sh refuses this launch with these settings (exit {done.returncode}):\n    {said}']
@@ -174,7 +174,7 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     problems += [f'budget: {reason}' for reason in refused]
     if problems:
         return None, problems
-    tests = subprocess.run(test_command, cwd=root, capture_output=True, text=True)
+    tests = subprocess.run(test_command, cwd=root, capture_output=True, text=True, check=False)
     if tests.returncode != 0:
         tail = '\n    '.join((tests.stdout + tests.stderr).strip().splitlines()[-12:])
         return None, [f"the tests do not pass ({' '.join(test_command)} exited {tests.returncode}):\n    {tail}"]
@@ -437,7 +437,7 @@ def changed_blobs(root, *diff):
     out = git(root, *diff, '--raw', '-z', '--no-renames', '--diff-filter=ACMT')
     fields = out.split('\0')
     blobs = set()
-    for meta, path in zip(fields[0::2], fields[1::2]):
+    for meta, path in zip(fields[0::2], fields[1::2], strict=False):  # `-z` output ends in a NUL: one empty field is left over
         _, new_mode, _, new_id, _ = meta.lstrip(':').split(' ')
         if new_mode != GITLINK:
             blobs.add((path, new_id))
@@ -467,7 +467,7 @@ def pushed_commits(root, remote, local_id, remote_id):
     # The remote's current tip is excluded when this clone has it; when it does not (someone else pushed since the last fetch), the
     # tracking branches still exclude what was last seen there, and anything else is read: more than the push adds, never less.
     if not ZERO_ID.fullmatch(remote_id) and subprocess.run(['git', '-C', str(root), 'cat-file', '-e', remote_id + '^{commit}'],
-                                                            capture_output=True).returncode == 0:
+                                                            capture_output=True, check=False).returncode == 0:
         known.append(remote_id)
     return git(root, 'rev-list', local_id, '--not', f'--remotes={remote}', *known).split()
 

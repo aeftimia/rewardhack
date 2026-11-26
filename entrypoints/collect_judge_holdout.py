@@ -50,7 +50,7 @@ def main():
     except (ValueError, OSError) as error:
         quoted = ' '.join(shlex.quote(str(part)) for part in ('--protocol', args.protocol, '--rows', args.out/'fresh.jsonl', '--seed', args.seed))
         raise SystemExit(f'{error}\nThe collection is saved. Prepare the sheet from it with: prepare_judge_holdout.py prepare '
-                         f'--descriptive {quoted} --out <new directory>')
+                         f'--descriptive {quoted} --out <new directory>') from error
     print(f'Blind review: {args.review_out}/sheet.md', flush=True)
 
 

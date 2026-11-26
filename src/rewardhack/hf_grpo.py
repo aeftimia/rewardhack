@@ -376,7 +376,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, r
                 scored_rows = score_concurrently(scored, completions)  # a task's samples at once
             except ScoringStopped as stopped:
                 jsonl.write_rows(sink, stopped.done)  # scored and paid for: kept, as when scoring was one row at a time
-                raise stopped.__cause__
+                raise stopped.__cause__  # noqa: B904  re-raises the original error; `from` would overwrite that error's own cause
             t_lean += time.perf_counter()-t0
             rows.extend(scored_rows)
             jsonl.write_rows(sink, scored_rows)
@@ -483,7 +483,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             # Marked, because these rows are in no step, no tally and no complete prompt group.
             jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in stopped.done))
             summary['partial_batch_rows'] = len(stopped.done)
-            raise stopped.__cause__
+            raise stopped.__cause__  # noqa: B904  re-raises the original error; `from` would overwrite that error's own cause
         rewards = training_rewards(rows, args.num_generations)
         trainer._verifier_keep = [training_keep(row) for row in rows]
         note_undecided(rows)

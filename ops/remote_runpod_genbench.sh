@@ -30,6 +30,7 @@ pod_self_test 40 5 "$PORT"  # its results are timings and logs
 
 log start install
 # Installation took 108 s on 25 Nov; retain ample room for network variability.
+# shellcheck disable=SC2015  # the failure branch is meant to run when either step fails
 # cap: 2x measured 108 s
 python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q -r requirements-vllm.txt > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
 /workspace/vllm-venv/bin/pip freeze > ~/out/pip-freeze-vllm.txt

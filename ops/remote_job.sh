@@ -47,6 +47,7 @@ finish() {
   if ((AUTOSTOP)); then echo "$(date -u +%FT%TZ) job ended with $code; removing pod in ${GRACE}s" >> "$OUT/autostop.log"; remove_after "$GRACE"; fi
 }
 if [[ ${1:-} == --remove-now ]]; then  # the driver's last act once the results are copied
+  # shellcheck disable=SC2015  # refuse when either the pod id or runpodctl is missing
   [[ -n $POD_ID ]] && command -v runpodctl >/dev/null || { echo 'cannot remove this pod from inside it'; exit 3; }
   exec runpodctl remove pod "$POD_ID"
 fi

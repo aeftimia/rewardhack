@@ -40,7 +40,7 @@ def read_reservations(ledger=LEDGER):
     records = json.loads(path.read_text(), object_pairs_hook=unique_object,
                          parse_constant=lambda value: (_ for _ in ()).throw(ValueError(f'invalid JSON number {value}')))
     if not isinstance(records, list):
-        raise ValueError('invalid pilot reservation registry')
+        raise ValueError('invalid pilot reservation registry')  # noqa: TRY004  a malformed file is bad data, and callers catch ValueError
     keys = set()
     for record in records:
         if (not isinstance(record, dict)
@@ -140,7 +140,7 @@ def row_total(row, number):
 
 def spent(rows, **match):
     totals = [row_total(r, i) for i, r in enumerate(rows, 1)]
-    total = sum(t for t, r in zip(totals, rows) if all(r.get(k) == v for k, v in match.items()))
+    total = sum(t for t, r in zip(totals, rows, strict=True) if all(r.get(k) == v for k, v in match.items()))
     if not math.isfinite(total):
         raise ValueError('ledger total must be a finite, nonnegative number')
     total = round(total, 6)  # ledger amounts are dollars with at most a few decimals; binary sums of them are not exact
@@ -189,7 +189,7 @@ def claim_cost(hourly, hours, other=0.0):
     values = []
     for value, name in ((hourly, 'hourly price'), (hours, 'maximum hours'), (other, 'other costs')):
         if isinstance(value, bool):
-            raise ValueError(f'{name} must be a finite, nonnegative number')
+            raise ValueError(f'{name} must be a finite, nonnegative number')  # noqa: TRY004  same error as any other bad amount; callers catch ValueError
         nonnegative_finite(value, name)
         values.append(Decimal(str(value)))
     exact = values[0]*values[1]+values[2]
@@ -212,7 +212,7 @@ def claim(ledger, key, line, hourly, hours, other=0.0, launch_cap=None):
     Ordinary `check` is read-only and cannot perform this authorization.
     """
     if isinstance(launch_cap, bool):
-        raise ValueError('launch cap must be a finite, nonnegative number')
+        raise ValueError('launch cap must be a finite, nonnegative number')  # noqa: TRY004  same error as any other bad amount; callers catch ValueError
     ledger = Path(ledger).resolve()
     if not ledger.is_file():
         raise ValueError('the grant ledger must exist before claiming')

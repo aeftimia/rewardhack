@@ -4,7 +4,8 @@
 # Every run has its own metered cap; the stage stops when the running total passes STAGE_CAP.
 # Usage: bash ops/api_grid.sh <stage>   (A)
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || { echo "cannot enter the repository root from $0" >&2; exit 1; }
+# shellcheck disable=SC1090  # the owner's own shell profile (for OPENAI_API_KEY), not a file in this repository
 source ~/.zshrc 2>/dev/null
 STAGE=${1:-A}; OUT=results/api-grid-$STAGE; mkdir -p "$OUT"
 STAGE_CAP=${STAGE_CAP:-8.0}

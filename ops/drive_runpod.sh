@@ -139,6 +139,7 @@ else
     echo 'the note above could not be printed: this script has no terminal' >> "$RESULTS/driver.log"
   fi
 fi
+# shellcheck disable=SC2329  # run by `trap finish EXIT` below
 finish() {
   code=$?
   # From here nothing may stop this function: with the terminal gone a plain `echo` fails, and under `set -e` that

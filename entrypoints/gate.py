@@ -123,7 +123,7 @@ def main():
 if __name__ == '__main__':
     try:
         code = main()
-    except Exception:
+    except Exception:  # noqa: BLE001  any crash of the gate is reported and refuses (exit 2), never waved through
         # A gate that crashes must not wave anything through: say that the check itself failed, and refuse.
         traceback.print_exc()
         print('gate: the check itself failed (see above). This is not a finding about the command.', file=sys.stderr)

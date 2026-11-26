@@ -138,7 +138,7 @@ def sat_family(seed=2026, rungs=SAT_RUNGS, family='sat'):
             elif 0 < models <= max(4, 2**v//4000) and len(sat_found) < want:
                 sat_found.append((text, models))
         ref = 'by decide' if v <= SAT_KERNEL_MAX else 'by native_decide'
-        for i, ((st, sm), (ut, _)) in enumerate(zip(sat_found, unsat_found)):
+        for i, ((st, sm), (ut, _)) in enumerate(zip(sat_found, unsat_found, strict=False)):  # pairs only; the 400-try search can fill one side short
             binder = f'∃ {" ".join(f"x{j}" for j in range(v))} : Bool'
             rows += pair(family, tier, f'{v}-{i}', f'{binder}, ({st}) = true', ref, f'{binder}, ({ut}) = true', ref)
             rows[-2]['models'] = sm

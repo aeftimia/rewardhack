@@ -2,12 +2,13 @@
 # Open-weight reasoning rung on one RunPod A100 80 GB: Qwen3-32B (AWQ) with thinking off/on, gpt-oss-20b and
 # gpt-oss-120b at reasoning low/high. Inference only, no Lean, no model-written code executed here; rows are
 # scored on the laptop with entrypoints/rescore.py. All repos are ungated. A failed probe step does not block the next; a failed download stops the script.
-cd ~/pilot-repo
+cd ~/pilot-repo || { echo 'no ~/pilot-repo on this pod: the driver did not sync it' >&2; exit 1; }
 export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMPLER=0
 mkdir -p ~/out /workspace/hf
 rm -f ~/out/DONE
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
 log start vllm-install
+# shellcheck disable=SC2015  # the failure branch is meant to run when either step fails
 python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm==0.33.0 -e . > ~/out/vllm-install.log 2>&1 \
   || { log VLLM_INSTALL_FAILED; touch ~/out/DONE; exit 1; }
 /workspace/vllm-venv/bin/python -c 'import vllm; print(vllm.__version__)' >> ~/out/steps.log

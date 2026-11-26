@@ -112,7 +112,7 @@ REWARDS = {
 def test_any_reward_function_reaches_the_trainer_unchanged(tmp_path, monkeypatch, name):
     run = train(tmp_path, monkeypatch, REWARDS[name], steps=3)
     assert len(run.handed) == len(run.log) == 3 and all(len(step) == GENERATIONS for step in run.handed)
-    for handed, logged in zip(run.handed, run.log):
+    for handed, logged in zip(run.handed, run.log, strict=True):
         # What TRL says it was rewarded with is what the scoring step returned, undecided rollouts left out.
         assert logged['rewards/reward_fn/mean'] == pytest.approx(mean_kept(handed), rel=1e-5, abs=1e-6)
     # What is saved per rollout is what was trained on.

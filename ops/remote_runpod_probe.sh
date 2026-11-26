@@ -2,7 +2,7 @@
 # 70B exploration probe on a RunPod pod (one 48-80 GB card). Inference only: no Lean, no training, no
 # model-written code executed here; rows are scored afterwards on the laptop with entrypoints/rescore.py.
 # The AWQ-INT4 repo is ungated, so no Hugging Face token is needed.
-cd ~/pilot-repo
+cd ~/pilot-repo || { echo 'no ~/pilot-repo on this pod: the driver did not sync it' >&2; exit 1; }
 # FlashInfer's sampler needs a JIT build (ninja + nvcc) that this container lacks; use the PyTorch sampler.
 export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMPLER=0
 mkdir -p ~/out /workspace/hf
@@ -11,6 +11,7 @@ MODEL=hugging-quants/Meta-Llama-3.1-70B-Instruct-AWQ-INT4
 REV=2123003760781134cfc31124aa6560a45b491fdf
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
 log start vllm-install
+# shellcheck disable=SC2015  # the failure branch is meant to run when either step fails
 python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm==0.33.0 -e . > ~/out/vllm-install.log 2>&1 \
   || { log VLLM_INSTALL_FAILED; touch ~/out/DONE; exit 1; }
 /workspace/vllm-venv/bin/python -c 'import vllm; print(vllm.__version__)' >> ~/out/steps.log
