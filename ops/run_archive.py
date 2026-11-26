@@ -2,7 +2,8 @@
 AWS credentials; they get presigned URLs for what they must read.
 
   python3 ops/run_archive.py upload <results folder>            # a new archive of the folder, every file checked
-  python3 ops/run_archive.py presign <results folder> <path>...  # GET URLs into its latest archive, for a pod's resume
+  python3 ops/run_archive.py resume <results folder> <run>/trainer/checkpoint-<step>
+      # 'sha256 path url' per file of that one checkpoint in the latest archive (GET URLs an hour long), for a pod's resume
 
 Each upload gets its own id when it starts (UTC time and a random suffix) and goes to
 s3://<bucket>/<prefix>/<folder name>/<id>/, so no upload can collide with or overwrite another (owner, 26 Nov). Each file is
@@ -14,6 +15,7 @@ verified upload is the owner's own step (owner, 26 Nov).
 import base64
 import hashlib
 import json
+import os
 import re
 import secrets
 import subprocess
@@ -23,7 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ENV = Path(__file__).with_name('archive.env')
-SETTINGS = dict(line.split('=', 1) for line in ENV.read_text().splitlines() if line and not line.startswith('#'))
+SETTINGS = {name.strip(): value.strip() for name, value in
+            (line.split('=', 1) for line in ENV.read_text().splitlines() if line.strip() and not line.startswith('#'))}
 BUCKET, REGION, STORAGE, PREFIX = (SETTINGS[k] for k in ('ARCHIVE_BUCKET', 'ARCHIVE_REGION', 'ARCHIVE_STORAGE_CLASS', 'ARCHIVE_PREFIX'))
 URL_SECONDS = int(SETTINGS['ARCHIVE_URL_SECONDS'])
 WORKERS = 8  # parallel hashing and S3 requests; S3 serves many streams, and a laptop's disk and uplink are not slowed by eight
@@ -35,8 +38,9 @@ PUT_TIMEOUT = 1500
 HEAD_TIMEOUT = 60
 RECORD = 'ARCHIVES.json'  # in the results folder: every verified archive of it, newest last
 # Top-level files of a results folder that are not part of the run: the record, and the laptop's SSH trust for the pod.
-NOT_THE_RUN = {RECORD, 'known_hosts'}
+NOT_THE_RUN = {RECORD, RECORD + '.writing', 'known_hosts'}
 RUN_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]*')
+CHECKPOINT = re.compile(r'[^/]+/trainer/checkpoint-\d+')  # where the trainer writes a resumable checkpoint
 
 
 class ArchiveError(RuntimeError):
@@ -79,10 +83,15 @@ def results_folder(path):
 
 def run_files(folder):
     """The run's files as names under folder, sorted; a symbolic link anywhere is refused (it would be archived unchecked)."""
-    links = [p for p in folder.rglob('*') if p.is_symlink()]
-    if links:
-        raise SystemExit(f'{folder} holds symbolic links, which the archive cannot check: {links[:3]}')
-    names = sorted(p.relative_to(folder).as_posix() for p in folder.rglob('*') if p.is_file())
+    def unreadable(error):
+        raise SystemExit(f'cannot read {error.filename}: {error.strerror}')  # a folder skipped would be missing from the archive
+    paths = []
+    for top, folders, files in os.walk(folder, onerror=unreadable):
+        paths += [Path(top)/name for name in folders + files]
+    odd = [p for p in paths if p.is_symlink() or not (p.is_dir() or p.is_file())]
+    if odd:
+        raise SystemExit(f'{folder} holds symbolic links or special files, which the archive cannot check: {odd[:3]}')
+    names = sorted(p.relative_to(folder).as_posix() for p in paths if p.is_file())
     return [name for name in names if name not in NOT_THE_RUN]
 
 
@@ -103,11 +112,24 @@ def in_parallel(function, items):
 
 def records(folder):
     path = folder/RECORD
-    return json.loads(path.read_text()) if path.exists() else []
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as error:
+        raise SystemExit(f'{path} is not valid JSON ({error}): repair it before archiving or resuming') from error
+
+
+def record(folder, archives):
+    """ARCHIVES.json replaced whole: a crash leaves the old file or the new one, never a truncated one."""
+    temporary = folder/(RECORD + '.writing')
+    temporary.write_text(json.dumps(archives, indent=1) + '\n')
+    os.replace(temporary, folder/RECORD)
 
 
 def upload(path):
     folder = results_folder(path)
+    earlier = records(folder)  # read first: an unreadable record stops this before anything is sent
     names = run_files(folder)
     if not names:
         raise SystemExit(f'{folder} holds no files of a run: nothing to archive')
@@ -123,34 +145,43 @@ def upload(path):
     wrong = [name for name, here, there in zip(names, local, stored, strict=True) if here != there]
     if wrong:
         raise SystemExit(f'S3 does not hold these as they were sent; the archive is not recorded: {wrong[:10]}')
+    # A file added or removed while the upload ran (a copy from a pod still going) would be missing from the archive.
+    if run_files(folder) != names:
+        raise SystemExit(f'{folder} changed while it was archived (files added or removed); the archive is not recorded: run it again')
     entry = {'id': archive_id, 'uri': f's3://{BUCKET}/{root}/', 'at': datetime.now(timezone.utc).isoformat(),
              'sha256': dict(zip(names, local, strict=True))}
-    (folder/RECORD).write_text(json.dumps([*records(folder), entry], indent=1) + '\n')
+    record(folder, [*earlier, entry])
     print(f'verified: all {len(names)} files are in {entry["uri"]} with their SHA-256 (recorded in {folder/RECORD})')
 
 
-def presign(path, *names):
-    if not names:
-        raise SystemExit('presign <results folder> <path in the run>...')
+def resume(path, checkpoint):
+    """For a pod resuming a run: 'sha256 path url' for each file of one trainer checkpoint in the folder's latest archive, and
+    nothing else. Standard-IA charges per GB read, so a resume reads one checkpoint (about 2.3 GB for gpt-oss-20b), never
+    the run's snapshots or other checkpoints (owner, 26 Nov)."""
+    if not CHECKPOINT.fullmatch(checkpoint):
+        raise SystemExit(f'{checkpoint}: a trainer checkpoint of a run, <run>/trainer/checkpoint-<step>')
     folder = results_folder(path)
     archives = records(folder)
     if not archives:
         raise SystemExit(f'{folder} has no verified archive ({RECORD}): upload it first')
     latest = archives[-1]
-    unknown = [name for name in names if name not in latest['sha256']]
-    if unknown:
-        raise SystemExit(f'not in archive {latest["id"]}: {unknown}')
+    # Only a URI this tool writes for this folder: an edited record must not send a pod elsewhere.
+    if not re.fullmatch(f's3://{re.escape(BUCKET)}/{re.escape(PREFIX)}/{re.escape(folder.name)}/[0-9TZ]+-[0-9a-f]{{8}}/', latest['uri']):
+        raise SystemExit(f'{folder/RECORD} names {latest["uri"]}, not an archive of this folder')
+    names = sorted(name for name in latest['sha256'] if name.startswith(checkpoint + '/'))
+    if not names:
+        raise SystemExit(f'no {checkpoint} in archive {latest["id"]}')
     for name in names:
         done = aws('s3', 'presign', latest['uri'] + name, '--expires-in', str(URL_SECONDS), timeout=HEAD_TIMEOUT)
         if done.returncode != 0:
             raise SystemExit(f'presign {name}: {done.stderr.strip()}')
-        print(done.stdout.strip())
+        print(latest['sha256'][name], name, done.stdout.strip())
 
 
-# Each command with the number of arguments it takes (None: one or more).
-COMMANDS = {'upload': (upload, 1), 'presign': (presign, None)}
+# Each command with the number of arguments it takes.
+COMMANDS = {'upload': (upload, 1), 'resume': (resume, 2)}
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3 or sys.argv[1] not in COMMANDS or COMMANDS[sys.argv[1]][1] not in (None, len(sys.argv) - 2):
+    if len(sys.argv) < 3 or sys.argv[1] not in COMMANDS or COMMANDS[sys.argv[1]][1] != len(sys.argv) - 2:
         sys.exit(__doc__)
     COMMANDS[sys.argv[1]][0](*sys.argv[2:])

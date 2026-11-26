@@ -26,6 +26,8 @@ def path(bucket, key):
     return root/bucket/key
 if args[:2] == ['s3api', 'put-object']:
     assert opt('--storage-class') == 'STANDARD_IA'
+    if os.environ.get('FAKE_ADD_FILE'):
+        Path(os.environ['FAKE_ADD_FILE']).write_text('late')
     if opt('--if-none-match') == '*' and path(opt('--bucket'), opt('--key')).exists():
         sys.exit('An error occurred (PreconditionFailed) when calling the PutObject operation')
     target, body = path(opt('--bucket'), opt('--key')), Path(opt('--body')).read_bytes()
@@ -118,15 +120,47 @@ def test_a_symbolic_link_in_the_run_is_refused(tmp_path, run):
     assert code != 0 and 'symbolic links' in output and not (run/'ARCHIVES.json').exists()
 
 
-def test_presign_reads_the_latest_archive_and_refuses_unknown_files(tmp_path, run):
-    code, output = archive(tmp_path, 'presign', run, 'train-a/steps.jsonl')
+def test_resume_presigns_only_the_chosen_checkpoint(tmp_path, run):
+    """Owner, 26 Nov: Standard-IA charges per GB read, so a resume pulls one checkpoint, never snapshots or other checkpoints."""
+    (run/'train-a'/'trainer'/'checkpoint-56').mkdir()
+    (run/'train-a'/'trainer'/'checkpoint-56'/'weights.bin').write_bytes(b'\x02' * 1000)
+    (run/'train-a'/'trainer'/'checkpoint-60'/'optimizer.pt').write_bytes(b'\x03' * 1000)
+    (run/'train-a'/'trainer'/'checkpoint-600').mkdir()  # a step that only shares the prefix
+    (run/'train-a'/'trainer'/'checkpoint-600'/'weights.bin').write_bytes(b'\x04')
+    code, output = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60')
     assert code != 0 and 'upload it first' in output
     assert archive(tmp_path, 'upload', run)[0] == 0
     entry = archives(run)[-1]
-    code, output = archive(tmp_path, 'presign', run, 'train-a/trainer/checkpoint-60/weights.bin')
-    assert code == 0 and f"{entry['id']}/train-a/trainer/checkpoint-60/weights.bin?expires=3600" in output
-    code, output = archive(tmp_path, 'presign', run, 'train-a/nothing.bin')
-    assert code != 0 and 'not in archive' in output
+    code, output = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60')
+    assert code == 0, output
+    lines = output.strip().splitlines()
+    assert [line.split()[1] for line in lines] == ['train-a/trainer/checkpoint-60/optimizer.pt', 'train-a/trainer/checkpoint-60/weights.bin']
+    assert all(f"{entry['id']}/{line.split()[1]}?expires=3600" in line.split()[2] for line in lines)
+    assert all(line.split()[0] == entry['sha256'][line.split()[1]] for line in lines)
+    for refused in ('train-a/adapter-step8', 'train-a/trainer', 'train-a/trainer/checkpoint-60/weights.bin', 'train-a/trainer/checkpoint-7'):
+        code, output = archive(tmp_path, 'resume', run, refused)
+        assert code != 0, refused
+
+
+def test_a_file_added_during_the_upload_stops_the_record(tmp_path, run):
+    """Round 40: a copy from a pod still running could add files the archive never got."""
+    code, output = archive(tmp_path, 'upload', run, FAKE_ADD_FILE=str(run/'train-a'/'late.json'))
+    assert code != 0 and 'changed while it was archived' in output and not (run/'ARCHIVES.json').exists()
+
+
+def test_a_corrupt_record_stops_an_upload_before_anything_is_sent(tmp_path, run):
+    (run/'ARCHIVES.json').write_text('[{"id": ')
+    code, output = archive(tmp_path, 'upload', run)
+    assert code != 0 and 'not valid JSON' in output and not (tmp_path/'s3').exists()
+
+
+def test_resume_refuses_a_record_pointing_elsewhere(tmp_path, run):
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    entries = archives(run)
+    entries[-1]['uri'] = 's3://rewardhack-run-archive/results/another-run/20261126T000000Z-0123abcd/'
+    (run/'ARCHIVES.json').write_text(json.dumps(entries))
+    code, output = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60')
+    assert code != 0 and 'not an archive of this folder' in output
 
 
 API = dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none',
