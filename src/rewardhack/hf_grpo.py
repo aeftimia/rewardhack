@@ -14,7 +14,7 @@ from pathlib import Path
 
 from . import deadline, jsonl
 from .gpu import GpuSampler
-from .outcomes import judge_advice, judge_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
+from .outcomes import judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
@@ -57,7 +57,11 @@ class VerifierMaskMixin:
         return loss * (keep.numel() * self.accelerator.num_processes / count.clamp(min=1))
 
 
-EVALUATION_SEED = 31415
+EVALUATION_SEED_OFFSET = 31415
+
+
+def evaluation_seed(args):
+    return EVALUATION_SEED_OFFSET + args.seed
 PROMPT_DATE = '2026-11-24'  # the day of the first unhinted probe; every prompt since carries it
 
 
@@ -169,9 +173,10 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
     report_mode = args.report_mode
     retries = RetryBudget(args.verifier_retry_seconds)
     samples = args.eval_samples if samples is None else samples
-    # A constant, not --seed: the before- and after-evaluations draw from the same stream so their difference is the
-    # adapter's. It also means a probe or a before-evaluation is the same draw under every --seed, and says so in the summary.
-    torch.manual_seed(EVALUATION_SEED)
+    # The before- and after-evaluations of one run draw from the same stream, so their difference is the adapter's. The
+    # stream follows --seed (owner, 26 Nov), so runs with different seeds are evaluated on different draws and count as
+    # repeats; the offset keeps it apart from the training stream of the same seed.
+    torch.manual_seed(evaluation_seed(args))
     model.eval()
     path = args.out/f'{stage}-evaluation.jsonl'
     completed, slowest = 0, 0.0
@@ -261,6 +266,13 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in rows))
             summary['partial_batch_rows'] = len(rows)
             raise RuntimeError(f"the judge failed on {judging['judge_undecided']} of {judging['judge_asked']} readings: its failure rate is above the 5% limit")
+        if verifier_failing(undecided):
+            # Lean should decide these statements in well under a second: timeouts piling up mean a broken verifier or
+            # proofs long enough to time out (owner wants to know at once). Saved and marked like the judge stop above.
+            jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in rows))
+            summary['partial_batch_rows'] = len(rows)
+            raise RuntimeError(f"the verifier left {sum(bool(r['verifier_inconclusive']) for r in undecided)} of {len(undecided)} answers undecided, "
+                               f"more than a 5% rate explains; longest undecided proof in this batch: {tally(rows)['inconclusive_longest_proof_chars']} characters")
         jsonl.write_rows(sink, rows)
         step = len(timing['lean'])+1
         grouped = reward_groups(rows, args.num_generations)
@@ -407,7 +419,7 @@ def run(args):
     started = time.perf_counter()
     args.train_deadline = time.monotonic()+args.max_seconds-args.final_eval_seconds
     args.judge_fn = None  # no judge is built in `controls`, or before the controls pass; the usage line below reads it either way
-    summary = {'status': 'running', 'report_mode': args.report_mode, 'argv': sys.argv[1:], 'evaluation_seed': EVALUATION_SEED,
+    summary = {'status': 'running', 'report_mode': args.report_mode, 'argv': sys.argv[1:], 'evaluation_seed': evaluation_seed(args),
                # What the transcript export needs to rebuild each prompt and label the policy; argv alone omits defaults.
                'model': args.model, 'revision': args.revision, 'prompt_variant': args.prompt_variant,
                'adapter': str(args.adapter) if args.adapter else None, 'template_kwargs': template_kwargs(args), 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},

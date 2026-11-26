@@ -44,12 +44,15 @@ def tiny(kind):
     return model, tokenizer
 
 
-def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None, extra=None, rollouts=None, **overrides):
+def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None, extra=None, rollouts=None, timeouts_stop=False, **overrides):
     """Run `hf_grpo.train` with `reward_of(position in batch, completion text, step)` in place of Lean and the judge.
 
     None from `reward_of` is a rollout the verifier could not decide. Returns the adapter's change, TRL's log,
-    our summary, and the rewards each step handed to TRL.
+    our summary, and the rewards each step handed to TRL. These tests script undecided rollouts far above the rate at
+    which a real run stops (`verifier_failing`), to check how they are masked; `timeouts_stop=True` keeps the stop.
     """
+    if not timeouts_stop:
+        monkeypatch.setattr(hf_grpo, 'verifier_failing', lambda rows: False)
     template = outcomes.score('unused', TASKS[0], '', 'baseline', truncated=True)  # a cut-off row needs neither Lean nor a judge; the fields below are then scripted
     handed, step = [], [0]
 

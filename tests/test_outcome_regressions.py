@@ -117,14 +117,14 @@ def test_an_undecided_rollout_moves_nothing_in_training():
     assert rewards == [2.0, 0.0, None, 1.0] and group[2]['reward'] == 1.5  # the scored reward stays on the row
     counts = outcomes.tally(group)
     assert (counts['reward'], counts['trained'], counts['trained_reward']) == (4.5, 3, 3.0)
-    # A group with nothing decided has no variation; the baseline arm never asks the verifier and is untouched.
+    # A group with nothing decided has no variation; since 26 Nov an undecided row trains on nothing in the baseline too.
     undecided = [row(reward=1.5, verifier_inconclusive=True, arm='report_correct') for _ in range(2)]
     assert outcomes.training_rewards(undecided, 2) == [None, None] and outcomes.reward_groups(undecided, 2)['mixed_groups'] == 0
     # Equal decided rewards beside an undecided row are no variation, at any penalty (0.7 three times does not average to 0.7).
     flat = [row(reward=0.7, arm='report_correct') for _ in range(3)] + [row(reward=1.7, verifier_inconclusive=True, arm='report_correct')]
     outcomes.training_rewards(flat, 4)
     assert outcomes.reward_groups(flat, 4)['mixed_groups'] == 0
-    assert outcomes.training_rewards([row(reward=1.0, verifier_inconclusive=True, arm='baseline'), row(arm='baseline')], 2) == [1.0, 0.0]
+    assert outcomes.training_rewards([row(reward=1.0, verifier_inconclusive=True, arm='baseline'), row(arm='baseline')], 2) == [None, 0.0]
     with pytest.raises(ValueError, match='complete'):
         outcomes.training_rewards(group, 3)
 
@@ -174,4 +174,4 @@ def test_variation_lost_to_the_verifier_is_told_apart_from_no_variation():
     mixed = group((0.0, False), (2.0, False), (1.5, True))
     assert (mixed['mixed_groups'], mixed['variation_lost_to_verifier']) == (1, 0)
     baseline = outcomes.reward_groups([row(reward=1.0, verifier_inconclusive=True, arm='baseline'), row(arm='baseline')], 2)
-    assert (baseline['mixed_groups'], baseline['variation_lost_to_verifier']) == (1, 0)        # baseline keeps every row
+    assert (baseline['mixed_groups'], baseline['variation_lost_to_verifier']) == (0, 1)        # baseline drops undecided rows too

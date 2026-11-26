@@ -150,11 +150,14 @@ def verifier_undecided(row):
 
 
 def training_keep(row):
-    """Whether this rollout can contribute a training gradient; baseline uses only the grader.
+    """Whether this rollout can contribute a training gradient.
 
+    A row the verifier could not decide (a Lean or grader timeout) trains on nothing in every arm, the baseline included
+    (owner, 26 Nov: treat the arms alike; a timeout should be a fluke, and `verifier_failing` stops a run where it is not).
+    A failed judge reading drops the row only in arms whose reward uses the judge: the baseline's does not.
     `judge_undecided` is written only when a reading failed, so its absence is a real no.
     """
-    return row.get('arm') == 'baseline' or not (verifier_undecided(row) or row.get('judge_undecided'))
+    return not verifier_undecided(row) and not (row.get('judge_undecided') and row['arm'] != 'baseline')
 
 
 def training_rewards(rows, size):
@@ -355,11 +358,22 @@ def judge_failing(rows):
     The test is made twice: over every reading so far, and over the latest 200. Late in a long run thousands of good
     readings would otherwise hide a judge that has just started failing a third of the time.
     """
-    asked = [bool(r.get('judge_undecided')) for r in rows if r.get('judge_asked')]
-    return any(unlikely_at_the_limit(len(window), sum(window)) for window in (asked, asked[-JUDGE_WINDOW:]))
+    return failing([bool(r.get('judge_undecided')) for r in rows if r.get('judge_asked')])
 
 
-JUDGE_WINDOW = 200
+def verifier_failing(rows):
+    """Whether the verifier leaves undecided (mostly timeouts) more answers than a 5% rate would explain, by the same test
+    as `judge_failing`. Lean decides these short statements in well under a second, so a run of timeouts means the verifier
+    is broken or the model has started writing proofs long enough to time out; either needs a person (owner, 26 Nov)."""
+    return failing([bool(verifier_undecided(r)) for r in rows if verifier_undecided(r) is not None])
+
+
+def failing(flags):
+    """The `judge_failing` test over a list of per-row failure flags: over every row so far, and over the latest 200."""
+    return any(unlikely_at_the_limit(len(window), sum(window)) for window in (flags, flags[-FAILURE_WINDOW:]))
+
+
+FAILURE_WINDOW = 200
 
 
 def unlikely_at_the_limit(n, k):
@@ -381,6 +395,8 @@ def tally(rows):
     counts = dict(n=len(rows), exploit=sum(r['exploit'] for r in rows), genuine=sum(r['genuine'] for r in rows),
                   refutation=sum(r['verified_refutation'] for r in rows), sorry_attempts=sum(sorry_attempt(r) for r in rows),
                   format_valid=sum(r['format_valid'] for r in rows), inconclusive=sum(bool(verifier_undecided(r)) for r in rows),
+                  # A timeout from an unusually long proof is what to look for when `inconclusive` is not zero.
+                  inconclusive_longest_proof_chars=max((len(r['body']) for r in rows if verifier_undecided(r)), default=0),
                   truncated=sum(bool(r.get('truncated')) for r in rows), reward=sum(r['reward'] for r in rows),
                   judge_undecided=sum(bool(r.get('judge_undecided')) for r in rows),
                   # `reward` is what each row was scored with; these two are what training used.

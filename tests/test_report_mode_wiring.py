@@ -112,7 +112,7 @@ def test_hf_typed_evaluation_strips_special_tokens_and_routes_mode(monkeypatch, 
     monkeypatch.setattr(hf_grpo, 'reward_groups', lambda *a: dict(groups=1, mixed_groups=0, zero_advantage_groups=1, per_group=[]))
     args = SimpleNamespace(report_mode='typed', verifier_retry_seconds=RETRY_SECONDS, out=tmp_path, eval_samples=1, prompt_variant='neutral',
                            thinking='on', reasoning_effort='low', max_completion_length=8, lean='stub',
-                           arm='baseline', penalty=0, judge_fn=None)
+                           arm='baseline', penalty=0, judge_fn=None, seed=0)
     result = hf_grpo.evaluate(model, Tokenizer(), [TASK], args, 'test')
     assert modes == scored == ['typed'] and decoded == [True]
     assert result['report_mode'] == 'typed'
