@@ -428,7 +428,9 @@ def changed_blobs(root, *diff):
 
 
 def blob_problems(root, blobs, terms):
-    return [problem for path, blob in sorted(blobs) for problem in content_problems(path, git(root, 'cat-file', 'blob', blob, text=False), terms)]
+    """Each file's path and contents."""
+    return [problem for path, blob in sorted(blobs)
+            for problem in text_problems(f'the path {path}', path, terms) + content_problems(path, git(root, 'cat-file', 'blob', blob, text=False), terms)]
 
 
 def message_text(message_file):
@@ -436,18 +438,31 @@ def message_text(message_file):
     return SCISSORS.split(Path(message_file).read_text(), maxsplit=1)[0]
 
 
-def unpushed(remote, pushed):
-    """`git rev-list`/`git log` arguments for every commit a push to `remote` may publish: whatever the pushed commits, any local
-    branch, tag or HEAD, or another remote's tracking branch (`git push origin fork/feat:feat`) reaches that none of `remote`'s
-    branches had when last fetched. pre-commit (4.7.0, `hook_impl._pre_push_ns`) reads git's list of pushed refs itself and
-    passes on only the first one's commit (`pushed`, from PRE_COMMIT_TO_REF; none when that push starts a new history), so the
-    refs around it are read too: more than one push adds, never less. A remote given as a URL has no tracking branches, so
-    everything is read. Not covered: a second pushed ref that none of these reach (`git push origin a stash@{0}:x`)."""
-    return ['--branches', '--tags', 'HEAD', '--remotes', *pushed, '--not', f'--remotes={remote}']  # `remote`'s own branches drop out below
+def unpushed(pushed):
+    """`git rev-list`/`git log` arguments for every commit a push may publish: whatever the pushed commit or any local branch, tag
+    or HEAD reaches that no remote's tracking branch had when last fetched (what one remote already has is published, so no new
+    exposure). pre-commit (4.7.0, `hook_impl._pre_push_ns`) reads git's list of pushed refs itself and passes on only the first
+    one's commit (`pushed`, from PRE_COMMIT_TO_REF; none when that push starts a new history), so the refs around it are read
+    too: more than one push adds, never less. With no remote fetched at all, everything is read, history included: fetch first.
+    Not covered: a second pushed ref that none of these reach (`git push origin a stash@{0}:x`)."""
+    return ['--branches', '--tags', 'HEAD', *pushed, '--not', '--remotes']
 
 
-def pushed_commits(root, remote, pushed):
-    return git(root, 'rev-list', *unpushed(remote, pushed)).split()
+def pushed_commits(root, pushed):
+    return git(root, 'rev-list', *unpushed(pushed)).split()
+
+
+def pushed_messages(root, pushed):
+    """[(where, text)]: the message of each commit a push may publish, and of each annotated tag on one of them or pushed itself
+    (PRE_COMMIT_TO_REF names the tag object when the first pushed ref is an annotated tag). A tag pushed alone on a commit
+    every remote has runs no hook at all (pre-commit finds no new commit), so its message goes unread."""
+    commits = pushed_commits(root, pushed)
+    messages = [(f'the message of commit {commit[:9]}', git(root, 'show', '-s', '--format=%B', commit)) for commit in commits]
+    tags = git(root, 'for-each-ref', 'refs/tags', '--format=%(objecttype) %(objectname) %(*objectname)').split('\n')
+    annotated = {fields[1] for fields in (line.split(' ') for line in tags if line.startswith('tag ')) if fields[2] in set(commits)}
+    annotated |= {sha for sha in pushed if git(root, 'cat-file', '-t', sha).strip() == 'tag'}
+    # A tag object is its header lines, a blank line, then the message (with any signature).
+    return messages + [(f'the message of tag {tag[:9]}', git(root, 'cat-file', 'tag', tag).split('\n\n', 1)[1]) for tag in sorted(annotated)]
 
 
 def staged_terms(root, terms):
@@ -459,14 +474,16 @@ def message_terms(root, terms, message_file):
     return text_problems('the commit message', message_text(message_file), terms)
 
 
-def pushed_terms(root, terms, remote, pushed):
-    """pre-push: every commit a push may publish (`unpushed`), its files as that commit changed them (also their size, which
-    check-added-large-files reads only in the working tree), and its message."""
+def pushed_terms(root, terms, pushed, ref_names):
+    """pre-push: every commit a push may publish (`unpushed`), its files' paths and contents as that commit changed them (also
+    their size, which check-added-large-files reads only in the working tree), its message and its annotated tags' messages
+    (`pushed_messages`), and the names of the first pushed ref (`ref_names`; pre-commit names no other, and runs no hook for a
+    push that adds no commit, such as `git push origin main:refs/heads/<new name>`)."""
     blobs = set()
-    problems = []
-    for commit in pushed_commits(root, remote, pushed):
+    for commit in pushed_commits(root, pushed):
         blobs |= changed_blobs(root, 'diff-tree', '-r', '--no-commit-id', '--root', '--diff-merges=first-parent', commit)
-        problems += text_problems(f'the message of commit {commit[:9]}', git(root, 'show', '-s', '--format=%B', commit), terms)
+    problems = [problem for where, text in pushed_messages(root, pushed) for problem in text_problems(where, text, terms)]
+    problems += [problem for name in ref_names for problem in text_problems(f'the ref name {name}', name, terms)]
     sizes = [(path, int(git(root, 'cat-file', '-s', blob))) for path, blob in sorted(blobs)]
     too_big = [f'{path} is {size//1024} KB in a pushed commit, over the {MAX_KB} KB limit; add an ignore rule for it'
                for path, size in sizes if size > MAX_KB*1024]
@@ -490,8 +507,9 @@ GITLEAKS_RUNS = {
     'pre-commit': lambda root: [(['git', '--pre-commit', '--staged'], None)],
     'commit-msg': lambda root, message_file: [(['stdin'], message_text(message_file))],
     # `git log -p` shows no diff for a merge unless asked: first-parent reads what a merge (and its conflict resolution) brings in.
-    'pre-push': lambda root, remote, pushed: [(['git', '--log-opts=' + ' '.join(['--diff-merges=first-parent', *unpushed(remote, pushed)])], None),
-                                              (['stdin'], git(root, 'log', '--format=%B', *unpushed(remote, pushed)))],
+    'pre-push': lambda root, pushed, ref_names: [
+        (['git', '--log-opts=' + ' '.join(['--diff-merges=first-parent', *unpushed(pushed)])], None),
+        (['stdin'], '\n'.join([text for _, text in pushed_messages(root, pushed)] + ref_names))],
 }
 
 
