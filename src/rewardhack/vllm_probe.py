@@ -19,6 +19,10 @@ from .tasks import select_tasks
 
 
 def run(args):
+    # Before the model loads (minutes for a large one): 0 would fail only after it, and a negative size saved no rows and
+    # reported the run completed (review round 28).
+    if args.chunk_prompts < 1:
+        raise ValueError(f'--chunk-prompts must be at least 1, got {args.chunk_prompts}')
     report_mode = args.report_mode
     template_kwargs = json.loads(args.template_kwargs)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -32,6 +36,9 @@ def run(args):
     summary = {'status': 'running', 'report_mode': report_mode, 'argv': sys.argv[1:], 'purpose': 'exploration probe; inference only; no training',
                'lean': None if args.lean == 'none' else subprocess.check_output([args.lean, '--version'], text=True).strip()}
     rows = []
+    # Written now and again at the end: a process killed from outside (the pod script's outer limit, after this one's own
+    # deadline) runs no `finally`, and its rows would otherwise have nothing beside them saying what settings made them.
+    (args.out/'summary.json').write_text(json.dumps(summary, indent=1, ensure_ascii=False)+'\n')
     try:
         import vllm
         from vllm import LLM, SamplingParams
@@ -52,7 +59,11 @@ def run(args):
                    for t in tasks]
         summary['template_kwargs'] = template_kwargs
         summary['prompt_tokens'] = len(tokenizer(prompts[0])['input_ids'])
-        params = SamplingParams(n=args.samples, temperature=TEMPERATURE, top_p=TOP_P, top_k=TOP_K, max_tokens=args.max_tokens, seed=args.seed)
+        # A seed for each prompt: vLLM gives a request's n samples seed, seed+1, ..., so one shared seed sampled every
+        # prompt with the same seeds and correlated the samples across prompts (review round 28). Prompt i starts at
+        # seed + i*n, so no two samples anywhere share one.
+        params = [SamplingParams(n=args.samples, temperature=TEMPERATURE, top_p=TOP_P, top_k=TOP_K, max_tokens=args.max_tokens,
+                                 seed=args.seed + index * args.samples) for index in range(len(tasks))]
         # Sampled and saved --chunk-prompts prompts at a time: a run stopped at its deadline keeps every chunk that finished
         # (summary['rows_written'] says how many rows), where one call over all prompts kept nothing (review round 26).
         t_gen, generated, t_lean = 0.0, 0, 0.0
@@ -64,7 +75,7 @@ def run(args):
             for start in range(0, len(tasks), args.chunk_prompts):
                 chunk = slice(start, start + args.chunk_prompts)
                 t0 = time.perf_counter()
-                outputs = llm.generate(prompts[chunk], params)
+                outputs = llm.generate(prompts[chunk], params[chunk])
                 t_gen += time.perf_counter()-t0
                 for task, output in zip(tasks[chunk], outputs, strict=True):
                     for index, completion in enumerate(output.outputs):

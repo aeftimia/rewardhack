@@ -59,3 +59,11 @@ def test_every_part_one_job_names_known_arms_and_numeric_penalties():
             assert re.fullmatch(r'[a-z0-9]+', name) and arm in ARMS and 0 <= float(penalty) <= 1, run
             names.append(name)
         assert len(names) == len(set(names)), row
+
+
+def test_the_runner_kills_after_the_pinned_wait():
+    """ops/remote_job.sh is also sent over SSH on stdin, where it cannot source ops/pod_pins.env, so it writes the value
+    out; it must equal the pin the job scripts' inner limits use (review round 28)."""
+    runner = (ROOT/'ops/remote_job.sh').read_text()
+    assert f"KILL_AFTER_SECONDS={PINS['KILL_AFTER_SECONDS']}\n" in runner
+    assert '--kill-after="$KILL_AFTER_SECONDS"' in runner and '$(($2+KILL_AFTER_SECONDS+GRACE))' in runner

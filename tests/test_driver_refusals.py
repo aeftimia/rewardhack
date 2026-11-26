@@ -67,6 +67,9 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', deadline='240', **setti
                                         SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='6000'), 'vLLM pilot needs API judge'),
     ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='90m'), 'as whole numbers'),
+    # A 19-digit time overflowed bash's arithmetic and turned the deadline check into a pass (review round 28).
+    ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
+                                        SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='9223372036854775000'), 'at most six digits'),
     # Two runs of 110 minutes, each with a 13.5-minute scoring tail, after 30 minutes of setup need 277 minutes; the driver is given 240.
     ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='6600'), 'needs a deadline of at least 277 minutes'),

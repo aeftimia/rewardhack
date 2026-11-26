@@ -50,7 +50,23 @@ def test_every_time_limit_in_the_pod_pins_states_its_basis():
     limits = [(number, int(match.group(1))) for number in named if (match := re.match(r'[A-Z_]+_SECONDS=(\d+)\b', lines[number]))]
     assert limits and len(limits) == len(named), 'every *_SECONDS in ops/pod_pins.env is a plain whole number of seconds'
     for number, seconds in limits:
-        cap = gates.CAP_COMMENT.search(lines[number-1])
+        # Its own comment line, not the trailing comment of an assignment above (which would lend it another's basis).
+        cap = gates.CAP_COMMENT.search(lines[number-1]) if number > 0 and lines[number-1].startswith('#') else None
         assert cap, lines[number]
         multiple, kind, amount, unit = float(cap.group(1)), cap.group(2), float(cap.group(3)), cap.group(4)
         assert multiple >= gates.MULTIPLES[kind] and seconds >= multiple * amount * gates.UNIT_MINUTES[unit] * 60, lines[number]
+
+
+def test_the_pod_pins_have_no_unchecked_limit_and_stage_times_name_checked_ones():
+    """Round 28: a number typed into PROBE_LARGE_STAGES, or a limit named *_TIMEOUT or *_WAIT in ops/pod_pins.env, escaped
+    both this file's checks. The script scan runs over the pins too, and every stage's time is one of the checked limits."""
+    import re
+    import subprocess
+    text = (ROOT/'ops/pod_pins.env').read_text()
+    assert gates.unsized_limits(text) == []
+    stages = subprocess.run(['bash', '-c', 'source ops/pod_pins.env; printf "%s\\n" "${PROBE_LARGE_STAGES[@]}"'], cwd=ROOT,
+                            check=True, capture_output=True, text=True).stdout.split('\n')[:-1]
+    checked = {int(value) for value in re.findall(r'^[A-Z_]+_SECONDS=(\d+)\b', text, re.M)}
+    assert stages and all(int(stage.split()[1]) in checked for stage in stages), stages
+    raw = re.search(r'^PROBE_LARGE_STAGES=\((.*)\)$', text, re.M).group(1)
+    assert not re.search(r'"\w+ \d', raw), 'a stage time is written as a number; name a *_SECONDS limit instead'

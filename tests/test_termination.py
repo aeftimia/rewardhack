@@ -601,7 +601,7 @@ def test_a_probe_stopped_between_chunks_keeps_the_finished_ones(args, monkeypatc
         def __call__(self, text):
             return dict(input_ids=[1])
 
-    calls = []
+    calls, seeds = [], []
     class LLM:
         def __init__(self, **kwargs):
             pass
@@ -609,6 +609,7 @@ def test_a_probe_stopped_between_chunks_keeps_the_finished_ones(args, monkeypatc
             return Tokenizer()
         def generate(self, prompts, params):
             calls.append(len(prompts))
+            seeds.extend(p['seed'] for p in params)
             if len(calls) == 2:
                 raise TimeoutError('deadline')
             return [SimpleNamespace(outputs=[SimpleNamespace(text=RAW, token_ids=[2], finish_reason='stop')] * 2) for _ in prompts]
@@ -622,7 +623,19 @@ def test_a_probe_stopped_between_chunks_keeps_the_finished_ones(args, monkeypatc
     with pytest.raises(TimeoutError):
         vllm_probe.run(args)
     assert calls == [2, 1]
+    # Each prompt has its own seed, n apart, so no two samples share one (review round 28; args.seed is 0, samples 2).
+    assert seeds == [0, 2, 4]
     rows = [json.loads(line) for line in (args.out/'rows.jsonl').read_text().splitlines()]
     assert [row['task_id'] for row in rows] == ['t0', 't0', 't1', 't1']
     summary = json.loads((args.out/'summary.json').read_text())
     assert summary['status'] == 'failed' and summary['rows_written'] == 4
+
+
+@pytest.mark.parametrize('size', [0, -1])
+def test_a_probe_refuses_a_chunk_size_below_one_before_anything_loads(args, size):
+    """0 failed only after a multi-minute model load; a negative size saved no rows and reported success (round 28)."""
+    from rewardhack import vllm_probe
+    args.__dict__.update(chunk_prompts=size, out=args.out/'never')
+    with pytest.raises(ValueError, match='at least 1'):
+        vllm_probe.run(args)
+    assert not args.out.exists()
