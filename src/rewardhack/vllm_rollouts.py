@@ -15,6 +15,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from .sampling import TEMPERATURE, TOP_K, TOP_P
+
 
 def add_arguments(parser):
     parser.add_argument('--rollout-backend', choices=['transformers', 'vllm'], default='transformers')
@@ -68,8 +70,10 @@ class AdapterRollouts:
         if expected not in [model['id'] for model in models]:
             raise ValueError(f'rollout server does not advertise the pinned model {expected}')
         config = self.request('GET', '/server_info?config_format=json').json()['vllm_config']['model_config']
-        if config['logprobs_mode'] != 'processed_logprobs' or not config['return_sampling_mask']:
-            raise ValueError('vLLM requires processed_logprobs and return_sampling_mask')
+        # Sampling is untruncated (sampling.py), so the trainer's full-vocabulary log-probabilities are the sampler's own
+        # and no per-token candidate set is needed; a server that sends one was started for some other setting.
+        if config['logprobs_mode'] != 'processed_logprobs' or config['return_sampling_mask']:
+            raise ValueError('vLLM requires processed_logprobs and no sampling mask (sampling is untruncated)')
         self.require_sleep(True)
 
     def load(self, path):
@@ -84,8 +88,8 @@ class AdapterRollouts:
             raise ValueError('rollout prompts must not be empty')
         def send(item):
             index, prompt = item
-            params = dict(n=1, max_tokens=max_tokens, temperature=1.0,
-                          top_p=0.95, top_k=20,
+            params = dict(n=1, max_tokens=max_tokens, temperature=TEMPERATURE,
+                          top_p=TOP_P, top_k=TOP_K,
                           seed=seed+index, stop_token_ids=[self.stops], ignore_eos=True,
                           skip_special_tokens=False, logprobs=0, output_kind=2)
             body = dict(model=self.name, request_id=str(uuid.uuid4()), token_ids=prompt, sampling_params=params)
@@ -96,7 +100,7 @@ class AdapterRollouts:
         # executor.map preserves prompt/group order despite out-of-order replies.
         with ThreadPoolExecutor(max_workers=min(32, len(prompts))) as pool:
             choices = list(pool.map(send, enumerate(prompts)))
-        ids, probabilities, masks = [], [], []
+        ids, probabilities = [], []
         for choice in choices:
             tokens = choice['token_ids']
             logs = choice['logprobs']['content']
@@ -114,16 +118,10 @@ class AdapterRollouts:
                 raise ValueError('vLLM reached a length limit before the requested completion budget')
             if self.stops in tokens[:-1]:
                 raise ValueError('vLLM continued past the configured stop token')
-            mask = choice['sampling_mask']
-            if len(mask) != len(tokens) or any(
-                    not 1 <= len(support) <= 20 or token not in support or len(set(support)) != len(support)
-                    or any(type(candidate) is not int or candidate < 0 for candidate in support)
-                    for token, support in zip(tokens, mask, strict=True)):
-                raise ValueError('vLLM returned an invalid sampling mask')
-            masks.append(mask)
             ids.append(tokens)
             probabilities.append(values)
-        return ids, probabilities, masks
+        # No sampling mask: TRL then normalises the trainer's log-probabilities over the whole vocabulary, as sampled.
+        return ids, probabilities, None
 
     def verify_reload(self, prompt):
         """A/B/A: changed adapter bytes must change fixed-seed output/logprob,
@@ -144,7 +142,6 @@ class AdapterRollouts:
             raise ValueError('adapter has no LoRA B matrices for the synchronization check')
         save_file(state, str(probe_path/'adapter_model.safetensors'))
         def sample():
-            # Replay requires temperature > 0 and top_k > 0 even for this probe.
             return self.completions([prompt], seed=0, max_tokens=1)
         before = sample()
         self.load(probe_path)

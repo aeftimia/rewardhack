@@ -25,7 +25,7 @@ def connect(backend, handler):
 
 
 def choice(token=3):
-    return dict(token_ids=[token, 1], finish_reason='stop', sampling_mask=[[3, 4], [1, 2]],
+    return dict(token_ids=[token, 1], finish_reason='stop',
                 logprobs={'content': [dict(token_id=t, logprob=-math.log(2)) for t in [token, 1]]})
 
 
@@ -40,17 +40,16 @@ def test_parallel_responses_preserve_group_order_and_unique_seeds(backend):
     connect(backend, handler)
     ids, logs, masks = backend.completions([[8], [8], [9], [9]], seed=7, max_tokens=2)
     assert ids == [[3, 1], [4, 1], [3, 1], [4, 1]]
-    assert masks == [[[3, 4], [1, 2]]]*4 and len(logs) == 4
+    assert masks is None and len(logs) == 4
+    assert all((b['sampling_params']['temperature'], b['sampling_params']['top_p'], b['sampling_params']['top_k']) == (1.0, 1.0, 0) for b in seen)
     assert sorted(b['sampling_params']['seed'] for b in seen) == [7, 8, 9, 10]
     assert all(b['sampling_params']['ignore_eos'] and b['sampling_params']['stop_token_ids'] == [1] for b in seen)
     assert all(b['sampling_params']['output_kind'] == 2 for b in seen)
 
 
-@pytest.mark.parametrize('damage', ['missing_mask', 'wrong_support', 'misaligned', 'nonfinite', 'missing_stop', 'extra', 'http'])
+@pytest.mark.parametrize('damage', ['misaligned', 'nonfinite', 'missing_stop', 'extra', 'http'])
 def test_invalid_rollouts_fail_instead_of_training(backend, damage):
     row = choice()
-    if damage == 'missing_mask': del row['sampling_mask']
-    if damage == 'wrong_support': row['sampling_mask'][0] = [4]
     if damage == 'misaligned': row['logprobs']['content'][0]['token_id'] = 4
     if damage == 'nonfinite': row['logprobs']['content'][0]['logprob'] = None
     if damage == 'missing_stop': row['token_ids'][-1] = 2; row['logprobs']['content'][-1]['token_id'] = 2
@@ -66,7 +65,7 @@ def test_preflight_checks_server_contract(backend, wrong):
         '/version': {'version': 'wrong' if wrong == 'version' else '0.34.0'},
         '/v1/models': {'data': [{'id': 'wrong' if wrong == 'model' else 'model@revision'}]},
         '/server_info': {'vllm_config': {'model_config': {'logprobs_mode': 'raw_logprobs' if wrong == 'logprobs' else 'processed_logprobs',
-                                                       'return_sampling_mask': wrong != 'mask'}}},
+                                                       'return_sampling_mask': wrong == 'mask'}}},
         '/is_sleeping': {'is_sleeping': wrong != 'awake'},
     }
     connect(backend, lambda request: httpx.Response(200, json=responses[request.url.path]))
@@ -116,27 +115,26 @@ def test_reload_requires_changed_weights_and_restoration(backend, monkeypatch):
         backend.verify_reload([8])
 
 
-def test_replayed_support_reaches_real_trl_loss(tmp_path, monkeypatch):
+def test_untruncated_rollouts_reach_real_trl_loss(tmp_path, monkeypatch):
     torch = pytest.importorskip('torch')
     from test_training_integration import train, REWARDS, cosine
     from trl import GRPOTrainer
     real = GRPOTrainer._get_per_token_logps_and_entropies
     seen = []
     def inspect(self, *args, **kwargs):
-        mask = kwargs['sampling_mask']
-        assert mask is not None
-        seen.append(mask.detach().clone())
+        assert kwargs['sampling_mask'] is None
         result = real(self, *args, **kwargs)
-        # The tiny model is nearly uniform: two-token support gives log(1/2),
-        # whereas accidentally using its full 16-token vocabulary gives log(1/16).
-        assert bool((result[0] > -1).all())
+        seen.append(result[0].detach().clone())
+        # The tiny model is nearly uniform over its 16-token vocabulary: log(1/16) = -2.77, where a two-token
+        # support would give log(1/2). Sampling is untruncated, so the trainer scores against the whole vocabulary.
+        assert bool((result[0] < -2).all())
         return result
     monkeypatch.setattr(GRPOTrainer, '_get_per_token_logps_and_entropies', inspect)
     class Rollouts:
         def generate(self, trainer, prompts, num_generations):
             assert trainer.eos_token_ids == [self.stops] == [1]
             return ([[3+i % 2, 1] for i in range(len(prompts))],
-                    [[-math.log(2)]*2 for _ in prompts], [[[3, 4], [1, 2]] for _ in prompts])
+                    [[-math.log(16)]*2 for _ in prompts], None)
     def run(reward, steps=1):
         return train(tmp_path, monkeypatch, reward, steps=steps, rollouts=Rollouts(), rollout_backend='vllm')
     positive = run(REWARDS['first of the group'])
@@ -146,7 +144,7 @@ def test_replayed_support_reaches_real_trl_loss(tmp_path, monkeypatch):
     assert float(run(lambda i, raw, step: 1.0).change.abs().max()) < 1e-7
     assert len(run(REWARDS['first of the group'], steps=2).log) == 2
     assert len(seen) >= 10
-    assert positive.summary['rollout_backend']['sampling_mask'] is True
+    assert 'sampling_mask' not in positive.summary['rollout_backend']
 
 
 def test_external_rollouts_refuse_unsupported_configuration(backend):
@@ -177,9 +175,9 @@ def test_every_batch_reloads_current_adapter_and_sleeps(backend):
         if path == '/inference/v1/generate':
             assert not sleeping[0]
             params = json.loads(request.content)['sampling_params']
-            assert params['temperature'] > 0 and params['top_k'] > 0
+            assert (params['temperature'], params['top_p'], params['top_k']) == (1.0, 1.0, 0)
             if params['max_tokens'] == 1:
-                row = dict(token_ids=[3], finish_reason='length', sampling_mask=[[3, 4]],
+                row = dict(token_ids=[3], finish_reason='length',
                            logprobs={'content': [dict(token_id=3, logprob=-1-loaded[0])]})
             else:
                 seeds.append(params['seed'])
@@ -192,7 +190,7 @@ def test_every_batch_reloads_current_adapter_and_sleeps(backend):
         trainer.state.global_step = step
         value[0] = step*0.2
         ids, logs, masks = backend.generate(trainer, [[8], [8]], 2)
-        assert sleeping[0] and ids == [[3, 1]]*2 and masks == [[[3, 4], [1, 2]]]*2
+        assert sleeping[0] and ids == [[3, 1]]*2 and masks is None
     records = [json.loads(line) for line in backend.log.read_text().splitlines()]
     assert all(row['status'] == 'completed' for row in records)
     assert records[0]['adapter_sha256'] != records[1]['adapter_sha256']

@@ -17,6 +17,7 @@ from . import deadline, jsonl
 from .gpu import GpuSampler
 from .outcomes import accumulate, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
+from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
 
@@ -268,6 +269,24 @@ def load_model(args, summary):
     return model, tokenizer
 
 
+# Fused 3D expert weights that `all-linear` cannot reach, by architecture (owner, 26 Nov, notes section 72). LoRA on the
+# MLP/MoE weights, not attention alone, is the current recommendation for RL ("LoRA Without Regret"); PEFT 0.21 wraps
+# these as parameters and vLLM 0.34 serves such adapters on the MXFP4 gpt-oss base. None: a dense model, whose MLP
+# `all-linear` already covers. An architecture not listed raises.
+EXPERT_PARAMETERS = {
+    'gpt_oss': ['mlp.experts.gate_up_proj', 'mlp.experts.down_proj'],
+    'gpt2': None,   # CPU tests
+    'llama': None,  # dry run
+    'qwen3': None,
+}
+
+
+def lora_config(model, rank):
+    from peft import LoraConfig
+    return LoraConfig(task_type='CAUSAL_LM', r=rank, lora_alpha=2*rank, target_modules='all-linear',
+                      target_parameters=EXPERT_PARAMETERS[model.config.model_type], lora_dropout=0.0)
+
+
 def template_kwargs(args):
     """Chat-template switches for reasoning: Qwen takes enable_thinking, gpt-oss takes reasoning_effort."""
     if args.reasoning_effort:
@@ -306,8 +325,8 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
                                                    return_tensors='pt', add_generation_prompt=True, **template_kwargs(args)).to(device)
             t0 = time.perf_counter()
             with torch.inference_mode():
-                outputs = model.generate(**inputs, max_new_tokens=args.max_completion_length, do_sample=True, temperature=1.0, top_p=0.95,
-                                         top_k=20, num_return_sequences=samples, pad_token_id=tokenizer.pad_token_id,
+                outputs = model.generate(**inputs, max_new_tokens=args.max_completion_length, do_sample=True, temperature=TEMPERATURE, top_p=TOP_P,
+                                         top_k=TOP_K, num_return_sequences=samples, pad_token_id=tokenizer.pad_token_id,
                                          eos_token_id=stop_ids(model, tokenizer))
             t_gen += time.perf_counter()-t0
             start = inputs['input_ids'].shape[1]
@@ -350,7 +369,6 @@ def copy_before(args, summary):
 def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     import torch
     from datasets import Dataset
-    from peft import LoraConfig
     from transformers import TrainerCallback, set_seed
     from trl import GRPOConfig, GRPOTrainer
     by_statement = {t['statement']: t for t in tasks}
@@ -489,10 +507,13 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             control.should_save = control.should_save or control.should_training_stop
             return control
 
-    config = GRPOConfig(output_dir=str(args.out/'trainer'), max_steps=args.steps, per_device_train_batch_size=args.num_generations * args.prompts_per_step,
-                        gradient_accumulation_steps=1, num_generations=args.num_generations, max_completion_length=args.max_completion_length,
+    # One prompt group per micro-batch and --prompts-per-step micro-batches per optimizer step: TRL generates the whole
+    # step's answers at once (its generation batch is the accumulated batch) and a backward pass holds one group, so
+    # more prompts per step cost time, not memory. The 'dapo' loss normalises over all the step's tokens.
+    config = GRPOConfig(output_dir=str(args.out/'trainer'), max_steps=args.steps, per_device_train_batch_size=args.num_generations,
+                        gradient_accumulation_steps=args.prompts_per_step, num_generations=args.num_generations, max_completion_length=args.max_completion_length,
                         learning_rate=args.learning_rate, bf16=torch.cuda.is_available(), use_cpu=not torch.cuda.is_available(), gradient_checkpointing=True,
-                        beta=args.beta, temperature=1.0, top_p=0.95, top_k=20, chat_template_kwargs=template_kwargs(args), logging_steps=1,
+                        beta=args.beta, temperature=TEMPERATURE, top_p=TOP_P, top_k=TOP_K, chat_template_kwargs=template_kwargs(args), logging_steps=1,
                         # Resumable checkpoints (<out>/trainer/checkpoint-N: adapter, optimizer, step, random state, task order) every
                         # --save-every steps; only the latest two are kept, as a resume needs one. The adapter-stepN snapshots above
                         # keep every interval's weights for evaluation.
@@ -538,8 +559,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             return rollouts.generate(self, prompt_ids, num_generations)
 
     trainer = VerifiedTrainer(model=model, args=config, reward_funcs=reward_fn, train_dataset=dataset, processing_class=tokenizer, callbacks=[Instrument()],
-                          peft_config=None if args.adapter else LoraConfig(task_type='CAUSAL_LM', r=args.lora_rank, lora_alpha=2*args.lora_rank,
-                                                                           target_modules='all-linear', lora_dropout=0.0))
+                          peft_config=None if args.adapter else lora_config(model, args.lora_rank))
     # TRL 1.19 unions model-only stops into its completion mask. Keep that mask
     # aligned with our explicit generation stop and evaluation cutoff detector.
     trainer.eos_token_ids = [stops]
@@ -551,7 +571,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
         trainer.use_vllm = True
         trainer.vllm_mode = 'server'
         summary['rollout_backend'] = dict(kind='vllm-adapter-server', url=args.rollout_url,
-            logprobs='processed_logprobs', sampling_mask=True, correction=config.vllm_importance_sampling_mode, correction_max=config.vllm_importance_sampling_clip_max)
+            logprobs='processed_logprobs', correction=config.vllm_importance_sampling_mode, correction_max=config.vllm_importance_sampling_clip_max)
     else:
         summary['rollout_backend'] = dict(kind='transformers')
     before = {n: p.detach().cpu().clone() for n, p in trainer.model.named_parameters() if p.requires_grad}

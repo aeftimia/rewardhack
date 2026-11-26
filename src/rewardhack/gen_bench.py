@@ -12,8 +12,9 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
-from .hf_grpo import load_model, template_kwargs
+from .hf_grpo import load_model, lora_config, template_kwargs
 from .prompts import prompt
+from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import split, stratified_limit, taskset_rows
 
 
@@ -23,7 +24,7 @@ def bench_tasks(args, count):
 
 def run_hf(args):
     import torch
-    from peft import LoraConfig, get_peft_model
+    from peft import get_peft_model
     args.out.mkdir(parents=True, exist_ok=True)
     cuda = torch.cuda.is_available()
     summary = {'status': 'running', 'model': args.model, 'revision': args.revision, 'torch': torch.__version__, 'measurements': []}
@@ -48,7 +49,7 @@ def run_hf(args):
         started = time.perf_counter()
         with torch.inference_mode():
             out = model.generate(input_ids=inputs['input_ids'].repeat(batch, 1), attention_mask=inputs['attention_mask'].repeat(batch, 1),
-                                 max_new_tokens=new_tokens, min_new_tokens=new_tokens, do_sample=True, temperature=1.0, top_p=0.95, top_k=20,
+                                 max_new_tokens=new_tokens, min_new_tokens=new_tokens, do_sample=True, temperature=TEMPERATURE, top_p=TOP_P, top_k=TOP_K,
                                  pad_token_id=tokenizer.pad_token_id)
         if cuda:
             torch.cuda.synchronize()
@@ -71,10 +72,10 @@ def run_hf(args):
         decode(f'base experts={implementation}', args.focus_batch, args.new_tokens)
         model.config._experts_implementation = default
 
-    lora = get_peft_model(model, LoraConfig(task_type='CAUSAL_LM', r=args.lora_rank, lora_alpha=2*args.lora_rank, target_modules='all-linear', lora_dropout=0.0))
+    lora = get_peft_model(model, lora_config(model, args.lora_rank))  # the training adapter's shape
     summary['lora_target_modules'] = sorted({name.split('.')[-1] for name, module in lora.named_modules() if hasattr(module, 'lora_A')})
     summary['lora_trainable_parameters'] = sum(p.numel() for p in lora.parameters() if p.requires_grad)
-    lora.save_pretrained(str(args.adapters/'all-linear'))
+    lora.save_pretrained(str(args.adapters/'training'))
     model = lora
     model.eval()
     for batch in args.lora_batches:
@@ -138,8 +139,8 @@ def run_server(args):
                 # Timing only: the server applies its own copy of the chat template, with today's date in it for gpt-oss.
                 # Rollouts generated this way for training would need the server started with the pinned template.
                 answer = post(f'{args.url}/chat/completions', dict(
-                    model=model, messages=prompt(task['statement'], 'neutral', 'prose'), max_tokens=args.max_tokens, temperature=1.0, top_p=0.95,
-                    top_k=20, chat_template_kwargs=json.loads(args.template_kwargs)), args.request_seconds)
+                    model=model, messages=prompt(task['statement'], 'neutral', 'prose'), max_tokens=args.max_tokens, temperature=TEMPERATURE, top_p=TOP_P,
+                    top_k=TOP_K, chat_template_kwargs=json.loads(args.template_kwargs)), args.request_seconds)
                 if answer['status'] != 200:
                     raise RuntimeError(f"completion failed with {answer['status']}: {answer['text'][:500]}")
                 body = json.loads(answer['text'])

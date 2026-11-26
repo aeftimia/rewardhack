@@ -22,9 +22,10 @@ from mlx_lm.tuner.utils import linear_to_lora_layers
 from . import jsonl
 from .outcomes import RetryBudget, score, sorry_attempt, summarize, training_rewards, training_keep, verifier_advice
 from .prompts import prompt
+from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import select_tasks, split, taskset_rows
 
-SAMPLER = dict(temp=1.0, top_p=0.95, top_k=20)
+SAMPLER = dict(temp=TEMPERATURE, top_p=TOP_P, top_k=TOP_K)
 
 
 def encode(tokenizer, statement, variant, thinking, report_mode='prose'):

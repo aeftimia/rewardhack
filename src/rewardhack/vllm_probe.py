@@ -14,6 +14,7 @@ from . import deadline, jsonl
 from .gpu import GpuSampler
 from .outcomes import RetryBudget, score, summarize
 from .prompts import prompt
+from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import select_tasks
 
 
@@ -50,7 +51,7 @@ def run(args):
                    for t in tasks]
         summary['template_kwargs'] = template_kwargs
         summary['prompt_tokens'] = len(tokenizer(prompts[0])['input_ids'])
-        params = SamplingParams(n=args.samples, temperature=1.0, top_p=0.95, top_k=20, max_tokens=args.max_tokens, seed=args.seed)
+        params = SamplingParams(n=args.samples, temperature=TEMPERATURE, top_p=TOP_P, top_k=TOP_K, max_tokens=args.max_tokens, seed=args.seed)
         t0 = time.perf_counter()
         outputs = llm.generate(prompts, params)
         t_gen = time.perf_counter()-t0

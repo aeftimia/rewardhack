@@ -41,7 +41,7 @@ uv pip install --python .tools/venv/bin/python -e '.[mlx,dev]'
 
 The training sampler defaults to Transformers. `run.py train --rollout-backend vllm
 --rollout-url http://127.0.0.1:8011` uses a local, initially sleeping vLLM server with
-per-batch LoRA reloads and sampling-mask replay. Install the server separately with
+per-batch LoRA reloads (attention and, on gpt-oss, the experts) and untruncated sampling. Install the server separately with
 `requirements-vllm.txt`; its Torch and NumPy constraints differ from the trainer's.
 The pod smoke script enables this path with `SMOKE_VLLM_ROLLOUTS=1`, API judging,
 `SMOKE_SKIP_PROBE=1`, and `SMOKE_SECOND_RUN=0`. See [notes section 63](docs/notes-2026-11-21.md)

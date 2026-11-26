@@ -167,6 +167,9 @@ step() { name=$1; shift; log "start $name"
   nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
 # Eight generations at 2,048 tokens ran out of memory on a 96 GB card (2026-11-24); four fit (2026-11-25). Every training step below uses this.
 GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
+# Prompt groups per optimizer step (owner, 26 Nov, notes section 72): one group of four had reward variation in 12 of 60
+# baseline steps. Each group is its own micro-batch, so memory is that of one group; vLLM samples all groups at once.
+PROMPTS=4
 if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   [[ $JUDGE_KIND == api && ${SMOKE_SKIP_PROBE:?} == 1 && ${SMOKE_SECOND_RUN:?} == 0 ]] || fail INVALID_ROLLOUT_PILOT
   log start rollout-install
@@ -176,9 +179,9 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   log start rollout-server
   VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True PATH="/workspace/vllm-venv/bin:$PATH" \
     /workspace/vllm-venv/bin/vllm serve "$MODEL" --revision "$REV" --served-model-name "$MODEL@$REV" \
-      --host 127.0.0.1 --port 8011 --max-model-len 4096 --gpu-memory-utilization 0.30 --max-num-seqs "$GENERATIONS" \
+      --host 127.0.0.1 --port 8011 --max-model-len 4096 --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) \
       --enable-lora --max-lora-rank 16 --max-loras 2 --enable-sleep-mode --enable-scale-out \
-      --return-sampling-mask --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
+      --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
   ROLLOUT_PID=$!
   # cap: 2x measured 390 s
   wait_for_server "$ROLLOUT_PID" 8011 "$MODEL@$REV" 900 || fail ROLLOUT_SERVER_DID_NOT_START
@@ -187,7 +190,7 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   curl -fsS --max-time 120 -X POST 'http://127.0.0.1:8011/sleep?level=1' > ~/out/rollout-initial-sleep.txt || fail ROLLOUT_SLEEP_FAILED
   BASE+=(--rollout-backend vllm --rollout-url http://127.0.0.1:8011)
 fi
-TRAIN=(--steps "$SMOKE_STEPS" --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-seconds "$SMOKE_TRAIN_SECONDS" --final-eval-seconds "$SMOKE_FINAL_EVAL_SECONDS")
+TRAIN=(--steps "$SMOKE_STEPS" --learning-rate 1e-4 --num-generations "$GENERATIONS" --prompts-per-step "$PROMPTS" --max-seconds "$SMOKE_TRAIN_SECONDS" --final-eval-seconds "$SMOKE_FINAL_EVAL_SECONDS")
 if [[ $SMOKE_PART_ONE == 1 ]]; then
   # Part 1 proof of concept (owner, 26 Nov; issue #2): the baseline and the main setting at λ=0, same seed and settings,
   # one after the other. Each keeps resumable checkpoints in <name>/trainer, so a later run can extend it with --resume-from.
