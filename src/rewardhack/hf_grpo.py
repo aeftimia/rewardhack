@@ -297,6 +297,25 @@ def reasons(args):
 
 
 def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
+    """`score_samples` with the LoRA folded into the weights. PEFT applies a LoRA on the fused gpt-oss experts by rebuilding
+    each layer's expert stack on every forward call, which made generation about 8x slower (measuring pass, 26 Nov); merged,
+    a decode step costs what the base model's does. Before training the adapter is zero, so merging and unmerging leave the
+    weights exactly as they were; after training only the after-evaluation follows, and the saved adapter is separate."""
+    import torch
+    from peft.tuners.tuners_utils import BaseTunerLayer
+    layers = [module for module in model.modules() if isinstance(module, BaseTunerLayer)]  # what PeftModel.merge_adapter visits
+    with torch.no_grad():
+        for layer in layers:
+            layer.merge()
+    try:
+        return score_samples(model, tokenizer, tasks, args, stage, samples, stop_at)
+    finally:
+        with torch.no_grad():
+            for layer in layers:
+                layer.unmerge()
+
+
+def score_samples(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
     """Score `samples` completions per task. With `stop_at` (a `time.monotonic()` instant), stop between tasks
     when the slowest task so far would no longer fit: whole groups are kept and the result says it is incomplete,
     instead of the hard deadline discarding the summary of a probe that had already measured most of its tasks."""

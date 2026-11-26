@@ -89,6 +89,7 @@ ln -sf /workspace/bin/lean-safe ~/lean-safe
 log start install
 # Limits on the steps that fetch from the network, so a stalled connection ends in minutes and not at the job's deadline:
 # the install took 81 s when timed, the 13 GB download 3.5 to 5.1 minutes; vLLM's install has not been timed alone (about 3 minutes estimated).
+# cap: 2x measured 81 s
 python -m venv /workspace/train-venv && timeout 300 /workspace/train-venv/bin/pip install -q torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED
 # The `hf` command comes with huggingface_hub itself; the `[cli]` extra asked for until 25 Nov does not exist, and pip stepped back through versions looking for it.
 HF=/workspace/train-venv/bin/hf
@@ -104,6 +105,7 @@ log 'verifier controls passed'
 # --- Downloads (both ungated; no Hugging Face token on this pod).
 PAIRS=("$MODEL $REV"); [[ $JUDGE_KIND == pod ]] && PAIRS+=("$JUDGE $JUDGE_REV")
 for pair in "${PAIRS[@]}"; do set -- $pair
+  # cap: 2x measured 5.1 min
   log "start download $1"; timeout 660 $HF download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-"${1##*/}".log 2>&1 || fail "DOWNLOAD_FAILED $1"
 done
 
@@ -131,6 +133,7 @@ JUDGE_ARGS=(--judge api --judge-model "$JUDGE" --judge-url "http://127.0.0.1:$JU
 
 # Question 1. 60 rows of each reading category; minutes at vLLM speed, and it gates the reward below.
 log start judge-validation
+# cap: 1.5x estimated 20 min (360 readings; about 1.6 s each measured on the laptop, so under 10 min at vLLM speed)
 timeout 1800 $PY entrypoints/validate_judge.py --out ~/out/judge-validation --per-category 60 --lean ~/lean-safe --require-acceptance "${JUDGE_ARGS[@]}" > ~/out/judge-validation.log 2>&1 || fail JUDGE_VALIDATION_FAILED
 log "end judge-validation passed"
 fi

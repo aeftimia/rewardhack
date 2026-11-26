@@ -5,6 +5,5 @@
     "AutoTokenizer.from_pretrained": ["revision"],
     "model.generate": ["max_new_tokens", "do_sample", "temperature", "top_p", "top_k", "pad_token_id"],
     "LoraConfig": ["r", "lora_alpha", "target_modules", "lora_dropout"]
-  },
-  "limit_basis": ["ops/*.sh"]
+  }
 }

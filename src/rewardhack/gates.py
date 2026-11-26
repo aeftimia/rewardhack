@@ -36,11 +36,11 @@ SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements
 PROVISIONAL_MINUTES = 15
 DRIVER_GRACE_SECONDS = 600  # what ops/remote_job.sh uses when AUTOSTOP_GRACE_SECONDS is not given
 DRIVER_JUDGE_MAX_USD = 1.0  # what ops/drive_runpod.sh passes to the pod when JUDGE_MAX_USD is not given
-MULTIPLES = {'measured': 2.0, 'estimated': 3.0}  # CLAUDE.md, "Sizing time caps and approvals"
+MULTIPLES = {'measured': 2.0, 'estimated': 1.5}  # CLAUDE.md, "Sizing time caps and approvals" (estimated: owner, 26 Nov)
 UNIT_MINUTES = {'s': 1/60, 'min': 1.0, 'h': 60.0}
 BASIS = re.compile(r'\s*(\d+(?:\.\d+)?)\s*x\s+(measured|estimated)\s+(\d+(?:\.\d+)?)\s*(s|min|h)\s*')
 READY = '.tools/venv/bin/python entrypoints/gate.py ready --remote ops/<script>.sh --deadline <minutes> ' \
-        "--basis '<2x measured|3x estimated> <time> <s|min|h>' --line <budget line> --hourly <usd> --other-usd <judge cap and other costs> [--set NAME=value ...]"
+        "--basis '<2x measured|1.5x estimated> <time> <s|min|h>' --line <budget line> --hourly <usd> --other-usd <judge cap and other costs> [--set NAME=value ...]"
 # Environment settings ops/drive_runpod.sh reads. The launch record holds the ones a launch was checked with.
 DRIVER_SETTINGS = re.compile(r'SMOKE_[A-Z_]+|LEAN_ISOLATION|JUDGE_KIND|JUDGE_MAX_USD|FORWARD_JUDGE_KEY|AUTOSTOP_GRACE_SECONDS|KEEP_POD')
 CHECK_ONLY = 'DRIVE_CHECK_ONLY'  # set to 1, the driver validates the launch and exits before it reaches for a pod
@@ -73,6 +73,37 @@ def basis_minutes(basis):
     if multiple < MULTIPLES[kind]:
         raise ValueError(f'a cap on a {kind} time is at least {MULTIPLES[kind]:g}x it; {basis.strip()!r} is {multiple:g}x')
     return multiple * amount * UNIT_MINUTES[unit]
+
+
+# Time limits in the pod scripts state what they are sized from, on their line or the one above: `# cap: 2x measured 750 s`.
+# The limit is read in the unit the comment uses. Checked by tests/test_cap_comments.py against MULTIPLES, so the launch
+# record and the scripts follow one rule (owner, 26 Nov: the check used to live in the global edit hook).
+SCRIPT_LIMITS = [re.compile(r'\btimeout\s+(?:-\S+\s+)*(\d+(?:\.\d+)?)[smh]?\b'),
+                 re.compile(r'\b\w*(?:TIMEOUT|DEADLINE|WAIT)\w*(?:=|:-)(\d+(?:\.\d+)?)\b')]  # not LIMIT: it names counts as often as times
+CAP_COMMENT = re.compile(r'cap:\s*(\d+(?:\.\d+)?)\s*x\s+(measured|estimated)\s+(\d+(?:\.\d+)?)\s*(s|min|h)\b')
+
+
+def unsized_limits(text):
+    """(line number, why) for each time limit in a shell script with no `cap:` basis, a multiple below MULTIPLES, or a
+    value under its own basis. This checks that a basis is stated and the arithmetic holds, not that the measurement is true."""
+    lines = text.splitlines()
+    found = []
+    for number, line in enumerate(lines, 1):
+        values = [float(match.group(1)) for pattern in SCRIPT_LIMITS for match in pattern.finditer(line.split('#')[0])]
+        if not values:
+            continue
+        above = lines[number-2] if number > 1 else ''
+        cap = CAP_COMMENT.search(line) or (CAP_COMMENT.search(above) if above.strip().startswith('#') else None)
+        if not cap:
+            found.append((number, 'a time limit with no stated basis: say on this line or the one above what it is sized from, '
+                                  "'# cap: 2x measured <time> <s|min|h>' or '# cap: 1.5x estimated <time> <s|min|h>'"))
+            continue
+        multiple, kind, amount, unit = float(cap.group(1)), cap.group(2), float(cap.group(3)), cap.group(4)
+        if multiple < MULTIPLES[kind]:
+            found.append((number, f'a limit on a {kind} time is at least {MULTIPLES[kind]:g}x it, and this says {multiple:g}x'))
+        elif min(values) < multiple * amount:
+            found.append((number, f'the limit {min(values):g} is under {multiple:g} x {amount:g} {unit}, the basis its own comment gives'))
+    return found
 
 
 def dirty_paths(root):

@@ -93,7 +93,7 @@ def test_the_driver_is_asked_before_anything_is_deployed_and_the_grace_is_counte
 @pytest.mark.parametrize('deadline, basis, reason', [
     (59, '2x measured 30 min', 'under the 60 min'),
     (60, '1.5x measured 30 min', 'at least 2x'),
-    (60, '2x estimated 20 min', 'at least 3x'),
+    (60, '1.4x estimated 20 min', 'at least 1.5x'),
     (19, 'fits the $0.99 left', 'must read'),
     (10, '2x measured 390 s', 'under the 13 min'),
 ])

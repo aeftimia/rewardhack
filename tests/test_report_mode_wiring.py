@@ -101,7 +101,7 @@ def test_hf_typed_evaluation_strips_special_tokens_and_routes_mode(monkeypatch, 
         def decode(self, tokens, **kw):
             decoded.append(kw['skip_special_tokens'])
             return '{}'
-    model = SimpleNamespace(parameters=lambda: iter([torch.ones(1)]), eval=lambda: None,
+    model = SimpleNamespace(parameters=lambda: iter([torch.ones(1)]), eval=lambda: None, modules=lambda: iter([]),
                             generate=lambda **kw: torch.tensor([[1, 2, 9]]))
     def score(*a, **kw):
         scored.append(kw['report_mode'])

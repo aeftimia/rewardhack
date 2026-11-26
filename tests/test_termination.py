@@ -34,6 +34,8 @@ def stub_model_tokenizer(tokens):
             return iter([])
         def named_parameters(self):
             return iter([('weight', self.weight)])
+        def modules(self):  # no adapter layers to merge for evaluation
+            return iter([])
         def eval(self):
             pass
         def generate(self, **kwargs):

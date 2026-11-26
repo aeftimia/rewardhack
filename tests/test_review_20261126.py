@@ -84,3 +84,33 @@ def test_a_dropped_row_leaves_the_kept_rows_gradient_as_if_never_sampled(tmp_pat
     trainer._compute_loss(model, {key: value if key == 'num_items_in_batch' else value[1:] for key, value in masked.items()}).backward()
     assert both.grad[0].abs().sum() == 0
     torch.testing.assert_close(both.grad[1], alone.grad[0])
+
+
+def test_evaluation_merges_the_adapter_and_restores_the_weights(monkeypatch):
+    """PEFT rebuilt the gpt-oss expert stacks on every decode step, about 8x slower (measuring pass, 26 Nov); evaluation now
+    runs with the LoRA merged. It must see the adapted model, and leave the weights and adapter as they were."""
+    import torch
+    from peft import get_peft_model
+    from test_training_integration import tiny
+    model, _ = tiny('moe')
+    peft = get_peft_model(model, hf_grpo.lora_config(model, 2))
+    with torch.no_grad():
+        for name, p in peft.named_parameters():
+            if 'lora_B' in name:
+                p.normal_()  # a trained adapter, so merging changes the output
+    ids = torch.tensor([[3, 4, 5]])
+    peft.eval()
+    with torch.no_grad():
+        adapted = peft(ids).logits
+    weights = {name: p.detach().clone() for name, p in peft.named_parameters()}
+    seen = []
+    def score_samples(model, *args):
+        with torch.no_grad():
+            seen.append(model(ids).logits)
+        return 'scored'
+    monkeypatch.setattr(hf_grpo, 'score_samples', score_samples)
+    assert hf_grpo.evaluate(model, None, [], None, 'after') == 'scored'
+    torch.testing.assert_close(seen[0], adapted, rtol=1e-4, atol=1e-4)  # merged, the model is the adapted one
+    assert not any(getattr(m, 'merged', False) for m in peft.modules())
+    for name, p in peft.named_parameters():
+        torch.testing.assert_close(p.detach(), weights[name], rtol=1e-5, atol=1e-6)
