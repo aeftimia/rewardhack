@@ -47,9 +47,11 @@ trap cleanup EXIT
 read -ra RUNS <<< "${PART_ONE_RUNS[$SMOKE_PART_ONE]}"
 # Results written: about 20 GB per Part 1 run with expert LoRA (adapters and checkpoints); 10 GB for the preflight runs.
 OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
-# Room under /workspace for the environments, the uv cache and the weights; gpt-oss-120b adds about 65 GB and a third environment.
-WORKSPACE_NEED_GB=(40 120)  # indexed by SMOKE_PROBE_LARGE
-pod_self_test "${WORKSPACE_NEED_GB[$SMOKE_PROBE_LARGE]}" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
+# Room under /workspace for the environments, the uv cache and the weights; gpt-oss-120b adds about 65 GB and a third
+# environment, unless a launch on this pod already fetched it (a relaunch on a kept pod keeps /workspace).
+LARGE_SNAPSHOT=$HF_HOME/hub/models--${GPT_OSS_120B/\//--}/snapshots/$GPT_OSS_120B_REV
+if [[ $SMOKE_PROBE_LARGE == 1 && ! -d $LARGE_SNAPSHOT ]]; then WORKSPACE_NEED_GB=120; else WORKSPACE_NEED_GB=40; fi
+pod_self_test "$WORKSPACE_NEED_GB" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
 MODEL=$GPT_OSS_20B; REV=$GPT_OSS_20B_REV
 JUDGE=$POD_JUDGE; JUDGE_REV=$POD_JUDGE_REV
 # The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
@@ -161,9 +163,10 @@ log 'verifier controls passed'
 
 if [[ $JUDGE_KIND == api ]]; then
 # JUDGE_MAX_USD bounds the whole script: the cap is enforced per process, split over the processes that call the judge.
-# Preflight: the probe and two training runs. Part 1: its two runs (the driver refuses it with a probe or a further run);
-# a third share there only cut each run's allowance, and 4 prompt groups per step make a run's judge use about 4 times larger.
-JUDGE_PROCESSES=(3 "${#RUNS[@]}")  # indexed by whether this is a Part 1 job; the gpt-oss-120b probe calls no judge
+# Preflight: the probe and two training runs. Part 1: one share per training run of the job (ops/pod_pins.env); an extra
+# share only cuts each run's allowance, and 4 prompt groups per step make a run's judge use about 4 times larger.
+# Indexed by whether this is a Part 1 job; the gpt-oss-120b probe calls no judge, and a probe-only job's single share is unused.
+JUDGE_PROCESSES=(3 $((${#RUNS[@]} > 0 ? ${#RUNS[@]} : 1)))
 JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano
             --judge-max-usd "$(awk -v cap="${JUDGE_MAX_USD:?the driver passes JUDGE_MAX_USD}" -v n="${JUDGE_PROCESSES[$((SMOKE_PART_ONE > 0))]}" 'BEGIN { printf "%.4f", cap / n }')")
 else
@@ -189,7 +192,7 @@ fi
 BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" --reasoning-effort low --thinking unsupported --taskset hard --attn-implementation eager --mxfp4 dequantize
       --max-completion-length 2048 --num-generations 8 --eval-limit "${SMOKE_EVAL_LIMIT:-12}" --eval-samples 2 --save-every 8 --stop-no-variation 99
       "${JUDGE_ARGS[@]}")
-# The funded arm at λ=0.5: the probe and the preflight training steps. SMOKE_PART_ONE=1 trains the Part 1 pair instead (below).
+# The funded arm at λ=0.5: the probe and the preflight training steps. A Part 1 job (SMOKE_PART_ONE above 0) trains its runs instead (below).
 FUNDED=(--arm report_correct --penalty 0.5)
 # Exploration is measured before updates, on stratified training groups with eight samples each.
 # SMOKE_* settings exist because the first pod run measured generation at about 2.5x the time these defaults
@@ -244,6 +247,15 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   curl -fsS --max-time 120 -X POST "http://127.0.0.1:$ROLLOUT_PORT/sleep?level=1" > ~/out/rollout-initial-sleep.txt || fail ROLLOUT_SLEEP_FAILED
   BASE+=(--rollout-backend vllm --rollout-url "http://127.0.0.1:$ROLLOUT_PORT")
 fi
+if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
+  # The gpt-oss-120b probe's environment is checked now, not after the training: a broken one found then would cost a
+  # relaunch. It installs beside the model download (cap in its own line above) and has had minutes since.
+  log start probe-install
+  wait "$PROBE_INSTALL_PID" || fail PROBE_INSTALL_FAILED
+  $UV pip freeze --python /workspace/probe-venv/bin/python > ~/out/pip-freeze-probe.txt || fail PROBE_FREEZE_FAILED
+  /workspace/probe-venv/bin/python -c 'import vllm; from vllm import LLM, SamplingParams; import rewardhack.vllm_probe, rewardhack.hf_grpo; print("probe environment: vllm", vllm.__version__)' \
+    >> ~/out/steps.log 2>&1 || fail PROBE_ENVIRONMENT_BROKEN
+fi
 # The batch shape of every training step in this script, so that no comparison below changes it by accident.
 SHAPE=(--num-generations "$GENERATIONS" --prompts-per-step "$PROMPTS")
 TRAIN=(--steps "$SMOKE_STEPS" --learning-rate 1e-4 "${SHAPE[@]}" --max-seconds "$SMOKE_TRAIN_SECONDS" --final-eval-seconds "$SMOKE_FINAL_EVAL_SECONDS")
@@ -271,21 +283,29 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   # false statements of the training split, the neutral prompt, inference only: rows are scored on the laptop with
   # entrypoints/rescore.py (--lean none), so pod time goes to sampling only. It needs the whole card: the rollout server goes first.
   if [[ -n $ROLLOUT_PID ]]; then stop_server "$ROLLOUT_PID"; ROLLOUT_PID=; fi
+  # The same threshold as the self-test's check for a busy card (pod_lib.sh); the wait's limit is in ops/pod_pins.env.
   free_card() { local used=unread
-    # cap: 3x estimated 20 s (a stopped vLLM server releases its memory within seconds)
-    for _ in $(seq 30); do used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits) || fail NVIDIA_SMI_FAILED; ((used < 2048)) && return 0; sleep 2; done
-    fail "CARD_NOT_FREED: $used MiB still in use before the gpt-oss-120b probe"; }
-  free_card
+    for _ in $(seq $((CARD_FREE_SECONDS / 2))); do
+      used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1) || fail NVIDIA_SMI_FAILED
+      ((used < 1024)) && return 0; sleep 2
+    done
+    fail "CARD_NOT_FREED: $used MiB still in use after ${CARD_FREE_SECONDS} s, before the gpt-oss-120b probe"; }
   wait "$LARGE_DOWNLOAD_PID" || fail "DOWNLOAD_FAILED $GPT_OSS_120B"
-  wait "$PROBE_INSTALL_PID" || fail PROBE_INSTALL_FAILED
-  $UV pip freeze --python /workspace/probe-venv/bin/python > ~/out/pip-freeze-probe.txt || fail PROBE_FREEZE_FAILED
-  large() { name=$1; shift; log "start $name"
-    /workspace/probe-venv/bin/python entrypoints/probe_vllm.py --out ~/out/"$name" --lean none --model "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" \
-      --taskset hard --tasks false "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
-    log "end $name passed"; }
+  # The stages are independent: a failed one (each writes its rows only once all its answers are in) is recorded and the
+  # next still runs; the job fails at the end if any did. The outer limit catches a process hung after its own deadline.
+  # Each starts on a freed card: the previous stage's engine releases its memory after the process exits.
+  # PATH: FlashInfer builds its kernels with the environment's ninja (the 5 Nov probes failed without it). HF_HUB_OFFLINE:
+  # the weights are already here; on 5 Nov the engine's own fetch failed in the xet transfer.
+  PROBE_FAILED=()
+  large() { local name=$1 seconds=$2; shift 2; free_card; log "start $name"
+    if HF_HUB_OFFLINE=1 PATH="/workspace/probe-venv/bin:$PATH" timeout $((seconds + PROBE_LARGE_EXIT_SECONDS)) /workspace/probe-venv/bin/python entrypoints/probe_vllm.py \
+         --out ~/out/"$name" --lean none --model "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" --taskset hard --tasks false --max-seconds "$seconds" "$@" > ~/out/"$name".log 2>&1; then
+      log "end $name passed"
+    else log "end $name FAILED exit=$?"; PROBE_FAILED+=("$name"); fi; }
   # Low effort, as the training runs sample: 320 answers. High effort, where the frontier models found their refutations:
   # 80 answers of up to 8,192 tokens. Each stage's time limit, model load included, is in ops/pod_pins.env.
-  large probe-120b-low --samples 4 --max-tokens 2048 --max-model-len 3072 --max-seconds "$PROBE_LARGE_LOW_SECONDS" --template-kwargs '{"reasoning_effort": "low"}'
-  large probe-120b-high --samples 1 --max-tokens 8192 --max-model-len 9216 --max-seconds "$PROBE_LARGE_HIGH_SECONDS" --template-kwargs '{"reasoning_effort": "high"}'
+  large probe-120b-low "$PROBE_LARGE_LOW_SECONDS" --samples 4 --max-tokens 2048 --max-model-len 3072 --template-kwargs '{"reasoning_effort": "low"}'
+  large probe-120b-high "$PROBE_LARGE_HIGH_SECONDS" --samples 1 --max-tokens 8192 --max-model-len 9216 --template-kwargs '{"reasoning_effort": "high"}'
+  ((${#PROBE_FAILED[@]} == 0)) || fail "PROBE_LARGE_FAILED ${PROBE_FAILED[*]}"
 fi
 # ops/remote_job.sh records EXIT_CODE and DONE after this script exits.

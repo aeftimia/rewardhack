@@ -43,7 +43,7 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', **settings):
                                         SMOKE_TRAIN_SECONDS='6000'), 'SMOKE_PART_ONE=1 needs'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_TRAIN_SECONDS='6000', SMOKE_MEMORY_LIMIT='4096'), 'SMOKE_PART_ONE=1 needs'),
-    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='3'), "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to 2)"),
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='4'), "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to 3)"),
     # The gpt-oss-120b probe follows a Part 1 job's training, on its vLLM path (owner, 26 Nov; notes section 77).
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PROBE_LARGE='1'), 'SMOKE_PROBE_LARGE=1 runs after a Part 1 job'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PROBE_LARGE='2'), 'SMOKE_PROBE_LARGE must be 0 or 1'),
@@ -71,10 +71,15 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', **settings):
     # Two runs of 110 minutes, each with a 13.5-minute scoring tail, after 30 minutes of setup need 277 minutes; the driver is given 240.
     ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='6600'), 'needs a deadline of at least 277 minutes'),
-    # One run of 160 minutes with its tail (173.5) after 30 minutes of setup, and the gpt-oss-120b probe's 15 + 30 + 1 minutes:
-    # 250 minutes; the driver is given 240. Without the probe the same run fits (the next test).
+    # One run of 160 minutes with its tail (173.5) after 30 minutes of setup, and the gpt-oss-120b probe's 2 x 1 + 15 + 30 + 2 x 5
+    # minutes: 261 minutes; the driver is given 240. Without the probe the same run fits (the next test).
     ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='2', SMOKE_PROBE_LARGE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
-                                        SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='9600'), 'SMOKE_PART_ONE=2 needs a deadline of at least 250 minutes'),
+                                        SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='9600'), 'SMOKE_PART_ONE=2 needs a deadline of at least 261 minutes'),
+    # The probe-only job (no runs) exists for a relaunch of the probe; alone it would pay for setup and nothing else.
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='3'), 'it is only for SMOKE_PROBE_LARGE=1'),
+    # Leading zeros: 00 once passed as a Part 1 job with no runs, 08 died on an octal error (review round 25).
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='00'), 'SMOKE_PART_ONE must index a job'),
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='08'), 'SMOKE_PART_ONE must index a job'),
 ])
 def test_the_driver_refuses_before_it_reaches_for_the_pod(tmp_path, remote, settings, said):
     code, output, reached = drive(tmp_path, remote, **settings)
@@ -105,13 +110,15 @@ def test_a_complete_part_one_launch_passes_every_check(tmp_path):
     assert code != 2 and 'invalid' not in output and 'does not read' not in output and reached
 
 
-@pytest.mark.parametrize('extra', [{}, {'SMOKE_PROBE_LARGE': '1'}])
+@pytest.mark.parametrize('extra', [{}, {'SMOKE_PROBE_LARGE': '1'}, {'SMOKE_PROBE_LARGE': '1', 'SMOKE_PART_ONE': '3'}])
 def test_a_single_run_part_one_launch_passes_every_check(tmp_path, extra):
-    """The λ=0.5 job (SMOKE_PART_ONE=2) is one run, so it fits a deadline the pair would not: 30 + 173.5 = 203.5 of 240
-    minutes; with the gpt-oss-120b probe, 30 + (9000 + 810 + 2760) s = 239.5. Both settings reach the pod."""
-    code, output, reached = drive(tmp_path, JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key',
-                                  LEAN_ISOLATION='none', SMOKE_PART_ONE='2', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0', SMOKE_STEPS='60',
-                                  SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='9000', SMOKE_TOKEN_LIMIT='2048', SMOKE_VLLM_ROLLOUTS='1', **extra)
+    """The λ=0.5 job (SMOKE_PART_ONE=2) is one run, so it fits a deadline the pair would not: 30 + 153.5 = 183.5 of 240
+    minutes; with the gpt-oss-120b probe, 30 + (8340 + 810 + 3420) s = 239.5. Both settings reach the pod, as does the
+    probe-only job (SMOKE_PART_ONE=3) with the probe."""
+    settings = dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key',
+                    LEAN_ISOLATION='none', SMOKE_PART_ONE='2', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0', SMOKE_STEPS='60',
+                    SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='8340', SMOKE_TOKEN_LIMIT='2048', SMOKE_VLLM_ROLLOUTS='1')
+    code, output, reached = drive(tmp_path, **(settings | extra))
     assert code != 2 and 'invalid' not in output and 'does not read' not in output and reached
 
 

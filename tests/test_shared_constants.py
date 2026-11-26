@@ -43,3 +43,19 @@ def test_the_launch_gate_counts_what_the_driver_and_runner_actually_do():
     assert f'--arm-only {gates.PROVISIONAL_MINUTES*60}' in driver
     assert f'AUTOSTOP_GRACE_SECONDS:-{gates.DRIVER_GRACE_SECONDS}}}' in runner
     assert driver.count(f'JUDGE_MAX_USD:-{gates.DRIVER_JUDGE_MAX_USD:g}}}') == driver.count('JUDGE_MAX_USD:-') > 0
+
+
+def test_every_part_one_job_names_known_arms_and_numeric_penalties():
+    """A typo in ops/pod_pins.env's PART_ONE_RUNS would surface only on the pod, after setup was paid (review round 25)."""
+    import subprocess
+    from rewardhack.outcomes import ARMS
+    rows = subprocess.run(['bash', '-c', 'source ops/pod_pins.env; printf "%s\\n" "${PART_ONE_RUNS[@]}"'], cwd=ROOT,
+                          check=True, capture_output=True, text=True).stdout.split('\n')[:-1]
+    assert rows[0] == '' and len(rows) >= 2  # row 0 is the preflight run, not a Part 1 job
+    for row in rows[1:]:
+        names = []
+        for run in row.split():
+            name, arm, penalty = run.split(':')
+            assert re.fullmatch(r'[a-z0-9]+', name) and arm in ARMS and 0 <= float(penalty) <= 1, run
+            names.append(name)
+        assert len(names) == len(set(names)), row

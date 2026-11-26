@@ -35,7 +35,7 @@ pod_self_test() {
   free_gb=$(df --output=avail -BG /workspace | tail -1 | tr -dc 0-9)
   [[ $free_gb -ge $need_gb ]] || fail "SELF_TEST: /workspace has ${free_gb} GB free, the job needs $need_gb"
   # Results go to ~/out, on the container disk, and a relaunch keeps the earlier run beside it (out.prev.*). With expert
-  # LoRA a Part 1 pair writes about 40 GB there (adapter snapshots about 1 GB each, checkpoints about 3 GB): a full disk
+  # LoRA each Part 1 run writes about 20 GB there (adapter snapshots about 1 GB each, checkpoints about 3 GB): a full disk
   # fails a save late in a run, so the room is checked before anything is paid for beyond setup.
   # On one disk the two needs add up.
   if [[ $(df --output=target /workspace | tail -1) == $(df --output=target "$HOME" | tail -1) ]]; then

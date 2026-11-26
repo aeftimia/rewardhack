@@ -39,3 +39,17 @@ def test_the_multiples_are_stated_only_in_gates():
         text = (ROOT/name).read_text()
         assert not re.search(r'\d+(?:\.\d+)?x\s+(?:the\s+)?(?:an?\s+)?(?:its\s+)?(?:longest\s+)?(measured|estimate)', text), name
     assert 'gates.MULTIPLES' in (ROOT/'CLAUDE.md').read_text()
+
+
+def test_every_time_limit_in_the_pod_pins_states_its_basis():
+    """The gpt-oss-120b probe's limits live in ops/pod_pins.env, read by the smoke script and the driver, under names the
+    script scan does not match (review round 25): each `*_SECONDS=` there states its basis on the line above."""
+    import re
+    lines = (ROOT/'ops/pod_pins.env').read_text().splitlines()
+    limits = [(number, int(match.group(1))) for number, line in enumerate(lines) if (match := re.match(r'[A-Z_]+_SECONDS=(\d+)$', line))]
+    assert limits
+    for number, seconds in limits:
+        cap = gates.CAP_COMMENT.search(lines[number-1])
+        assert cap, lines[number]
+        multiple, kind, amount, unit = float(cap.group(1)), cap.group(2), float(cap.group(3)), cap.group(4)
+        assert multiple >= gates.MULTIPLES[kind] and seconds >= multiple * amount * gates.UNIT_MINUTES[unit] * 60, lines[number]
