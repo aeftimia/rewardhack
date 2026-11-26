@@ -36,11 +36,14 @@ SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements
 PROVISIONAL_MINUTES = 15
 DRIVER_GRACE_SECONDS = 600  # what ops/remote_job.sh uses when AUTOSTOP_GRACE_SECONDS is not given
 DRIVER_JUDGE_MAX_USD = 1.0  # what ops/drive_runpod.sh passes to the pod when JUDGE_MAX_USD is not given
-MULTIPLES = {'measured': 2.0, 'estimated': 1.5}  # CLAUDE.md, "Sizing time caps and approvals" (estimated: owner, 26 Nov)
+# The one statement of the cap multiples: CLAUDE.md, the help text below and every check read them from here
+# (tests/test_cap_comments.py keeps the numbers out of CLAUDE.md). Owner: 2026-11-25; estimated lowered from 3 on 26 Nov.
+MULTIPLES = {'measured': 2.0, 'estimated': 1.5}
+BASIS_FORMS = ' or '.join(f"'{multiple:g}x {kind} <time> <s|min|h>'" for kind, multiple in MULTIPLES.items())
 UNIT_MINUTES = {'s': 1/60, 'min': 1.0, 'h': 60.0}
 BASIS = re.compile(r'\s*(\d+(?:\.\d+)?)\s*x\s+(measured|estimated)\s+(\d+(?:\.\d+)?)\s*(s|min|h)\s*')
 READY = '.tools/venv/bin/python entrypoints/gate.py ready --remote ops/<script>.sh --deadline <minutes> ' \
-        "--basis '<2x measured|1.5x estimated> <time> <s|min|h>' --line <budget line> --hourly <usd> --other-usd <judge cap and other costs> [--set NAME=value ...]"
+        f"--basis <{BASIS_FORMS}> --line <budget line> --hourly <usd> --other-usd <judge cap and other costs> [--set NAME=value ...]"
 # Environment settings ops/drive_runpod.sh reads. The launch record holds the ones a launch was checked with.
 DRIVER_SETTINGS = re.compile(r'SMOKE_[A-Z_]+|LEAN_ISOLATION|JUDGE_KIND|JUDGE_MAX_USD|FORWARD_JUDGE_KEY|AUTOSTOP_GRACE_SECONDS|KEEP_POD')
 CHECK_ONLY = 'DRIVE_CHECK_ONLY'  # set to 1, the driver validates the launch and exits before it reaches for a pod
@@ -96,7 +99,7 @@ def unsized_limits(text):
         cap = CAP_COMMENT.search(line) or (CAP_COMMENT.search(above) if above.strip().startswith('#') else None)
         if not cap:
             found.append((number, 'a time limit with no stated basis: say on this line or the one above what it is sized from, '
-                                  "'# cap: 2x measured <time> <s|min|h>' or '# cap: 1.5x estimated <time> <s|min|h>'"))
+                                  f"'# cap: <basis>' with a basis of {BASIS_FORMS}"))
             continue
         multiple, kind, amount, unit = float(cap.group(1)), cap.group(2), float(cap.group(3)), cap.group(4)
         if multiple < MULTIPLES[kind]:
@@ -318,7 +321,9 @@ def flag_value(words, name):
 
 
 def judge_problems(words):
-    """A metered judge needs its cap and prices on the command line; a judge served from this machine is not metered."""
+    """A metered judge needs its cap on the command line and a model with a row in model_io.PRICES (the one statement of
+    a price); a judge served from this machine is not metered."""
+    from .model_io import PRICES
     if flag_value(words, '--judge') != 'api':
         return []
     url = flag_value(words, '--judge-url')
@@ -327,10 +332,9 @@ def judge_problems(words):
     problems = []
     if flag_value(words, '--judge-max-usd') is None and flag_value(words, '--max-usd') is None:
         problems.append('a metered API judge needs a spend cap: add --judge-max-usd')
-    for name in ('--judge-usd-in', '--judge-usd-out'):
-        value = flag_value(words, name)
-        if value is None or not re.fullmatch(r'\d+(\.\d+)?', value) or float(value) <= 0:
-            problems.append(f'a metered API judge needs its real price: {name} is absent or zero, so the cap would count every call as free')
+    model = flag_value(words, '--judge-model')
+    if model not in PRICES:
+        problems.append(f'a metered API judge needs a model with a price in model_io.PRICES, so the cap counts real dollars: --judge-model is {model!r}')
     return problems
 
 

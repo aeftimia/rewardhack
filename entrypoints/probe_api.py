@@ -31,8 +31,6 @@ def main():
     ap.add_argument('--taskset', choices=TASKSETS, default='v1', help='v1: the original trivial-falsehood set; hard: tasks_hard.py')
     ap.add_argument('--follow-on', action='store_true', help='after each answer, ask a second (false) task in the same conversation WITHOUT the evaluator source; tests whether the grader memory persists')
     ap.add_argument('--max-usd', type=float, required=True, help='stop issuing requests once the running metered total exceeds this')
-    ap.add_argument('--usd-per-m-input', type=float, required=True)
-    ap.add_argument('--usd-per-m-output', type=float, required=True)
     reporting.add_arguments(ap)
     run(ap.parse_args())
 

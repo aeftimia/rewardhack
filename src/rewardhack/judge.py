@@ -23,7 +23,7 @@ import random
 import re
 import threading
 from collections import Counter
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -155,9 +155,10 @@ def served_here(url):
     return urlsplit(url).hostname in THIS_MACHINE
 
 
-def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, max_usd=None):
-    from .model_io import Meter, call
-    meter = Meter(usd_per_m_input, usd_per_m_output)
+def _api(model_id, base_url, key_env, extra, max_usd=None):
+    from .model_io import Meter, call, price
+    # Prices come from model_io.PRICES (one row per model); a server on this machine is not metered.
+    meter = Meter(0.0, 0.0) if served_here(base_url) else Meter(*price(model_id))
     # The schema makes the reply type-checked by the server (OpenAI structured outputs; vLLM guided decoding).
     args = SimpleNamespace(model=model_id, max_tokens=ANSWER_TOKENS, reasoning_effort=None, temperature=0, base_url=base_url, key_env=key_env)
     extra_body = {'response_format': SCHEMA, **extra}
@@ -190,8 +191,10 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
     return ask, meter
 
 
-def make_judge(kind, model=None, revision=None, base_url=OPENAI_URL, key_env='OPENAI_API_KEY',
-               usd_per_m_input=0.0, usd_per_m_output=0.0, extra=None, max_usd=None):
+NO_EXTRA = MappingProxyType({})
+
+
+def make_judge(kind, model=None, revision=None, base_url=OPENAI_URL, key_env='OPENAI_API_KEY', extra=NO_EXTRA, max_usd=None):
     """A judge callable, or None for kind 'none'. `judge.meter` carries token and dollar totals for `api`."""
     if max_usd is not None:
         max_usd = nonnegative_finite(max_usd, 'judge spend cap')
@@ -206,7 +209,9 @@ def make_judge(kind, model=None, revision=None, base_url=OPENAI_URL, key_env='OP
         judge.meter = None
         return judge
     from .model_io import local_reader
-    ask, meter = (local_reader(model, revision, ANSWER_TOKENS), None) if kind == 'local' else _api(model, base_url, key_env, usd_per_m_input, usd_per_m_output, extra or {}, max_usd)
+    readers = {'local': lambda: (local_reader(model, revision, ANSWER_TOKENS), None),
+               'api': lambda: _api(model, base_url, key_env, extra, max_usd)}
+    ask, meter = readers[kind]()
 
     streak = 0
     lock = threading.Lock()  # rows are scored concurrently: the streak counts consecutive failed readings as they finish
@@ -269,8 +274,6 @@ def add_arguments(ap):
     ap.add_argument('--judge-revision', default=None)
     ap.add_argument('--judge-url', default=OPENAI_URL, help='OpenAI-compatible endpoint, e.g. a vLLM server on the pod')
     ap.add_argument('--judge-key-env', default='OPENAI_API_KEY')
-    ap.add_argument('--judge-usd-in', type=float, default=0.0, help='USD per million input tokens, for the metered total')
-    ap.add_argument('--judge-usd-out', type=float, default=0.0)
     ap.add_argument('--judge-max-usd', type=float, help='a metered judge stops the run at this spend')
     ap.add_argument('--judge-extra', type=json.loads, default={}, help='JSON merged into each request, e.g. {"chat_template_kwargs": {"enable_thinking": false}}')
 
@@ -287,16 +290,21 @@ def check_reward_args(ap, args):
     if mode == 'prose' and args.arm == 'report_correct' and args.judge == 'none':
         ap.error('--arm report_correct needs --judge')
     if ASKS_AN_ENDPOINT[args.judge] and not served_here(args.judge_url):
-        # A paid judge with no cap, or priced at zero so the cap can never trip, is an unbounded bill.
-        if args.judge_max_usd is None or not (args.judge_usd_in > 0 and args.judge_usd_out > 0):
-            ap.error(f'--judge api at {args.judge_url}, which is not on this machine, needs --judge-max-usd and non-zero --judge-usd-in and --judge-usd-out')
+        # A paid judge with no cap, or with no checked price so the cap could never trip, is an unbounded bill.
+        if args.judge_max_usd is None:
+            ap.error(f'--judge api at {args.judge_url}, which is not on this machine, needs --judge-max-usd')
+        from .model_io import price
+        try:
+            price(args.judge_model)
+        except ValueError as error:
+            ap.error(str(error))
     if args.judge == 'triage' and not args.dry_run:
         ap.error("--judge triage is the keyword heuristic: it may only read reports in a plumbing run marked --dry-run")
 
 
 def check_arguments(ap, args, **caps):
     """Refuse bad prices and caps as a usage error, before an entrypoint creates anything. `caps` are its own spend caps."""
-    values = {'--judge-usd-in': args.judge_usd_in, '--judge-usd-out': args.judge_usd_out, '--judge-max-usd': args.judge_max_usd, **caps}
+    values = {'--judge-max-usd': args.judge_max_usd, **caps}
     for name, value in values.items():
         try:
             if value is not None:
@@ -318,7 +326,7 @@ def from_args(args):
 
 def _from_args(args):
     return make_judge(args.judge, args.judge_model, args.judge_revision, args.judge_url, args.judge_key_env,
-                      args.judge_usd_in, args.judge_usd_out, args.judge_extra, args.judge_max_usd)
+                      args.judge_extra, args.judge_max_usd)
 
 
 def read_set(folder):

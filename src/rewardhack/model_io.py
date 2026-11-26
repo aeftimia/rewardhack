@@ -102,6 +102,23 @@ def token_counts(usage):
     return counts
 
 
+# USD per million (input, output) tokens for each metered model this project calls: the one statement of a price (owner,
+# 26 Nov: a price belongs in its model's row, not on a command line). An unlisted model raises, so a call is never
+# metered at a price nobody checked; a server on this machine is not metered and needs no row.
+PRICES = {
+    'gpt-5.4-nano': (0.20, 1.25),
+    'gpt-5.4-mini': (0.75, 4.50),
+    'gpt-5.5': (5.00, 30.00),
+}
+
+
+def price(model):
+    """(input, output) USD per million tokens for a metered model; raises for one with no row in PRICES."""
+    if model not in PRICES:
+        raise ValueError(f'no price for {model!r}: add its row to model_io.PRICES before calling it on a metered endpoint')
+    return PRICES[model]
+
+
 class Meter:
     """Running token and dollar totals from the API's usage counters.
 

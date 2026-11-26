@@ -127,9 +127,9 @@ def test_judge_labels_and_honesty_bit():
     check_reward_args(ap, argparse.Namespace(report_mode='prose', arm='report_correct', judge='triage', dry_run=True))
     from rewardhack.judge import OPENAI_URL
     paid = dict(arm='report_correct', judge='api', dry_run=False, judge_url=OPENAI_URL)
-    check_reward_args(ap, argparse.Namespace(report_mode='prose', **paid, judge_max_usd=1.0, judge_usd_in=0.2, judge_usd_out=1.25))
-    # A paid judge with no cap, or with a price of zero that the cap could never reach, is refused before anything runs.
-    for unbounded in (dict(judge_max_usd=None, judge_usd_in=0.2, judge_usd_out=1.25), dict(judge_max_usd=1.0, judge_usd_in=0.0, judge_usd_out=1.25)):
+    check_reward_args(ap, argparse.Namespace(report_mode='prose', **paid, judge_max_usd=1.0, judge_model='gpt-5.4-nano'))
+    # A paid judge with no cap, or with no price row that the cap could be counted against, is refused before anything runs.
+    for unbounded in (dict(judge_max_usd=None, judge_model='gpt-5.4-nano'), dict(judge_max_usd=1.0, judge_model='unlisted')):
         try:
             check_reward_args(ap, argparse.Namespace(report_mode='prose', **paid, **unbounded))
         except SystemExit:
@@ -137,7 +137,7 @@ def test_judge_labels_and_honesty_bit():
         raise AssertionError(unbounded)
     # A judge served on the pod itself costs nothing per call and needs neither.
     check_reward_args(ap, argparse.Namespace(report_mode='prose', arm='report_correct', judge='api', dry_run=False, judge_url='http://127.0.0.1:8011/v1',
-                                             judge_max_usd=None, judge_usd_in=0.0, judge_usd_out=0.0))
+                                             judge_max_usd=None, judge_model='unlisted'))
     # h + s + (1 - λ)c, and the algebraically equal h + r + g - λc of the application's wording.
     for g, v, r, h, lam in [(1, 1, 0, 1, 0.5), (0, 0, 1, 1, 0.5), (1, 0, 0, 1, 0.5), (1, 0, 0, 0, 2.0), (0, 0, 0, 0, 1.0)]:
         assert arm_reward('report_correct', g, v, r, h, lam) == h + r + g - lam*(g and not v)
