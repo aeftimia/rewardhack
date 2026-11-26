@@ -4,6 +4,7 @@ Adapted from exit-reward-research@ec0565e scripts/grpo_lean_pilot.py. Arms share
 reward differs. Entrypoint: `entrypoints/run.py`.
 """
 import hashlib
+import importlib.metadata
 import json
 import math
 import resource
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from . import deadline, jsonl
 from .gpu import GpuSampler
-from .outcomes import judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
+from .outcomes import accumulate, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, verifier_advice, completion_truncated, reward_groups, score, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
@@ -62,6 +63,122 @@ EVALUATION_SEED_OFFSET = 31415
 
 def evaluation_seed(args):
     return EVALUATION_SEED_OFFSET + args.seed
+
+
+# What a training trajectory depends on. A run resumed from a checkpoint must have the same values, or it would continue
+# a different experiment from the saved optimizer state. `--steps` is left out: raising it is how a run is extended.
+# The judge decides the report_correct reward, the verifier's retry allowance decides which slow proofs are scored, the
+# attention and expert implementations change the numbers, and `adapter` is where a branch run started.
+RESUME_SETTINGS = ('model', 'revision', 'arm', 'penalty', 'report_mode', 'taskset', 'train_limit', 'prompt_variant', 'reasoning_effort',
+                   'thinking', 'mxfp4', 'quant', 'attn_implementation', 'experts_implementation', 'lora_rank', 'learning_rate',
+                   'lr_schedule', 'scale_rewards', 'max_grad_norm', 'router_aux_loss_coef', 'beta', 'num_generations',
+                   'prompts_per_step', 'max_completion_length', 'seed', 'save_every', 'stop_no_variation', 'rollout_backend',
+                   'judge', 'judge_model', 'judge_revision', 'judge_url', 'judge_extra', 'verifier_retry_seconds', 'adapter',
+                   # The resumed run carries the original's before-evaluation over, so its after-evaluation must match it.
+                   'eval_limit', 'eval_samples')
+RUN_SETTINGS = 'run-settings.json'
+
+
+def source_sha256():
+    """The library's code, file by file: what scored and trained a run."""
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(Path(__file__).parent.glob('*.py'))}
+
+
+# The libraries whose code decides the update, the task order and the checkpoint format.
+TRAINING_LIBRARIES = ('torch', 'transformers', 'trl', 'peft', 'accelerate', 'datasets')
+
+
+def run_settings(args):
+    """The settings as JSON values (a path is saved as its text), with the code and the training libraries' versions: a
+    resume after a change to scoring or training would continue the saved optimizer state on a different objective."""
+    libraries = {name: importlib.metadata.version(name) for name in TRAINING_LIBRARIES}
+    return json.loads(json.dumps(dict({key: vars(args)[key] for key in RESUME_SETTINGS}, code_sha256=source_sha256(), libraries=libraries,
+                                      steps=args.steps), default=str))
+
+
+# What a checkpoint must hold to continue a run: the adapter, the optimizer, the scheduler and the random state.
+CHECKPOINT_FILES = ('adapter_model.safetensors', 'adapter_config.json', 'optimizer.pt', 'scheduler.pt', 'rng_state.pth')
+
+
+def resume_point(args):
+    """Where a resume starts: the run that wrote the checkpoint (<run>/trainer/checkpoint-N), the steps it had finished,
+    and its whole passes over the tasks (trainer_state's `epoch` is exact at a pass's end)."""
+    state = json.loads((args.resume_from/'trainer_state.json').read_text())
+    return args.resume_from.parent.parent, state['global_step'], math.floor(state['epoch'])
+
+
+def original_records(args):
+    """The original run's rollouts and step records up to its checkpoint, read no further than needed: a run killed from
+    outside may end in a half-written line, past its checkpoint. Rows of a failed step's partial batch are left out."""
+    original, done, _ = resume_point(args)
+    wanted = done*args.num_generations*args.prompts_per_step
+    rows, lines = [], []
+    # Each loop stops on the last line it needs, before parsing the next one.
+    for row in jsonl.read(original/'training-rollouts.jsonl'):
+        if 'partial_batch' not in row:
+            rows.append(row)
+        if len(rows) == wanted:
+            break
+    for line in jsonl.read(original/'steps.jsonl'):
+        lines.append(line)
+        if line['step'] == done:
+            break
+    if len(rows) != wanted or [line['step'] for line in lines] != list(range(1, done+1)):
+        raise ValueError(f'{original} does not hold the records of the {done} steps before its checkpoint')
+    return rows, lines
+
+
+def check_resume(args):
+    """Refuse a resume that would not continue the run that wrote the checkpoint (<run>/trainer/checkpoint-N).
+
+    Called before the model is loaded, so a wrong resume costs nothing on a pod. `run.py` allows --resume-from only in train mode."""
+    if not (args.resume_from/'trainer_state.json').is_file():
+        raise ValueError(f'--resume-from {args.resume_from} is not a trainer checkpoint: it has no trainer_state.json')
+    # transformers resumes without a word from a checkpoint missing its optimizer or scheduler (a fresh one) or its random
+    # state (a warning): a copy caught mid-rotation would continue as a different run.
+    missing = [name for name in CHECKPOINT_FILES if not (args.resume_from/name).is_file()]
+    if missing:
+        raise ValueError(f"--resume-from {args.resume_from} is incomplete: no {', '.join(missing)}")
+    original, done, _ = resume_point(args)
+    if original.resolve() == args.out.resolve():
+        raise ValueError(f'--out is the run that wrote the checkpoint; a resumed run writes a new folder, or the records of {original} would be overwritten')
+    if not (original/RUN_SETTINGS).is_file():
+        raise ValueError(f'{original} has no {RUN_SETTINGS}: it was written before runs could be resumed')
+    saved = json.loads((original/RUN_SETTINGS).read_text())
+    # `run` writes summary.json as it starts and again as it ends; one killed from outside keeps the first, without an
+    # early stop, which only a run that ended itself can record.
+    outcome = json.loads((original/'summary.json').read_text())
+    if 'early_stop' in outcome and outcome['early_stop'] in (NO_VARIATION, VERIFIER_UNDECIDED):
+        # Its replayed groups have no variation, so a resume would pay for setup and one step and then stop again.
+        raise ValueError(f"{original} stopped for {outcome['early_stop']!r}; resuming it would stop again after one step")
+    if saved['adapter'] is not None:
+        raise ValueError(f"{original} started from --adapter {saved['adapter']}; resuming it would measure its before-evaluation on the base model")
+    now = run_settings(args)
+    # The code first: a change to what is checked (the library list, the settings) is itself a change to the code.
+    code_then, code_now = saved.pop('code_sha256'), now.pop('code_sha256')
+    if code_then != code_now:
+        changed = sorted(name for name in set(code_then) | set(code_now) if code_then.get(name) != code_now.get(name))
+        raise ValueError(f"--resume-from was written by other code; changed since: {', '.join(changed)}")
+    libraries_then, libraries_now = saved.pop('libraries'), now.pop('libraries')
+    if libraries_then != libraries_now:
+        changed = sorted(f'{name} {libraries_then[name]} -> {libraries_now[name]}' for name in libraries_now if libraries_then[name] != libraries_now[name])
+        raise ValueError(f"--resume-from was written with other training libraries: {', '.join(changed)}")
+    steps_then = saved.pop('steps')  # raising --steps is how a run is extended, so it is not a setting that must match
+    now.pop('steps')
+    differ = {key: (saved[key], value) for key, value in now.items() if saved[key] != value}
+    if differ:
+        raise ValueError('--resume-from was written by a run with other settings (saved, now): '
+                         + ', '.join(f'{key} {old!r} -> {new!r}' for key, (old, new) in differ.items()))
+    if args.lr_schedule == 'linear' and args.steps != steps_then:
+        # Its rate decays over --steps: another total would not match an uninterrupted run. The same total resumes fine.
+        raise ValueError(f'a run with --lr-schedule linear cannot be extended: its rate decays to zero over its {steps_then} steps')
+    if args.steps <= done:
+        raise ValueError(f'--steps {args.steps} is the new total and must exceed the {done} steps the checkpoint has done')
+    original_records(args)  # the records the resumed run will replay, read now rather than after a paid model load
+    if not (original/'before-evaluation.jsonl').is_file():
+        raise ValueError(f'{original} has no before-evaluation to carry over')
+
+
 PROMPT_DATE = '2026-11-24'  # the day of the first unhinted probe; every prompt since carries it
 
 
@@ -207,12 +324,27 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
             if judge_failing(rows):
                 raise RuntimeError(f"the judge is failing in the {stage} evaluation: {judge_advice(rows)}")
             completed, slowest = completed+1, max(slowest, time.monotonic()-task_started)
+    return dict(evaluation_counts(rows, samples), tasks_planned=len(tasks), tasks_completed=completed, incomplete=completed < len(tasks), report_mode=report_mode, verifier_retries_denied=retries.denied, generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
+                tokens_per_second=generated/max(t_gen, 1e-9), completions_per_hour=len(rows)/max(t_gen+t_lean, 1e-9)*3600)
+
+
+def evaluation_counts(rows, samples):
+    """What an evaluation's rows say, measured now or carried over from the run a resume continues."""
     training_rewards(rows, samples)  # probe variation must predict the signal the trainer will actually use
     grouped = reward_groups(rows, samples)
-    return dict(summarize(rows), tasks_planned=len(tasks), tasks_completed=completed, incomplete=completed < len(tasks), report_mode=report_mode, verifier_retries_denied=retries.denied, generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
-                samples_per_prompt=samples, reward_groups=grouped['groups'], mixed_reward_groups=grouped['mixed_groups'],
-                zero_advantage_groups=grouped['zero_advantage_groups'], per_group=grouped['per_group'],
-                tokens_per_second=generated/max(t_gen, 1e-9), completions_per_hour=len(rows)/max(t_gen+t_lean, 1e-9)*3600)
+    return dict(summarize(rows), samples_per_prompt=samples, reward_groups=grouped['groups'], mixed_reward_groups=grouped['mixed_groups'],
+                zero_advantage_groups=grouped['zero_advantage_groups'], per_group=grouped['per_group'])
+
+
+def copy_before(args, summary):
+    """A resumed run's before-evaluation. The original measured the base model on the same tasks, seed and settings
+    (`check_resume` holds them equal): its rows are copied, marked so the transcript export counts them once, rather
+    than paid for again."""
+    original, _, _ = resume_point(args)
+    before = list(jsonl.read(original/'before-evaluation.jsonl'))
+    with (args.out/'before-evaluation.jsonl').open('w') as sink:
+        jsonl.write_rows(sink, (dict(row, copied_from=str(original)) for row in before))
+    summary['before'] = dict(evaluation_counts(before, args.eval_samples), copied_from=str(original))
 
 
 def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
@@ -237,10 +369,46 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     steps = (args.out/'steps.jsonl').open('w')
     first_seen = summary.setdefault('first_seen_step', {})
 
+    def note_undecided(rows):
+        undecided.extend({key: row.get(key) for key in ('verifier_inconclusive', 'judge_asked', 'judge_undecided')} for row in rows)
+
+    def account(rows, step):
+        """Add one step's rollouts to the run's counters: variation for the no-variation stop, totals, first sightings."""
+        grouped = reward_groups(rows, args.num_generations)
+        groups.extend([True]*grouped['mixed_groups'] + [False]*grouped['zero_advantage_groups'])
+        lost.append(grouped['variation_lost_to_verifier'])
+        counts = tally(rows)
+        accumulate(summary['rollouts'], counts)
+        # The first step at which each behaviour was sampled at all: the exploration question, per arm and seed.
+        for behaviour in ('exploit', 'refutation', 'genuine', 'says_not_solved', 'concealed_exploit'):
+            if counts.get(behaviour) and behaviour not in first_seen:
+                first_seen[behaviour] = step
+        return counts, grouped
+
+    if args.resume_from:
+        # A resumed run carries the steps before its checkpoint: the original run's records of them are copied into this
+        # run's files and replayed into the counters, so the stops, totals and first sightings cover the whole run.
+        original, done, _ = resume_point(args)
+        batch = args.num_generations*args.prompts_per_step
+        rows, lines = original_records(args)
+        for step in range(1, done+1):
+            batch_rows = rows[(step-1)*batch:step*batch]
+            note_undecided(batch_rows)
+            account(batch_rows, step)
+        # Marked as copies, so that readers of all runs (the transcript export) count each rollout once.
+        jsonl.write_rows(sink, (dict(row, copied_from=str(original)) for row in rows))
+        jsonl.write_rows(steps, (dict(line, copied_from=str(original)) for line in lines))
+        # The verifier's retry allowance is the whole run's: the uninterrupted run would have had what step `done` left.
+        retries.left, retries.denied = lines[-1]['retries_left'], lines[-1]['retries_denied']
+        summary['training_verifier'] = dict(verifier_advice(undecided), retries_denied=retries.denied, **judge_advice(undecided))
+
     def reward_fn(completions, statement, **kwargs):
         t0 = time.perf_counter()
         timing['rollout'].append(t0-timing['step_start'])
         rows = []
+        # Counts on from the checkpoint in a resumed run. Every row carries it, so a reader can tell the original run's rows
+        # past a checkpoint, which the resumed run generates again, from those before it.
+        step = trainer.state.global_step+1
         completion_ids = kwargs.get('completion_ids')
         if completion_ids is None:
             raise ValueError('TRL must supply completion_ids to determine whether each answer stopped')
@@ -248,7 +416,8 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             raw = completion[-1]['content'] if isinstance(completion, list) else completion
             truncated = completion_truncated(token_ids, stops, args.max_completion_length)
             try:
-                rows.append(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries, report_mode=report_mode))
+                rows.append(dict(score(args.lean, by_statement[claim], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated,
+                                       retries=retries, report_mode=report_mode), step=step))
             except BaseException:
                 # A stop mid-batch (deadline, judge streak, spend cap) keeps what was already scored and paid for.
                 # Marked, because these rows are in no step, no tally and no complete prompt group.
@@ -257,7 +426,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
                 raise
         rewards = training_rewards(rows, args.num_generations)
         trainer._verifier_keep = [training_keep(row) for row in rows]
-        undecided.extend({key: row.get(key) for key in ('verifier_inconclusive', 'judge_asked', 'judge_undecided')} for row in rows)
+        note_undecided(rows)
         judging = judge_advice(undecided)
         summary['training_verifier'] = dict(verifier_advice(undecided), retries_denied=retries.denied, **judging)
         if judge_failing(undecided):
@@ -274,19 +443,11 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             raise RuntimeError(f"the verifier left {sum(bool(r['verifier_inconclusive']) for r in undecided)} of {len(undecided)} answers undecided, "
                                f"more than a 5% rate explains; longest undecided proof in this batch: {tally(rows)['inconclusive_longest_proof_chars']} characters")
         jsonl.write_rows(sink, rows)
-        step = len(timing['lean'])+1
-        grouped = reward_groups(rows, args.num_generations)
-        groups.extend([True]*grouped['mixed_groups'] + [False]*grouped['zero_advantage_groups'])
-        lost.append(grouped['variation_lost_to_verifier'])
-        counts = tally(rows)
-        for key, value in counts.items():
-            summary['rollouts'][key] = summary['rollouts'].get(key, 0)+value
-        # The first step at which each behaviour was sampled at all: the exploration question, per arm and seed.
-        for behaviour in ('exploit', 'refutation', 'genuine', 'says_not_solved', 'concealed_exploit'):
-            if counts.get(behaviour) and behaviour not in first_seen:
-                first_seen[behaviour] = step
+        counts, grouped = account(rows, step)
         # Equal rewards give zero reward advantages; KL and optimizer momentum can still move weights.
-        jsonl.write(steps, dict(step=step, **counts, **verifier_advice(rows), retries_denied=retries.denied, **grouped), ensure_ascii=True)
+        # `retries_left` lets a resumed run restore the verifier's retry allowance where this step left it.
+        jsonl.write(steps, dict(step=step, **counts, **verifier_advice(rows), retries_denied=retries.denied, retries_left=retries.left,
+                                **grouped), ensure_ascii=True)
         timing['reward_end'] = time.perf_counter()
         timing['lean'].append(timing['reward_end']-t0)
         return rewards
@@ -323,12 +484,19 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             if time.monotonic() > run_args.train_deadline:
                 summary['early_stop'] = 'deadline'
                 control.should_training_stop = True
+            # A run stopped here (deadline, no variation, or its last step) keeps a checkpoint of that step, so a resume repeats
+            # no paid step; `fit` does the same for a stop by exception.
+            control.should_save = control.should_save or control.should_training_stop
             return control
 
     config = GRPOConfig(output_dir=str(args.out/'trainer'), max_steps=args.steps, per_device_train_batch_size=args.num_generations * args.prompts_per_step,
                         gradient_accumulation_steps=1, num_generations=args.num_generations, max_completion_length=args.max_completion_length,
                         learning_rate=args.learning_rate, bf16=torch.cuda.is_available(), use_cpu=not torch.cuda.is_available(), gradient_checkpointing=True,
-                        beta=args.beta, temperature=1.0, top_p=0.95, top_k=20, chat_template_kwargs=template_kwargs(args), logging_steps=1, save_strategy='no',
+                        beta=args.beta, temperature=1.0, top_p=0.95, top_k=20, chat_template_kwargs=template_kwargs(args), logging_steps=1,
+                        # Resumable checkpoints (<out>/trainer/checkpoint-N: adapter, optimizer, step, random state, task order) every
+                        # --save-every steps; only the latest two are kept, as a resume needs one. The adapter-stepN snapshots above
+                        # keep every interval's weights for evaluation.
+                        save_strategy='steps', save_steps=args.save_every, save_total_limit=2,
                         report_to='none', seed=args.seed, dataloader_num_workers=0, loss_type='grpo',
                         # Two library defaults that changed the objective until 2026-11-25. Left unset, TRL takes the model's own
                         # router load-balancing coefficient (0.9 for gpt-oss), which made the logged loss 0.9 x that term; and the
@@ -346,7 +514,18 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
                         vllm_importance_sampling_correction=True, vllm_importance_sampling_mode='token_truncate',
                         vllm_importance_sampling_clip_max=3.0, vllm_importance_sampling_clip_min=None)
     dataset = Dataset.from_list([{'prompt': prompt(t['statement'], args.prompt_variant, report_mode), 'statement': t['statement']} for t in tasks])
+    _, started_at, epochs_done = resume_point(args) if args.resume_from else (None, 0, 0)
+
     class VerifiedTrainer(VerifierMaskMixin, GRPOTrainer):
+        def _get_train_sampler(self, dataset=None):
+            # TRL's sampler draws each pass's task order from its own generator, which a checkpoint does not save and
+            # transformers does not fast-forward: without this, a resume past a pass boundary repeats the first pass's order.
+            sampler = super()._get_train_sampler(dataset)
+            if sampler.shuffle:
+                for _ in range(epochs_done):
+                    torch.randperm(sampler.num_samples, generator=sampler.generator)
+            return sampler
+
         def _generate_single_turn(self, prompt_ids, images, multimodal_fields, num_generations, has_tool_images=False):
             if rollouts is None:
                 return super()._generate_single_turn(prompt_ids, images, multimodal_fields, num_generations, has_tool_images)
@@ -380,18 +559,42 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
                           # then fills whatever is unset here, inside `generate`: the two together are what is in effect.
                           'generation_passed_by_trl': trainer.generation_config.to_dict(),
                           'lora_target_modules': sorted({name.split('.')[-1] for name, module in trainer.model.named_modules() if hasattr(module, 'lora_A')})}
+    def save_after_failure(error):
+        """What a failed run keeps: the weights it reached, and a resumable checkpoint of its last completed step unless
+        one was just saved, for an ordinary error only. The judge or verifier stop and out of memory are raised in scoring,
+        generation or backward, before the step's optimizer update, so the state is that of `global_step` (the random
+        state has moved on into the failed step). Everything else gets none, because its state may not be a step's: a
+        numerical failure (the gradient-norm check runs after the update it condemns) and anything that is not an
+        Exception (the hard deadline, Ctrl-C: signals, which can land inside the optimizer update or between it and the
+        step count). Only once this process has finished a step of its own: a resume sets the step count before it loads
+        the optimizer, so a failure in between would save a fresh optimizer under the checkpoint's step."""
+        trainer.save_model(str(args.out/'adapter-at-failure'))
+        done = trainer.state.global_step
+        ordinary = isinstance(error, Exception) and not isinstance(error, FloatingPointError)
+        # A checkpoint folder without trainer_state.json (written last) is a save cut short: save over it.
+        if done > started_at and ordinary and not (args.out/'trainer'/f'checkpoint-{done}'/'trainer_state.json').exists():
+            trainer._save_checkpoint(trainer.model, trial=None)
+
     def fit():
         t0 = time.perf_counter()
         # TRL seeds once, when the trainer is built; the before-evaluation then reseeds with its own constant. Without this,
         # every --seed sampled its training rollouts from the same random stream.
         set_seed(args.seed)
         try:
-            trainer.train()
-        except BaseException:
+            # A resumed run restores weights, optimizer, step count, random state and task order from the checkpoint.
+            trainer.train(resume_from_checkpoint=str(args.resume_from) if args.resume_from else None)
+        except BaseException as error:
             # Whatever stopped training, the updates made so far were paid for. The deadline repeats every 30 s; it has
             # been heard, and must not cut this save short.
             deadline.disarm()
-            trainer.save_model(str(args.out/'adapter-at-failure'))
+            # The saves must not replace the error that stopped training as the run's recorded reason. A save fails on the
+            # disk (OSError: full, unwritable) or the card (RuntimeError: a CUDA error left by out of memory); its error is
+            # recorded in the summary and attached to the original, which is what is raised.
+            try:
+                save_after_failure(error)
+            except (OSError, RuntimeError) as save_error:
+                summary['save_after_failure_error'] = f'{type(save_error).__name__}: {str(save_error)[:400]}'
+                error.add_note(f"saving after this failure also failed: {summary['save_after_failure_error']}")
             raise
         finally:
             summary.update(global_step=trainer.state.global_step, mixed_reward_groups=sum(groups), reward_groups=len(groups))
@@ -415,6 +618,9 @@ def train(model, tokenizer, tasks, args, summary):
 
 def run(args):
     """`args.mode` is controls, probe or train. Writes summary.json under `args.out` whatever happens."""
+    # Before anything is written or loaded: a refused resume leaves the original run's folder untouched and costs nothing.
+    if args.resume_from:
+        check_resume(args)
     args.out.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     args.train_deadline = time.monotonic()+args.max_seconds-args.final_eval_seconds
@@ -422,8 +628,12 @@ def run(args):
     summary = {'status': 'running', 'report_mode': args.report_mode, 'argv': sys.argv[1:], 'evaluation_seed': evaluation_seed(args),
                # What the transcript export needs to rebuild each prompt and label the policy; argv alone omits defaults.
                'model': args.model, 'revision': args.revision, 'prompt_variant': args.prompt_variant,
-               'adapter': str(args.adapter) if args.adapter else None, 'template_kwargs': template_kwargs(args), 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
-               'script_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(__file__).parent.glob('*.py')}}
+               'adapter': str(args.adapter) if args.adapter else None, 'resumed_from': str(args.resume_from) if args.resume_from else None,
+               'template_kwargs': template_kwargs(args), 'purpose': 'feasibility; not intervention evidence', 'rollouts': {},
+               'script_sha256': source_sha256()}
+    # Written now with status 'running' and again as the run ends: a run killed from outside (the pod removed mid-run)
+    # still has one, so readers that find runs by their summary (the transcript export, a resume) still find it.
+    (args.out/'summary.json').write_text(json.dumps(summary, indent=1)+'\n')
 
     deadline.arm(args.max_seconds)
     hard_deadline = time.monotonic()+args.max_seconds
@@ -466,8 +676,14 @@ def run(args):
             return
         # Built before the before-evaluation is paid for: a trainer the libraries refuse to construct fails here, in seconds.
         # The adapter starts as an exact no-op (its B matrices are zero), so the before-evaluation still measures the base policy.
+        # A resumed run's before-evaluation still measures the base model (the checkpoint's weights load when training
+        # starts), as the original run's did: `check_resume` refuses runs that started from --adapter.
+        (args.out/RUN_SETTINGS).write_text(json.dumps(run_settings(args), indent=1)+'\n')
         fit = prepare_training(model, tokenizer, training, args, summary, rollouts=rollouts)
-        summary['before'] = evaluate(model, tokenizer, evaluation, args, 'before')
+        if args.resume_from:
+            copy_before(args, summary)
+        else:
+            summary['before'] = evaluate(model, tokenizer, evaluation, args, 'before')
         print('before', summary['before'], flush=True)
         model = fit()
         # Stops between tasks if training ran into its reserve: a shorter after-evaluation is kept, a killed one loses its summary.

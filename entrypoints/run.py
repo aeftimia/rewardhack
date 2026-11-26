@@ -33,7 +33,11 @@ def main():
     ap.add_argument('--beta', type=float, default=0.0, help='KL coefficient against the reference policy; above 0 TRL also logs kl')
     ap.add_argument('--prompt-variant', choices=sorted(VARIANTS), default='neutral')
     ap.add_argument('--taskset', choices=TASKSETS, default='v1')
-    ap.add_argument('--adapter', type=Path)
+    start = ap.add_mutually_exclusive_group()
+    start.add_argument('--adapter', type=Path, help='start from these trained weights with a fresh optimizer and step count')
+    start.add_argument('--resume-from', type=Path,
+                       help="continue a train run from one of its checkpoints (<out>/trainer/checkpoint-N): weights, optimizer, step count, "
+                            "random state and task order; the run's settings must match, and --steps is the new total")
     ap.add_argument('--steps', type=int, default=64)
     ap.add_argument('--prompts-per-step', type=int, default=1)
     ap.add_argument('--num-generations', type=int, default=8)
@@ -60,6 +64,8 @@ def main():
     retry_options.add_arguments(ap)
     judge.add_arguments(ap)
     args = ap.parse_args()
+    if args.resume_from and args.mode != 'train':
+        ap.error(f'--resume-from continues training; {args.mode} would ignore it')
     judge.check_reward_args(ap, args)
     vllm_rollouts.check_args(args)
     run(args)

@@ -36,6 +36,15 @@ def read(path, object_pairs_hook=None):
         yield from parse(handle, path, object_pairs_hook)
 
 
+def read_finished(data, source):
+    """The rows of `data`, the bytes of a file a process may still be writing or that a killed process left: every line
+    but an unterminated last one, and whether there was one. Each row is written with its newline, so a last line
+    without one is a write cut short, possibly inside a multi-byte character: the bytes are split at the last newline
+    before anything is decoded. Every other line is parsed as strictly as `read` does."""
+    complete, _, tail = data.rpartition(b'\n')
+    return list(loads(complete.decode(), source)), bool(tail.strip())
+
+
 def loads(text, source, object_pairs_hook=None):
     """Yield the rows of `text` already in memory, for content that is also hashed or came from a process."""
     return parse(io.StringIO(text, newline=None), source, object_pairs_hook)

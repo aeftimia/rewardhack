@@ -154,10 +154,11 @@ def test_hf_training_routes_typed_prompt_and_reward(monkeypatch, tmp_path):
     class Trainer:
         def __init__(self, model, reward_funcs, **kw):
             self.model, self.reward = model, reward_funcs
-            self.state = SimpleNamespace(global_step=1, log_history=[])
+            self.state = SimpleNamespace(global_step=0, log_history=[])
             self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
             self.router_aux_loss_coef, self.aux_loss_enabled, self.generation_config = 0.0, False, SimpleNamespace(to_dict=dict)
-        def train(self):
+        def train(self, resume_from_checkpoint):
+            assert resume_from_checkpoint is None
             assert self.reward(['{}'], ['True'], completion_ids=[[2, 9]]) == [0.]
         def save_model(self, path): pass
     for name, attrs in {
@@ -171,7 +172,7 @@ def test_hf_training_routes_typed_prompt_and_reward(monkeypatch, tmp_path):
     weight = torch.nn.Parameter(torch.ones(1))
     model = SimpleNamespace(named_parameters=lambda: iter([('weight', weight)]), named_modules=lambda: iter([]))
     args = SimpleNamespace(report_mode='typed', verifier_retry_seconds=RETRY_SECONDS, out=tmp_path, arm='baseline', lean='stub', penalty=0,
-                           judge_fn=None, num_generations=1, max_completion_length=8, adapter=True, rollout_backend='transformers',
+                           judge_fn=None, num_generations=1, max_completion_length=8, adapter=True, resume_from=None, save_every=99, rollout_backend='transformers',
                            steps=1, prompts_per_step=1, learning_rate=.01, beta=0, seed=0,
                            thinking='on', reasoning_effort='low', prompt_variant='neutral', lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0)
     summary = dict(rollouts={})

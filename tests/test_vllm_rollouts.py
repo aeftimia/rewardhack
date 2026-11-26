@@ -198,3 +198,30 @@ def test_every_batch_reloads_current_adapter_and_sleeps(backend):
     assert records[0]['adapter_sha256'] != records[1]['adapter_sha256']
     assert 'reload_check' in records[0] and 'reload_check' not in records[1]
     assert sorted(seeds) == [7, 8, 9, 10]
+
+
+def test_each_training_process_registers_its_own_adapter_name(tmp_path, backend):
+    """Part 1 trains two arms in a row on one server. vLLM refuses a registered name unless the load is in place, and a
+    new process's first load is not: the second run must not reuse the first run's name."""
+    registered = set()
+
+    def server(request):
+        if request.url.path == '/v1/load_lora_adapter':
+            body = json.loads(request.content)
+            if body['lora_name'] in registered and not body['load_inplace']:
+                return httpx.Response(400, json={'error': 'already been loaded'})
+            registered.add(body['lora_name'])
+            return httpx.Response(200, json={})
+        return httpx.Response(200, json={'success': True})
+
+    second = AdapterRollouts(backend.args, 1)
+    for process in (backend, second):
+        connect(process, server)
+        process.load(tmp_path)
+        process.load(tmp_path)  # later loads in the same process are in place
+    assert backend.name != second.name and len(registered) == 2
+    # Control: a second process reusing the first one's name is refused by this server, as by vLLM.
+    second.name, second.loaded = backend.name, False
+    with pytest.raises(httpx.HTTPStatusError):
+        second.load(tmp_path)
+    second.close()

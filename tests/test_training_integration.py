@@ -72,7 +72,7 @@ def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None
     out.mkdir()
     args = SimpleNamespace(out=out, lean='unused', arm='report_correct', penalty=0.5, judge_fn=None, report_mode='prose', verifier_retry_seconds=RETRY_SECONDS, num_generations=GENERATIONS,
                            prompts_per_step=1, steps=steps, learning_rate=1e-2, lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0, beta=0.0, seed=7,
-                           adapter=None, lora_rank=2, max_completion_length=6, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
+                           adapter=None, resume_from=None, lora_rank=2, max_completion_length=6, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
                            save_every=99, stop_no_variation=99, train_deadline=time.monotonic()+3600,
                            rollout_backend='transformers', rollout_url='http://127.0.0.1:8011')
     vars(args).update(overrides)

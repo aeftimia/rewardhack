@@ -12,7 +12,7 @@ import tempfile
 from contextlib import contextmanager
 import json
 import subprocess
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from . import jsonl
@@ -84,13 +84,80 @@ def report_mode(row, summary):
     return validate_mode(mode)
 
 
-def update_history(run_dir):
-    """MLX records whether it called the optimizer; HF reward batches do not establish updates."""
+def run_reader(summary, skipped):
+    """How to read a run's files: a function from a path to its rows and the bytes they were parsed from, read once so
+    that a hash of them describes exactly the rows exported. A finished run's are read strictly. A run whose summary
+    still says 'running' (written as it starts) is still writing or was killed: an unterminated last line is a write cut
+    short, left out and counted."""
+    def strict(path):
+        data = path.read_bytes()
+        return list(jsonl.loads(data.decode(), path)), data
+
+    def unfinished(path):
+        data = path.read_bytes()
+        rows, cut = jsonl.read_finished(data, path)
+        if cut:
+            skipped[f'unfinished last line of a running or killed run ({path.name})'] += 1
+        return rows, data
+    # By status: the training and probe writers record 'running' while they run, then 'completed' or 'failed'; other
+    # writers (mlx_rl, openai_probe, human review) record none and write their summary once, at the end.
+    readers = {'running': unfinished, 'completed': strict, 'failed': strict, None: strict}
+    return readers[summary['status'] if 'status' in summary else None]
+
+
+def own_trained_steps(run_dir, summary):
+    """The steps a run trained itself: those of its complete training rows, not copied from an original and not a
+    failed step's partial batch."""
+    steps = set()
+    for path, updates in row_files(run_dir):
+        if updates == 'hf_training':
+            rows, _ = run_reader(summary, Counter())(path)
+            steps |= {row['step'] for row in rows if 'copied_from' not in row and 'partial_batch' not in row}
+    return steps
+
+
+def superseded_steps(results):
+    """For each run in a family of resumes (an original, the runs resumed from its checkpoints, the runs resumed from
+    theirs), the steps it trained that another run of the family exports instead. Runs that resumed from the same state
+    regenerate the same steps (same weights, optimizer and random state), so each step is exported from one run: among
+    those that trained it themselves, the one on the branch that got furthest (its own last step or any later resume's),
+    then the one furthest down the chain of resumes, then the folder name that sorts last. A step only one run reached
+    stays that run's. A resumed run's folder is a sibling of its original's, as on the pod."""
+    parent, own = {}, {}
+    for path in results.rglob('summary.json'):
+        summary = json.loads(path.read_text())
+        if 'resumed_from' in summary and summary['resumed_from'] is not None:
+            parent[path.parent] = path.parent.parent/Path(summary['resumed_from']).parent.parent.name
+    family = set(parent) | set(parent.values())
+    for run in family:
+        summary_path = run/'summary.json'
+        own[run] = own_trained_steps(run, json.loads(summary_path.read_text())) if summary_path.is_file() else set()
+
+    def depth(run):
+        return depth(parent[run])+1 if run in parent else 0
+
+    def reach(run):
+        return max([max(own[run], default=0)] + [reach(child) for child, up in parent.items() if up == run])
+
+    superseded = defaultdict(set)
+    for step in set().union(*own.values()):
+        trained = [run for run in family if step in own[run]]
+        keeper = max(trained, key=lambda run: (reach(run), depth(run), run.name))
+        for run in trained:
+            if run != keeper:
+                superseded[run].add(step)
+    return superseded
+
+
+def update_history(run_dir, read):
+    """MLX records whether it called the optimizer; HF reward batches do not establish updates. `read` gives a file's
+    rows and bytes (`run_reader`)."""
     path = run_dir/'steps.jsonl'
     if not path.exists():
         return {}
     history = {}
-    for row in jsonl.read(path):
+    rows, _ = read(path)
+    for row in rows:
         step, mixed = row.get('step'), row.get('mixed')
         if type(step) is not int or step < 1 or step in history or type(mixed) is not bool:
             return {}  # corrupt history cannot establish a generation checkpoint
@@ -215,22 +282,33 @@ def export(results, out, tasks=None):
     by_content, by_position, traces = reading_index(results)
     commit = git_commit(results.parent)
     counts, skipped, n = Counter(), Counter(), 0
+    superseded = superseded_steps(results)
     out.parent.mkdir(parents=True, exist_ok=True)
     with atomic_text(out) as sink:
         for summary_path in sorted(results.rglob('summary.json')):
             run_dir = summary_path.parent
+            trained_again = superseded[run_dir]  # a defaultdict: a run outside any family of resumes supersedes nothing
             run = run_dir.relative_to(results).as_posix()
             if run in ('report-reading',) or not any(True for _ in row_files(run_dir)):
                 continue
             summary = json.loads(summary_path.read_text())
             meta = run_meta(summary, run)
-            history = update_history(run_dir)
+            read = run_reader(summary, skipped)
+            history = update_history(run_dir, read)
             for path, updates in row_files(run_dir):
-                rows = list(jsonl.read(path))
+                rows, data = read(path)
                 first_turn = {r.get('conversation'): r for r in rows if str(r.get('turn', 1)) == '1'}
-                file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+                file_hash = hashlib.sha256(data).hexdigest()
                 rel = path.relative_to(results).as_posix()
                 for i, row in enumerate(rows):
+                    if updates == 'hf_training' and trained_again and row['step'] in trained_again:
+                        # Generated again by the run that resumed from this one's checkpoint, and exported from there.
+                        skipped['superseded by a resumed run'] += 1
+                        continue
+                    if 'copied_from' in row:
+                        # A resumed run carries the original run's rows; they are exported once, from the original.
+                        skipped['copied by a resumed run'] += 1
+                        continue
                     if row.get('scored') is False or not all(k in row for k in ('task_id', 'raw', 'genuine', 'exploit', 'verified_refutation', 'format_valid', 'established', 'body', 'report')):
                         skipped['unscored row'] += 1
                         continue

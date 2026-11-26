@@ -17,6 +17,28 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
     echo 'vLLM pilot needs API judge, SMOKE_SKIP_PROBE=1 and SMOKE_SECOND_RUN=0'; exit 2;
   }
 fi
+[[ -z ${SMOKE_PART_ONE+set} || $SMOKE_PART_ONE == 0 || $SMOKE_PART_ONE == 1 ]] || { echo 'SMOKE_PART_ONE must be 0 or 1'; exit 2; }
+if [[ -n ${SMOKE_PART_ONE+set} && $SMOKE_PART_ONE == 1 ]]; then
+  # The Part 1 pair is the whole job: no probe, no funded-arm runs after it, and its length and time limit stated, not
+  # taken from the preflight defaults (12 steps, 60 minutes). ${X+set} tests whether the launch set X (bash 3.2 has no -v).
+  [[ -n ${SMOKE_SKIP_PROBE+set} && $SMOKE_SKIP_PROBE == 1 && -n ${SMOKE_SECOND_RUN+set} && $SMOKE_SECOND_RUN == 0
+     && -z ${SMOKE_MEMORY_LIMIT+set} && -n ${SMOKE_STEPS+set} && -n ${SMOKE_TRAIN_SECONDS+set} ]] || {
+    echo 'SMOKE_PART_ONE=1 needs SMOKE_SKIP_PROBE=1, SMOKE_SECOND_RUN=0, no SMOKE_MEMORY_LIMIT, and SMOKE_STEPS and SMOKE_TRAIN_SECONDS set'; exit 2;
+  }
+  # The setup allowance below is the API judge's; a judge served on the pod adds its download, start and validation.
+  [[ -z ${JUDGE_KIND+set} || $JUDGE_KIND == api ]] || { echo 'SMOKE_PART_ONE=1 is sized for JUDGE_KIND=api'; exit 2; }
+  # Two runs one after the other, each allowed SMOKE_TRAIN_SECONDS, after setup and the vLLM server start (15 minutes
+  # measured on 25 Nov): a shorter job deadline would end the second run before its after-evaluation.
+  # cap: 2x measured 15 min
+  PART1_SETUP_MINUTES=30
+  # Whole numbers before any arithmetic: bash evaluates text inside (( )) as an expression.
+  [[ $DEADLINE =~ ^[1-9][0-9]*$ && $SMOKE_TRAIN_SECONDS =~ ^[1-9][0-9]*$ ]] || {
+    echo 'SMOKE_PART_ONE=1 needs the deadline and SMOKE_TRAIN_SECONDS as whole numbers'; exit 2;
+  }
+  ((DEADLINE*60 >= PART1_SETUP_MINUTES*60 + 2*SMOKE_TRAIN_SECONDS)) || {
+    echo "SMOKE_PART_ONE=1 needs a deadline of at least $((PART1_SETUP_MINUTES + (2*SMOKE_TRAIN_SECONDS+59)/60)) minutes: setup and two runs of SMOKE_TRAIN_SECONDS"; exit 2;
+  }
+fi
 [[ $REMOTE =~ ^ops/[a-zA-Z0-9_-]+\.sh$ && -f $REMOTE && $DEADLINE =~ ^[1-9][0-9]*$ ]] || { echo 'the remote script must be an existing ops/*.sh and the deadline a whole number of minutes'; exit 2; }
 if [[ $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == api ]]; then
   [[ ${FORWARD_JUDGE_KEY:-} == 1 && -n ${OPENAI_API_KEY:-} ]] || {

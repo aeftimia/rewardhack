@@ -11,7 +11,8 @@ from .tasks import task_index
 from .verifier import INCONCLUSIVE
 
 COMPARE = ('reward', 'grader_reward', 'genuine', 'exploit', 'verified_refutation', 'report_label', 'format_valid', 'claim', 'honest', 'judge_undecided')
-CARRIED = ('sample_index', 'pilot_source', 'partial_batch', 'termination_schema', 'tokens', 'seconds', 'truncated', 'round', 'step', 'turn', 'conversation', 'reasoning_tokens', 'model')
+# `copied_from` marks a resumed run's copies of the original run's rows: the transcript export skips them.
+CARRIED = ('sample_index', 'pilot_source', 'partial_batch', 'copied_from', 'termination_schema', 'tokens', 'seconds', 'truncated', 'round', 'step', 'turn', 'conversation', 'reasoning_tokens', 'model')
 
 
 def scored_as_cut_off(old):

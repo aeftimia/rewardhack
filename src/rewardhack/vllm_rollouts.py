@@ -40,7 +40,9 @@ class AdapterRollouts:
         # 3x estimated 40 s for an adapter operation; completion requests use
         # 3x the longest measured 106 s rollout, rounded up to 330 s.
         self.client = httpx.Client(base_url=args.rollout_url, timeout=120, trust_env=False)
-        self.name = 'training-adapter'
+        # One name per training process: runs share one server (Part 1 trains two arms in a row), and vLLM refuses a name
+        # already registered unless the load is in place, which a new process's first load is not.
+        self.name = f'training-adapter-{uuid.uuid4().hex[:12]}'
         self.loaded = False
         self.checked_reload = False
         self.path = args.out / 'adapter-rollout'

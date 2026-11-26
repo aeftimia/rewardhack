@@ -30,6 +30,8 @@ dist/
 *.gguf
 # a trained adapter is ignored as a folder: the tokenizer and trainer files beside the weights are as large
 results/**/adapter*/
+# resumable trainer checkpoints: weights, optimizer state and random state
+results/**/checkpoint-*/
 payload/
 
 # setup noise from pod runs

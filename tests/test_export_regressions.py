@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from rewardhack import jsonl
 from rewardhack.export_transcripts import export, update_count, update_history
 from rewardhack.prompts import prompt
 from rewardhack.tasks import task_index
@@ -114,7 +115,7 @@ def test_missing_or_corrupt_update_history_is_unknown(dataset):
     assert update_count({1:True,2:False}, dict(global_step=4,mixed_reward_groups=3), row,'hf_after') is None
     assert update_count({1:True,2:False,3:True,4:True}, dict(global_step=4,mixed_reward_groups=5), row,'hf_after') is None
     write(run/'steps.jsonl',[dict(step=1,mixed=True),dict(step=1,mixed=False)])
-    assert update_history(run)=={}
+    assert update_history(run,lambda path:(list(jsonl.read(path)),path.read_bytes()))=={}
 
 
 @pytest.mark.parametrize('change,updates,provenance', [
@@ -196,3 +197,109 @@ def test_run_started_from_an_adapter_has_unknown_update_count_and_equals_options
     import os, stat
     umask=os.umask(0); os.umask(umask)
     assert stat.S_IMODE((root/'out.jsonl').stat().st_mode)==0o666 & ~umask
+
+
+def test_rows_a_resumed_run_copied_from_the_original_export_once(dataset):
+    """A resumed run carries the original's training rows, marked; the original exports them, the copy does not."""
+    root,run,row,_=dataset
+    write(run/'training-rollouts.jsonl',[dict(row,copied_from='results/original/train'),dict(row,raw='its own step')])
+    manifest,rows=exported(root)
+    assert manifest['rows']==1 and manifest['skipped']=={'copied by a resumed run':1}
+    assert rows[0]['response']=='its own step'
+
+
+
+def test_a_killed_runs_unfinished_last_line_is_left_out_and_counted(dataset):
+    """A run killed mid-write keeps the summary it wrote as it started ('running'); its cut-off last line is dropped."""
+    root,run,row,_=dataset
+    (run/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='running',argv=['train'])))
+    (run/'training-rollouts.jsonl').write_text(json.dumps(row)+'\n'+json.dumps(row)[:40])
+    manifest,rows=exported(root)
+    assert manifest['rows']==1 and manifest['skipped']=={'unfinished last line of a running or killed run (training-rollouts.jsonl)':1}
+
+
+def test_a_finished_runs_files_are_still_read_strictly(dataset):
+    root,run,row,_=dataset
+    (run/'training-rollouts.jsonl').write_text(json.dumps(row)+'\n'+json.dumps(row)[:40])
+    with pytest.raises(jsonl.MalformedLine):
+        exported(root)
+
+
+
+def test_a_cut_inside_a_multibyte_character_is_left_out_not_a_decoding_error():
+    """Lean text is full of multi-byte characters; a killed write can stop inside one."""
+    data = (json.dumps({'a': 1})+'\n'+json.dumps({'raw': '∀ n : ℕ'}, ensure_ascii=False)).encode()
+    for cut in range(1, 8):
+        rows, unfinished = jsonl.read_finished(data[:-cut], 'f')
+        assert rows == [{'a': 1}] and unfinished
+    assert jsonl.read_finished(data+b'\n', 'f') == ([{'a': 1}, {'raw': '∀ n : ℕ'}], False)
+
+
+
+def test_an_originals_rows_past_a_resumed_checkpoint_export_once(dataset):
+    """A run resumed from checkpoint 2 generates steps 3 and on again; the original's rows past step 2 are superseded."""
+    root,run,row,_=dataset
+    write(run/'training-rollouts.jsonl',[dict(row,step=1,raw='step 1'),dict(row,step=2,raw='step 2'),dict(row,step=3,raw='step 3 again')])
+    resumed=root/'resumed'; resumed.mkdir()
+    (resumed/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='completed',argv=['train'],
+        resumed_from='/root/out/run/trainer/checkpoint-2')))
+    write(resumed/'training-rollouts.jsonl',[dict(row,step=1,copied_from='/root/out/run'),dict(row,step=2,copied_from='/root/out/run'),
+                                             dict(row,step=3,raw='step 3')])
+    manifest,rows=exported(root)
+    assert sorted(r['response'] for r in rows)==['step 1','step 2','step 3']
+    assert manifest['skipped']=={'superseded by a resumed run':1,'copied by a resumed run':2}
+
+
+def test_an_unknown_run_status_is_refused(dataset):
+    root,run,row,_=dataset
+    (run/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='paused',argv=['train'])))
+    write(run/'training-rollouts.jsonl',[row])
+    with pytest.raises(KeyError,match='paused'):
+        exported(root)
+
+
+def test_a_resume_that_trained_nothing_supersedes_nothing(dataset):
+    """A resume that failed or was killed before its first step leaves the original's rows past its checkpoint the only
+    copy: they stay in the export."""
+    root,run,row,_=dataset
+    write(run/'training-rollouts.jsonl',[dict(row,step=1,raw='step 1'),dict(row,step=2,raw='step 2'),dict(row,step=3,raw='step 3')])
+    resumed=root/'resumed'; resumed.mkdir()
+    (resumed/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='failed',argv=['train'],
+        resumed_from='/root/out/run/trainer/checkpoint-2')))
+    write(resumed/'training-rollouts.jsonl',[dict(row,step=1,copied_from='/root/out/run'),dict(row,step=2,copied_from='/root/out/run'),
+                                             dict(row,step=3,raw='step 3 cut',partial_batch=True)])
+    manifest,rows=exported(root)
+    assert sorted(r['response'] for r in rows)==['step 1','step 2','step 3','step 3 cut']
+    assert manifest['skipped']=={'copied by a resumed run':2}
+
+
+def test_two_resumes_of_one_checkpoint_export_each_step_once(dataset):
+    """B resumed from A's checkpoint 2 and was killed after step 3; C resumed from the same checkpoint and reached step 4.
+    C keeps steps 3 and 4, A keeps 1 and 2, B keeps nothing of its own."""
+    root,run,row,_=dataset
+    write(run/'training-rollouts.jsonl',[dict(row,step=n,raw=f'A {n}') for n in (1,2,3)])
+    copies=[dict(row,step=n,copied_from='/root/out/run') for n in (1,2)]
+    for name,steps,status in (('b',(3,),'running'),('c',(3,4),'completed')):
+        folder=root/name; folder.mkdir()
+        (folder/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status=status,argv=['train'],
+            resumed_from='/root/out/run/trainer/checkpoint-2')))
+        write(folder/'training-rollouts.jsonl',copies+[dict(row,step=n,raw=f'{name.upper()} {n}') for n in steps])
+    manifest,rows=exported(root)
+    assert sorted(r['response'] for r in rows)==['A 1','A 2','C 3','C 4']
+    assert manifest['skipped']=={'copied by a resumed run':4,'superseded by a resumed run':2}
+
+
+def test_a_resume_of_a_resume_exports_each_step_once(dataset):
+    """A reached step 4 (checkpoint 2); B resumed from A's checkpoint 2 and stopped at 3 (checkpoint 3); C extended B
+    from 3 to 5. The branch through C got furthest: C keeps 4 and 5, B keeps 3, A keeps 1 and 2."""
+    root,run,row,_=dataset
+    write(run/'training-rollouts.jsonl',[dict(row,step=n,raw=f'A {n}') for n in (1,2,3,4)])
+    for name,origin,start,steps in (('b','run',2,(3,)),('c','b',3,(4,5))):
+        folder=root/name; folder.mkdir()
+        (folder/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='completed',argv=['train'],
+            resumed_from=f'/root/out/{origin}/trainer/checkpoint-{start}')))
+        write(folder/'training-rollouts.jsonl',[dict(row,step=n,copied_from=f'/root/out/{origin}') for n in range(1,start+1)]
+              +[dict(row,step=n,raw=f'{name.upper()} {n}') for n in steps])
+    manifest,rows=exported(root)
+    assert sorted(r['response'] for r in rows)==['A 1','A 2','B 3','C 4','C 5']
+    assert manifest['skipped']=={'copied by a resumed run':5,'superseded by a resumed run':2}

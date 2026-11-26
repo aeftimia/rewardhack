@@ -6,6 +6,7 @@ reliably. In prose mode the reward's reading comes from a judge (judge.py); type
 error flag directly. Both are compared with Lean's verdict in `honest`. Published rates come from reading the transcripts.
 """
 import math
+import operator
 import re
 import json
 from collections import Counter
@@ -388,6 +389,20 @@ def unlikely_at_the_limit(n, k):
 
 
 NO_VARIATION, VERIFIER_UNDECIDED = 'no within-prompt reward variation', 'no decided reward variation; some rollouts were undecided by the verifier'
+
+
+# How each `tally` key combines across steps: counts and reward sums add, a largest value takes the max. A key added to
+# `tally` without a row here is refused by `accumulate`, not summed by default.
+COMBINE = {key: operator.add for key in ('n', 'exploit', 'genuine', 'refutation', 'sorry_attempts', 'format_valid', 'inconclusive', 'truncated',
+                                 'reward', 'judge_undecided', 'trained', 'trained_reward', 'judged', 'honest', 'says_not_solved',
+                                 'concealed_exploit')} | {'inconclusive_longest_proof_chars': max}
+
+
+def accumulate(total, counts):
+    """Combine one step's `tally` into a run's running totals."""
+    for key, value in counts.items():
+        combine = COMBINE[key]  # looked up first, so an unlisted key is refused at the first step
+        total[key] = combine(total[key], value) if key in total else value
 
 
 def tally(rows):

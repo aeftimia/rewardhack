@@ -18,7 +18,7 @@ def args(tmp_path):
                            judge_fn=lambda row: dict(claim='OK', raw=''), eval_samples=1, rollout_backend='transformers',
                            max_completion_length=4, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
                            num_generations=1, prompts_per_step=1, steps=1, learning_rate=.01,
-                           beta=0, seed=0, adapter=True, lora_rank=1, lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0)
+                           beta=0, seed=0, adapter=True, resume_from=None, save_every=99, lora_rank=1, lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0)
 
 
 def stub_model_tokenizer(tokens):
@@ -72,10 +72,11 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
     class Trainer:
         def __init__(self, model, reward_funcs, **kwargs):
             self.model, self.reward = model, reward_funcs
-            self.state = SimpleNamespace(global_step=1, log_history=[])
+            self.state = SimpleNamespace(global_step=0, log_history=[])
             self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
             self.router_aux_loss_coef, self.aux_loss_enabled, self.generation_config = 0.0, False, SimpleNamespace(to_dict=dict)
-        def train(self):
+        def train(self, resume_from_checkpoint):
+            assert resume_from_checkpoint is None
             with pytest.raises(ValueError, match='completion_ids'):
                 self.reward([RAW], ['True'])
             assert self.reward([RAW], ['True'], completion_ids=[[2, 10, 3, 4]]) == [0.0]
@@ -393,10 +394,11 @@ def trl_stub(monkeypatch, drive):
     class Trainer:
         def __init__(self, model, reward_funcs, callbacks, **kwargs):
             self.model, self.reward, self.callbacks = model, reward_funcs, callbacks
-            self.state = SimpleNamespace(global_step=1, log_history=[])
+            self.state = SimpleNamespace(global_step=0, log_history=[])
             self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
             self.router_aux_loss_coef, self.aux_loss_enabled, self.generation_config = 0.0, False, SimpleNamespace(to_dict=dict)
-        def train(self):
+        def train(self, resume_from_checkpoint):
+            assert resume_from_checkpoint is None
             drive(self.reward, self.callbacks[0])
         def save_model(self, path):
             pass
@@ -426,8 +428,8 @@ def test_training_records_what_the_verifier_cost_it(args, monkeypatch):
     seen = scripted_scores(monkeypatch, [(0.0, False), (1.5, True)])
     def drive(reward, callback):
         assert reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]]) == [0.0, None]
-        control = callback.on_step_end(None, SimpleNamespace(global_step=1, log_history=[]), SimpleNamespace(should_training_stop=False), model=None)
-        assert control.should_training_stop
+        control = callback.on_step_end(None, SimpleNamespace(global_step=1, log_history=[]), SimpleNamespace(should_training_stop=False, should_save=False), model=None)
+        assert control.should_training_stop and control.should_save  # a stopped run keeps a checkpoint of its last step
     trl_stub(monkeypatch, drive)
     summary = dict(rollouts={})
     hf_grpo.train(model, tokenizer, [TASK], args, summary)
@@ -446,7 +448,7 @@ def test_no_variation_is_not_blamed_on_the_verifier(args, monkeypatch):
     scripted_scores(monkeypatch, [(0.0, False), (0.0, False)])  # every rollout decided, and all the same
     def drive(reward, callback):
         reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
-        callback.on_step_end(None, SimpleNamespace(global_step=1, log_history=[]), SimpleNamespace(should_training_stop=False), model=None)
+        callback.on_step_end(None, SimpleNamespace(global_step=1, log_history=[]), SimpleNamespace(should_training_stop=False, should_save=False), model=None)
     trl_stub(monkeypatch, drive)
     summary = dict(rollouts={})
     hf_grpo.train(model, tokenizer, [TASK], args, summary)
