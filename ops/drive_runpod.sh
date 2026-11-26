@@ -129,20 +129,30 @@ finish() {
   # ended the cleanup before the copy and the removal. Every step below reports its own failure.
   set +e
   say "copying results"
-  COPIED=0
   # Everything but the resumable checkpoints first, then the checkpoints (several GB with expert LoRA): the pod removes
   # itself at most 10 minutes after the job ends, and a slow copy must cost the checkpoints, never the results.
+  # The two are recorded apart, so that a failed checkpoint copy is not reported as lost results.
+  COPIED=0 CHECKPOINTS=0
   for attempt in 1 2 3; do
-    if pull --exclude='trainer/checkpoint-*/' && pull; then COPIED=1; break; fi
+    if pull --exclude='trainer/checkpoint-*/'; then COPIED=1; break; fi
     say "copy attempt $attempt failed"; sleep 10
   done
-  if [[ $COPIED == 0 ]]; then say 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'; fi
+  if [[ $COPIED == 0 ]]; then say 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'
+  else
+    for attempt in 1 2 3; do
+      if pull; then CHECKPOINTS=1; break; fi
+      say "checkpoint copy attempt $attempt failed"; sleep 10
+    done
+    if [[ $CHECKPOINTS == 0 ]]; then say 'the results are copied but the resumable checkpoints are not: the pod is not removed from here, so they can still be fetched until its own timer removes it'; fi
+  fi
   if ! "${SSH[@]}" "root@$HOST" 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
-  if [[ ${KEEP_POD:-0} == 1 || $COPIED == 0 ]]; then
-    # Left running on purpose: say so only if a removal timer is really armed there.
+  if [[ ${KEEP_POD:-0} == 1 || $CHECKPOINTS == 0 ]]; then
+    # Left running on purpose: say so only if a removal timer is really armed there. A pod that no longer answers has
+    # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
-    if "${SSH[@]}" "root@$HOST" "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
+    if ! "${SSH[@]}" "root@$HOST" true; then say "the pod no longer answers (ssh error above): it has most likely removed itself on its timer. Confirm in the RunPod console"
+    elif "${SSH[@]}" "root@$HOST" "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
     else say "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
   elif "${SSH[@]}" "root@$HOST" 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
     # Accepted is not gone: the pod is gone when it stops answering.
@@ -155,6 +165,7 @@ finish() {
     else say "REMINDER: RunPod accepted the removal but the pod still answers after a minute. Check the console now"; code=97; fi
   else say "REMINDER: could not remove the pod from here. Terminate it in the RunPod console now"; code=97; fi
   if [[ $COPIED == 0 && $code == 0 ]]; then code=96; fi
+  if [[ $COPIED == 1 && $CHECKPOINTS == 0 && $code == 0 ]]; then code=95; fi
   exit "$code"
 }
 trap finish EXIT
