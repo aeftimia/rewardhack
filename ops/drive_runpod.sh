@@ -197,12 +197,15 @@ finish() {
   fi
   if ! on_pod 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
-  # A pod with no removal timer ran no job, so it holds nothing to keep: it is removed here whatever KEEP_POD says, and
-  # only a pod that cannot be reached is left to the console (review round 39: a failed arm call on a reachable pod was
-  # left running with a reminder and no bound on its billing).
-  if [[ $ARMED == 0 ]] && ! on_pod true; then
-    say "REMINDER: the pod never accepted SSH, so no removal timer was ever armed on it. Terminate it in the RunPod console now"; code=97
-  elif [[ $ARMED == 1 && ( $KEEP == 1 || $CHECKPOINTS == 0 ) ]]; then
+  # This run armed no timer, so it started no job. A fresh pod then holds nothing and is removed here whatever KEEP_POD
+  # says (review round 39: a failed arm call on a reachable pod was left with a reminder and no bound on its billing). A
+  # kept pod (a relaunch) may hold an earlier job's results in out/, and its earlier timer: it is removed only when it
+  # answers that it holds no out/; otherwise the timer check below says whether a timer still runs (review round 40).
+  HELD=unknown
+  if [[ $ARMED == 0 ]]; then HELD=$(on_pod 'if [ -e out ]; then echo held; else echo empty; fi'); fi
+  if [[ $ARMED == 0 && -z $HELD ]] && ! on_pod true; then
+    say "REMINDER: the pod never accepted SSH, so this run armed no removal timer on it (a kept pod keeps its earlier one). Terminate it in the RunPod console now unless out/autostop.log there shows one"; code=97
+  elif [[ ( $ARMED == 1 && ( $KEEP == 1 || $CHECKPOINTS == 0 ) ) || ( $ARMED == 0 && $HELD != empty ) ]]; then
     # Left running on purpose: say so only if a removal timer is really armed there. A pod that no longer answers has
     # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.

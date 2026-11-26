@@ -91,22 +91,32 @@ def test_the_driver_refuses_at_once_without_a_timeout_command(tmp_path):
     assert done.returncode == 2 and 'needs a timeout command' in done.stdout, done.stdout + done.stderr
 
 
-def test_a_wait_that_connected_makes_no_further_unretried_try_and_a_failed_arm_removes_the_pod(tmp_path):
-    """Round 37: after the wait loop connected, one more connection was made with no retry, and its failure gave up a pod
-    with no removal timer. Here the pod answers at once; the arm call is made to fail so the driver stops there."""
+def arm_fails(tmp_path, out_on_pod):
+    """The driver against a pod that answers at once and whose arm call fails; `out_on_pod`: what `out/` the pod has.
+    Returns the driver's output and the ssh calls it made, in order."""
     calls = tmp_path/'calls'
     bin_dir = tmp_path/'bin'
-    bin_dir.mkdir()
-    stubs = {'ssh': f'echo "$*" >> {calls}\n[[ "$*" != *--arm-only* ]]\n', 'rsync': 'exit 1\n', 'sleep': 'exit 0\n', 'timeout': TIMEOUT_STUB}
+    bin_dir.mkdir(parents=True)
+    ssh = (f'echo "$*" >> {calls}\n[[ "$*" != *--arm-only* ]] || exit 1\n'
+           f'if [[ "$*" == *"[ -e out ]"* ]]; then echo {out_on_pod}; fi\n')
+    stubs = {'ssh': ssh, 'rsync': 'exit 1\n', 'sleep': 'exit 0\n', 'timeout': TIMEOUT_STUB}
     for name, body in stubs.items():
         (bin_dir/name).write_text('#!/bin/bash\n' + body)
         (bin_dir/name).chmod(0o755)
-    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none')
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none', KEEP_POD='1')
     done = subprocess.run(['bash', driver_script(tmp_path), 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'results'), '240'],
                           env=env, capture_output=True, text=True, timeout=120)
     assert 'could not arm' in done.stdout, done.stdout + done.stderr
-    sent = calls.read_text().splitlines()
+    return done.stdout, calls.read_text().splitlines()
+
+
+def test_a_wait_that_connected_makes_no_further_unretried_try_and_a_failed_arm_removes_only_an_empty_pod(tmp_path):
+    """Round 37: after the wait loop connected, one more connection was made with no retry, and its failure gave up a pod
+    with no removal timer. Round 39: a pod this run armed no timer on started no job here, so a fresh one is removed even
+    with KEEP_POD=1. Round 40: a kept pod (a relaunch) may hold an earlier job's out/ and timer, and is not removed."""
+    _, sent = arm_fails(tmp_path/'fresh', 'empty')
     before_arm = sent[:next(index for index, line in enumerate(sent) if '--arm-only' in line)]
     assert len(before_arm) == 1 and before_arm[0].endswith(' true'), sent
-    # No timer was armed, so no job ran: the pod is removed, not left running with a reminder (review round 39).
     assert any('--remove-now' in line for line in sent), sent
+    output, sent = arm_fails(tmp_path/'kept', 'held')
+    assert not any('--remove-now' in line for line in sent) and 'removal timer is running' in output, sent
