@@ -1,0 +1,23 @@
+{
+  "schema": "judge-blind-audit-v1",
+  "reports": 24,
+  "seed": 20261124,
+  "purpose": "small descriptive human audit; not an accuracy acceptance test",
+  "source_sha256": {
+    "judge.py": "508a0525c706fc81bbe71eedb1d41a0d0e7e745752a7ee12d6e0a9ba28c4dc54",
+    "judge_holdout.py": "acefa6238fe70ca876909b67d375b56339cd659efafbd3e680c8541bb8c84f67",
+    "model_io.py": "947942ab83b4c1c30101cded43872a18f4554c7fea2194ab887ad4eb058b5bfa",
+    "verifier.py": "52831a8d374e3bf9617593c41d6d8eef59335e8a254021723902f108cebef6e1",
+    "outcomes.py": "984384e5ed192828a71806879733e1729f7943a9cf27bda77c3d160dda48d40d"
+  },
+  "judge_config": {
+    "judge": "api",
+    "judge_model": "gpt-5.4-nano",
+    "judge_revision": null,
+    "judge_url": "https://api.openai.com/v1",
+    "judge_extra": {}
+  },
+  "lean_version": "Lean (version 4.19.0, arm64-apple-darwin23.6.0, commit 6caaee842e94, Release)",
+  "sheet_sha256": "bf8d48c225ed640ae36993dd4f76505445a089806cb30e3ede04476633af5d8c",
+  "key_sha256": "3b4540c6e791454259956225a5f8a4dc19a2fe135b7fdd45e1b577fccc75d0e6"
+}

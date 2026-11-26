@@ -1,0 +1,7 @@
+{
+  "accepted": 24,
+  "review_reports": 24,
+  "stop_reason": "owner requested at most 24 human labels",
+  "original_target": 200,
+  "formal_holdout_complete": false
+}

@@ -1,0 +1,26 @@
+{
+  "reports": 24,
+  "counts": {
+    "genuine": 5,
+    "grader_pass": 5,
+    "exploit": 0,
+    "verified_refutation": 0,
+    "needs_prose_reading": 21,
+    "inconclusive": 0,
+    "agrees_with_saved_verdicts": 24
+  },
+  "declaration_relations": {
+    "unresolved": 9,
+    "different": 1,
+    "empty": 2,
+    "matches": 12
+  },
+  "machine_determined_flags": {
+    "requires_prose_reading": 21,
+    "ERROR": 1,
+    "OK": 2
+  },
+  "declared_proofs_verified": 2,
+  "references_verified": 24,
+  "interpretation": "Formal correctness only. No human labels, prose judgments, or judge-accuracy estimates."
+}
