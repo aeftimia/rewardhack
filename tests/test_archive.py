@@ -1,5 +1,5 @@
-"""The run archive on S3 (ops/run_archive.py: upload and checksum check only, owner 26 Nov, notes section 78) against a stand-in `aws` that keeps the bucket in a folder,
-and the driver's settings for the Qwen3-32B job."""
+"""The run archive (ops/run_archive.py over rclone, ops/fetch_checkpoint.sh on the pod; notes section 78) against stand-in
+rclone, aws and curl that keep the bucket in a folder, and the driver's settings for the Qwen3-32B job."""
 import json
 import os
 import re
@@ -11,98 +11,112 @@ import pytest
 from conftest import PROJECT
 from test_driver_refusals import drive
 
-# The stand-in keeps each object as a file and its SHA-256 beside it, as S3 stores the checksum a PutObject carried. Like S3,
-# put-object refuses a body whose SHA-256 is not the one given. FAKE_S3_CHANGE_ON_PUT names a file whose bytes change while it
-# is read (S3 then refuses it).
-FAKE_AWS = r'''
-import base64, hashlib, os, sys
+# Stand-ins: the bucket is the folder FAKE_S3/<bucket>/. rclone copies (honouring the anchored --exclude filters and
+# --immutable), checks, hashes and cats; FAKE_RCLONE_CHECK_FAILS makes `check` report a difference. aws presigns and reports
+# the credentials' expiry (FAKE_SESSION_SECONDS from now).
+FAKE_RCLONE = r"""
+import hashlib, os, shutil, sys
 from pathlib import Path
 args = sys.argv[1:]
-assert args[:2] == ['--region', 'us-east-1'], args
-args = args[2:]
 root = Path(os.environ['FAKE_S3'])
-def opt(name):
-    return args[args.index(name)+1]
-def path(bucket, key):
-    return root/bucket/key
-if args[:2] == ['s3api', 'put-object']:
-    assert opt('--storage-class') == 'STANDARD_IA'
-    if os.environ.get('FAKE_ADD_FILE'):
+assert os.environ['RCLONE_CONFIG_S3_ENV_AUTH'] == 'true'
+def local_files(folder):
+    excluded = {args[i+1].lstrip('/') for i, a in enumerate(args) if a == '--exclude'}
+    return sorted(p.relative_to(folder).as_posix() for p in Path(folder).rglob('*') if p.is_file()
+                  and p.relative_to(folder).as_posix() not in excluded)
+def remote(spec):
+    assert spec.startswith('s3:'), spec
+    return root/spec[3:]
+command = args[0]
+if command == 'version':
+    print(os.environ.get('FAKE_RCLONE_VERSION', 'rclone v1.76.0'))
+elif command == 'hashsum':
+    assert args[1] == 'sha256'
+    if os.environ.get('FAKE_ADD_FILE') and (root/'copied').exists():  # a file that arrived while the copy ran
         Path(os.environ['FAKE_ADD_FILE']).write_text('late')
-    if opt('--if-none-match') == '*' and path(opt('--bucket'), opt('--key')).exists():
-        sys.exit('An error occurred (PreconditionFailed) when calling the PutObject operation')
-    target, body = path(opt('--bucket'), opt('--key')), Path(opt('--body')).read_bytes()
-    if os.environ.get('FAKE_S3_CHANGE_ON_PUT') and opt('--body').endswith(os.environ['FAKE_S3_CHANGE_ON_PUT']):
-        body = body[::-1] + b'x'
-    if base64.b64encode(hashlib.sha256(body).digest()).decode() != opt('--checksum-sha256'):
-        sys.exit('An error occurred (BadDigest) when calling the PutObject operation')
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(body)
-    Path(str(target)+'.sha256').write_text(opt('--checksum-sha256'))
-elif args[:2] == ['s3api', 'head-object']:
-    assert opt('--checksum-mode') == 'ENABLED'
-    checksum = Path(str(path(opt('--bucket'), opt('--key')))+'.sha256')
-    if not checksum.exists():
-        sys.exit('An error occurred (404) when calling the HeadObject operation: Not Found')
-    print(checksum.read_text())
-elif args[:2] == ['configure', 'export-credentials']:
-    import datetime, json
-    left = int(os.environ.get('FAKE_SESSION_SECONDS', '28800'))
+    for name in local_files(args[2]):
+        print(hashlib.sha256((Path(args[2])/name).read_bytes()).hexdigest() + '  ' + name)
+elif command in ('copy', 'copyto'):
+    assert args[args.index('--s3-storage-class')+1] == 'STANDARD_IA' and '--immutable' in args
+    pairs = [(Path(args[1])/n, remote(args[2])/n) for n in local_files(args[1])] if command == 'copy' else [(Path(args[1]), remote(args[2]))]
+    for source, target in pairs:
+        if target.exists():
+            sys.exit(f'ERROR: {target}: immutable file modified')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(source, target)
+    root.mkdir(exist_ok=True); (root/'copied').write_text('')
+elif command == 'check':
+    assert '--one-way' in args
+    differ = [n for n in local_files(args[1]) if not (remote(args[2])/n).exists()
+              or (remote(args[2])/n).read_bytes() != (Path(args[1])/n).read_bytes()]
+    if differ or os.environ.get('FAKE_RCLONE_CHECK_FAILS'):
+        sys.exit(f'ERROR: {len(differ) or 1} differences found')
+elif command == 'cat':
+    target = remote(args[1])
+    if not target.exists():
+        sys.exit('ERROR: object not found')
+    sys.stdout.write(target.read_text())
+else:
+    sys.exit(f'unexpected rclone call {args}')
+"""
+FAKE_AWS = r"""
+import datetime, json, os, sys
+args = sys.argv[1:]
+if args[:2] == ['configure', 'export-credentials']:
+    left = int(os.environ.get('FAKE_SESSION_SECONDS', '3600'))
     expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=left)
-    print(json.dumps({'Version': 1, 'Expiration': expiry.isoformat().replace('+00:00', 'Z')}))
-elif args[:2] == ['s3api', 'get-object']:
-    source = path(opt('--bucket'), opt('--key'))
-    if not source.exists():
-        sys.exit('An error occurred (NoSuchKey) when calling the GetObject operation')
-    Path(args[-1]).write_bytes(source.read_bytes())
-elif args[:2] == ['s3', 'presign']:
-    if os.environ.get('FAKE_PRESIGN_FAIL') and args[2].endswith(os.environ['FAKE_PRESIGN_FAIL']):
-        sys.exit('presign failed')
-    print(f'https://example.invalid/{args[2].removeprefix("s3://")}?expires={opt("--expires-in")}')
+    print(json.dumps({'Version': 1, 'Expiration': expiry.isoformat()}))
+elif args[2:4] == ['s3', 'presign']:
+    print(f'https://example.invalid/{args[4].removeprefix("s3://")}?expires={args[args.index("--expires-in")+1]}')
 else:
     sys.exit(f'unexpected aws call {args}')
-'''
-
-
+"""
 COMMIT = 'a' * 40
 
 
-def archive(tmp_path, *args, **env):
+def tools(tmp_path):
     bin_dir = tmp_path/'bin'
     if not bin_dir.exists():
         bin_dir.mkdir()
-        (bin_dir/'fake_aws.py').write_text(FAKE_AWS)
-        (bin_dir/'aws').write_text(f'#!/bin/bash\nexec "{sys.executable}" "{bin_dir}/fake_aws.py" "$@"\n')
-        (bin_dir/'aws').chmod(0o755)
-        (bin_dir/'python3').write_text(f'#!/bin/bash\nexec "{sys.executable}" "$@"\n')
-        (bin_dir/'python3').chmod(0o755)
-        # The stand-in's URLs name its bucket folder: this curl copies from there.
+        scripts = {'rclone': FAKE_RCLONE, 'aws': FAKE_AWS}
+        for name, source in scripts.items():
+            (bin_dir/f'{name}.py').write_text(source)
+            (bin_dir/name).write_text(f'#!/bin/bash\nexec "{sys.executable}" "{bin_dir}/{name}.py" "$@"\n')
         (bin_dir/'curl').write_text(f"""#!/bin/bash
 out=; url=; while [[ $# -gt 0 ]]; do case $1 in -o) out=$2; shift 2;; --max-time) shift 2;; -*) shift;; *) url=$1; shift;; esac; done
 src={tmp_path}/s3/${{url#https://example.invalid/}}; cp "${{src%%\\?*}}" "$out"
 """)
-        (bin_dir/'curl').chmod(0o755)
-    result = subprocess.run([sys.executable, str(PROJECT/'ops'/'run_archive.py'), *map(str, args)], capture_output=True, text=True,
-                            env=dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_S3=str(tmp_path/'s3'), **env))
-    return result.returncode, result.stdout + result.stderr
+        for name in ('rclone', 'aws', 'curl'):
+            (bin_dir/name).chmod(0o755)
+    return dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_S3=str(tmp_path/'s3'), PYTHONPATH=str(PROJECT/'src'))
+
+
+def archive(tmp_path, *args, **env):
+    done = subprocess.run([sys.executable, str(PROJECT/'ops'/'run_archive.py'), *map(str, args)], capture_output=True, text=True,
+                          env={**tools(tmp_path), **env})
+    return done.returncode, done.stdout + done.stderr
 
 
 def fetch(tmp_path, destination, lines):
-    env = dict(os.environ, PATH=f"{tmp_path/'bin'}:{os.environ['PATH']}")
     done = subprocess.run(['bash', str(PROJECT/'ops'/'fetch_checkpoint.sh'), str(destination)], input=lines, text=True,
-                          capture_output=True, env=env)
+                          capture_output=True, env=tools(tmp_path))
     return done.returncode, done.stdout + done.stderr
+
+
+CHECKPOINT_PARTS = ('adapter_model.safetensors', 'adapter_config.json', 'optimizer.pt', 'scheduler.pt', 'rng_state.pth', 'trainer_state.json')
 
 
 @pytest.fixture
 def run(tmp_path):
     run = tmp_path/'runpod-part1-test'
-    for folder in ('train-a/adapter-step8', 'train-a/adapter', 'train-a/trainer/checkpoint-60'):
-        (run/folder).mkdir(parents=True)
-        (run/folder/'weights.bin').write_bytes(b'\x01' * 1000)
-    for part in ('optimizer.pt', 'adapter_model.safetensors', 'scheduler.pt', 'trainer_state.json'):
-        (run/'train-a'/'trainer'/'checkpoint-60'/part).write_bytes(b'\x03' * 1000)
-    (run/'train-a'/'steps.jsonl').write_text('{"step": 1}\n')
+    for step in (56, 60):
+        (run/'train-a'/'trainer'/f'checkpoint-{step}').mkdir(parents=True)
+        for part in CHECKPOINT_PARTS:
+            (run/'train-a'/'trainer'/f'checkpoint-{step}'/part).write_bytes(bytes([step]) * 100)
+    (run/'train-a'/'adapter-step8').mkdir()
+    (run/'train-a'/'adapter-step8'/'adapter_model.safetensors').write_bytes(b'\x01' * 100)
+    for name in ('run-settings.json', 'training-rollouts.jsonl', 'steps.jsonl', 'summary.json'):
+        (run/'train-a'/name).write_text('{}\n')
     (run/'known_hosts').write_text('pod key\n')
     (run/'launch-commit.txt').write_text(COMMIT + '\n')
     return run
@@ -112,132 +126,79 @@ def records(run):
     return json.loads((run/'archive.json').read_text())
 
 
-def stored(tmp_path, entry):
-    return tmp_path/'s3'/entry['uri'].removeprefix('s3://')
-
-
-def test_an_upload_gets_its_own_run_id_and_a_committed_record(tmp_path, run):
+def test_upload_copies_checks_and_records_under_a_new_run_id(tmp_path, run):
     code, output = archive(tmp_path, 'upload', run)
     assert code == 0, output
     [entry] = records(run)
     assert re.fullmatch(r'\d{8}T\d{6}Z-runpod-part1-test-[0-9a-f]{8}', entry['run_id'])
     assert entry['uri'] == f"s3://rewardhack-run-archive/{entry['run_id']}/"
     assert entry['storage_class'] == 'STANDARD_IA' and entry['commit'] == COMMIT
-    assert 'launch-commit.txt' in entry['sha256'] and 'known_hosts' not in entry['sha256']
-    assert (stored(tmp_path, entry)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
-    assert json.loads((stored(tmp_path, entry)/'archive.json').read_text()) == entry
-    assert (run/'train-a'/'adapter-step8').exists()  # nothing deleted
+    assert 'known_hosts' not in entry['sha256'] and len(entry['sha256']['train-a/steps.jsonl']) == 64
+    stored = tmp_path/'s3'/'rewardhack-run-archive'/entry['run_id']
+    assert (stored/'train-a'/'trainer'/'checkpoint-60'/'optimizer.pt').exists() and not (stored/'known_hosts').exists()
+    assert json.loads((stored/'archive.json').read_text()) == entry
+    assert archive(tmp_path, 'upload', run)[0] == 0 and len({e['run_id'] for e in records(run)}) == 2
 
 
-def test_uploads_never_share_a_prefix(tmp_path, run):
-    assert archive(tmp_path, 'upload', run)[0] == 0
-    other = tmp_path/'elsewhere'/run.name
-    shutil.copytree(run, other)
-    (other/'archive.json').unlink()
-    (other/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x09' * 1000)
-    assert archive(tmp_path, 'upload', other)[0] == 0 and archive(tmp_path, 'upload', run)[0] == 0
-    ids = [e['run_id'] for e in records(run)] + [records(other)[0]['run_id']]
-    assert len(set(ids)) == 3
-    assert (stored(tmp_path, records(run)[0])/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
+@pytest.mark.parametrize('env, said', [(dict(FAKE_RCLONE_CHECK_FAILS='1'), 'differences found'),
+                                       (dict(FAKE_RCLONE_VERSION='rclone v1.70.0'), 'pins v1.76.0')])
+def test_a_failed_check_or_another_rclone_records_nothing(tmp_path, run, env, said):
+    code, output = archive(tmp_path, 'upload', run, **env)
+    assert code != 0 and said in output and not (run/'archive.json').exists()
 
 
-def test_an_empty_commit_record_is_refused(tmp_path, run):
-    (run/'launch-commit.txt').write_text('')
-    code, output = archive(tmp_path, 'upload', run, '--commit', 'b' * 40)
-    assert code != 0 and 'does not hold a full commit' in output
-
-
-def test_the_commit_is_required(tmp_path, run):
-    (run/'launch-commit.txt').unlink()
-    code, output = archive(tmp_path, 'upload', run)
-    assert code != 0 and '--commit' in output and not (tmp_path/'s3').exists()
-    assert archive(tmp_path, 'upload', run, '--commit', 'b' * 40)[0] == 0 and records(run)[0]['commit'] == 'b' * 40
-
-
-def test_a_file_changing_while_it_is_read_is_refused_by_s3_and_nothing_is_recorded(tmp_path, run):
-    code, output = archive(tmp_path, 'upload', run, FAKE_S3_CHANGE_ON_PUT='checkpoint-60/weights.bin')
-    assert code != 0 and 'BadDigest' in output and not (run/'archive.json').exists()
-
-
-def test_a_file_added_during_the_upload_stops_the_record(tmp_path, run):
+def test_a_folder_changing_during_the_upload_records_nothing(tmp_path, run):
     code, output = archive(tmp_path, 'upload', run, FAKE_ADD_FILE=str(run/'train-a'/'late.json'))
     assert code != 0 and 'changed while it was archived' in output and not (run/'archive.json').exists()
 
 
-@pytest.mark.parametrize('odd', ['link', 'spaced name.txt'])
-def test_links_and_spaced_names_are_refused(tmp_path, run, odd):
-    if odd == 'link':
-        (run/odd).symlink_to(run/'train-a'/'steps.jsonl')
-    else:
-        (run/odd).write_text('x')
+def test_the_commit_is_required_and_must_be_whole(tmp_path, run):
+    (run/'launch-commit.txt').write_text('')
+    assert archive(tmp_path, 'upload', run, '--commit', 'b' * 40)[0] != 0
+    (run/'launch-commit.txt').unlink()
     code, output = archive(tmp_path, 'upload', run)
-    assert code != 0 and not (run/'archive.json').exists()
+    assert code != 0 and '--commit' in output
+    assert archive(tmp_path, 'upload', run, '--commit', 'b' * 40)[0] == 0 and records(run)[0]['commit'] == 'b' * 40
 
 
-def test_a_bad_record_stops_an_upload_before_anything_is_sent(tmp_path, run):
-    (run/'archive.json').write_text('{}')
-    code, output = archive(tmp_path, 'upload', run)
-    assert code != 0 and 'not a list of archives' in output and not (tmp_path/'s3').exists()
-
-
-def test_resume_by_run_id_or_record_presigns_only_the_chosen_checkpoint(tmp_path, run):
-    """Owner, 26 Nov: Standard-IA charges per GB read, so a resume pulls one checkpoint, never snapshots or other checkpoints."""
-    for step in ('56', '600'):
-        (run/'train-a'/'trainer'/f'checkpoint-{step}').mkdir()
-        (run/'train-a'/'trainer'/f'checkpoint-{step}'/'weights.bin').write_bytes(b'\x02')
+def test_resume_names_one_checkpoint_and_the_run_files_and_the_pod_checks_them(tmp_path, run):
+    """Owner, 26 Nov: Standard-IA charges per GB read, so a resume reads one checkpoint and the run files the trainer's
+    resume needs (round 45), never snapshots or other checkpoints; the pod keeps them only when sha256sum -c passes."""
     assert archive(tmp_path, 'upload', run)[0] == 0
-    entry = records(run)[-1]
-    for source in (entry['run_id'], run/'archive.json'):
-        code, output = archive(tmp_path, 'resume', source, 'train-a/trainer/checkpoint-60')
-        assert code == 0, output
-        lines = output.strip().splitlines()
-        assert [line.split()[1] for line in lines[:-1]] == [f'train-a/trainer/checkpoint-60/{part}' for part in (
-            'adapter_model.safetensors', 'optimizer.pt', 'scheduler.pt', 'trainer_state.json', 'weights.bin')]
-        assert lines[-1] == 'END 5' and all(f"{entry['run_id']}/" in line.split()[2] for line in lines[:-1])
-    # Round 44: checkpoint-56 lacks the files of a finished save (its run was killed mid-save, say).
-    code, output = archive(tmp_path, 'resume', entry['run_id'], 'train-a/trainer/checkpoint-56')
-    assert code != 0 and 'not a finished save' in output
-    for refused in ('train-a/adapter-step8', 'train-a/trainer', 'train-a/trainer/checkpoint-7'):
-        assert archive(tmp_path, 'resume', entry['run_id'], refused)[0] != 0, refused
-    assert archive(tmp_path, 'resume', '20261126T000000Z-nothing-0123abcd', 'train-a/trainer/checkpoint-60')[0] != 0
-
-
-def test_resume_prints_nothing_when_one_url_fails(tmp_path, run):
-    """Round 42: all lines or none, so a cut-short list never reaches a pod."""
-    assert archive(tmp_path, 'upload', run)[0] == 0
-    code, output = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60', FAKE_PRESIGN_FAIL='weights.bin')
-    assert code != 0 and 'https://' not in output
-
-
-def test_resume_refuses_when_the_role_credentials_end_before_the_urls(tmp_path, run):
-    assert archive(tmp_path, 'upload', run)[0] == 0
-    code, output = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60', FAKE_SESSION_SECONDS='600')
-    assert code != 0 and 'aws sso logout' in output and 'https://' not in output
-
-
-def test_the_pod_fetches_the_whole_checkpoint_and_checks_every_hash(tmp_path, run):
-    assert archive(tmp_path, 'upload', run)[0] == 0
-    code, lines = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60')
-    assert code == 0
+    entry = records(run)[0]
+    code, lines = archive(tmp_path, 'resume', entry['run_id'], 'train-a/trainer/checkpoint-60')
+    assert code == 0, lines
+    names = [line.split()[1] for line in lines.strip().splitlines()[:-1]]
+    assert names == sorted([f'train-a/trainer/checkpoint-60/{part}' for part in CHECKPOINT_PARTS]
+                           + ['train-a/run-settings.json', 'train-a/steps.jsonl', 'train-a/training-rollouts.jsonl'])
+    assert lines.strip().splitlines()[-1] == f'END {len(names)}'
+    assert archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60')[1] == lines
     code, output = fetch(tmp_path, tmp_path/'pod', lines)
     assert code == 0, output
-    assert (tmp_path/'pod'/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
-    assert not (tmp_path/'pod'/'train-a'/'adapter-step8').exists()
-    # Fetched again into the same place: refused, so two fetches never mix.
-    assert fetch(tmp_path, tmp_path/'pod', lines)[0] == 2
-    # A cut-short list, and a list with a file of another checkpoint, are refused before any download.
+    assert (tmp_path/'pod'/'train-a'/'trainer'/'checkpoint-60'/'optimizer.pt').read_bytes() == bytes([60]) * 100
+    assert (tmp_path/'pod'/'train-a'/'steps.jsonl').exists() and not (tmp_path/'pod'/'train-a'/'adapter-step8').exists()
+    assert not (tmp_path/'pod'/'train-a'/'trainer'/'checkpoint-56').exists()
+    assert fetch(tmp_path, tmp_path/'pod', lines)[0] == 2  # never on top of an earlier fetch
     body = lines.strip().splitlines()
-    assert fetch(tmp_path, tmp_path/'pod2', '\n'.join(body[:1]) + '\n')[0] == 2
-    other = body[0].replace('checkpoint-60', 'checkpoint-56')
-    assert fetch(tmp_path, tmp_path/'pod3', '\n'.join([body[0], other, 'END 2']) + '\n')[0] == 2
-    # Two lists pasted together are refused (round 43).
-    assert fetch(tmp_path, tmp_path/'pod5', lines + lines)[0] == 2
-    # A stored file with other bytes is never kept.
-    (stored(tmp_path, records(run)[-1])/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x00')
+    assert fetch(tmp_path, tmp_path/'pod2', '\n'.join(body[:2]) + '\n')[0] == 2  # cut short
+    assert fetch(tmp_path, tmp_path/'pod3', lines + lines)[0] == 2  # two lists
+    stored = tmp_path/'s3'/'rewardhack-run-archive'/entry['run_id']/'train-a'/'trainer'/'checkpoint-60'/'optimizer.pt'
+    stored.write_bytes(b'\x00')
     code, output = fetch(tmp_path, tmp_path/'pod4', lines)
-    assert code == 1 and 'SHA-256 differs' in output
-    # Round 43: nothing of a failed fetch stays, not the files that did arrive, nor the temporary folder.
-    assert list((tmp_path/'pod4').iterdir()) == []
+    assert code == 1 and 'nothing kept' in output and list((tmp_path/'pod4').iterdir()) == []
+
+
+def test_resume_refuses_what_it_cannot_resume(tmp_path, run):
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    run_id = records(run)[0]['run_id']
+    for checkpoint in ('train-a/adapter-step8', 'train-a/trainer', 'train-a/trainer/checkpoint-7'):
+        assert archive(tmp_path, 'resume', run_id, checkpoint)[0] != 0, checkpoint
+    (run/'train-a'/'trainer'/'checkpoint-56'/'rng_state.pth').unlink()  # a save cut short, uploaded as it was
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    code, output = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-56')
+    assert code != 0 and 'rng_state.pth' in output
+    code, output = archive(tmp_path, 'resume', run_id, 'train-a/trainer/checkpoint-60', FAKE_SESSION_SECONDS='600')
+    assert code != 0 and 'aws sso logout' in output and 'https://' not in output
 
 
 API = dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none',

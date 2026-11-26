@@ -96,6 +96,10 @@ def run_settings(args):
 
 # What a checkpoint must hold to continue a run: the adapter, the optimizer, the scheduler and the random state.
 CHECKPOINT_FILES = ('adapter_model.safetensors', 'adapter_config.json', 'optimizer.pt', 'scheduler.pt', 'rng_state.pth')
+# What a resume reads from the run folder beside the checkpoint (check_resume, original_records); ops/run_archive.py fetches
+# exactly these and the checkpoint for a pod.
+ROLLOUTS, STEPS = 'training-rollouts.jsonl', 'steps.jsonl'
+RESUME_RUN_FILES = (RUN_SETTINGS, ROLLOUTS, STEPS)
 
 
 def resume_point(args):
@@ -112,12 +116,12 @@ def original_records(args):
     wanted = done*args.num_generations*args.prompts_per_step
     rows, lines = [], []
     # Each loop stops on the last line it needs, before parsing the next one.
-    for row in jsonl.read(original/'training-rollouts.jsonl'):
+    for row in jsonl.read(original/ROLLOUTS):
         if 'partial_batch' not in row:
             rows.append(row)
         if len(rows) == wanted:
             break
-    for line in jsonl.read(original/'steps.jsonl'):
+    for line in jsonl.read(original/STEPS):
         lines.append(line)
         if line['step'] == done:
             break
@@ -431,12 +435,12 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     if rollouts is not None:
         rollouts.stops = stops
     timing = {'step_start': 0.0, 'rollout': [], 'lean': [], 'update': [], 'reward_end': 0.0}
-    sink = (args.out/'training-rollouts.jsonl').open('w')
+    sink = (args.out/ROLLOUTS).open('w')
     training_provenance = row_provenance(args, 'training')  # on every rollout and steps.jsonl line this run writes
     groups, undecided, lost = [], [], []
     retries = RetryBudget(args.verifier_retry_seconds)  # for the whole training phase, so the deadline reserve holds
 
-    steps = (args.out/'steps.jsonl').open('w')
+    steps = (args.out/STEPS).open('w')
     first_seen = summary.setdefault('first_seen_step', {})
 
     def note_undecided(rows):
