@@ -259,7 +259,7 @@ HOOKS = [hook for repo in CONFIG['repos'] for hook in repo['hooks'] if 'entry' i
 # commit in its environment (a push that only deletes runs no hooks).
 SHIMS = {'pre-commit': '{entry}', 'commit-msg': '{entry} "$1"',
          'pre-push': 'read -r local sha remote _\n[ "$sha" = 0000000000000000000000000000000000000000 ] && exit 0\n'
-                     'PRE_COMMIT_TO_REF="$sha" PRE_COMMIT_LOCAL_BRANCH="$local" PRE_COMMIT_REMOTE_BRANCH="$remote" {entry}'}
+                     'PRE_COMMIT_REMOTE_NAME="$1" PRE_COMMIT_TO_REF="$sha" PRE_COMMIT_LOCAL_BRANCH="$local" PRE_COMMIT_REMOTE_BRANCH="$remote" {entry}'}
 
 
 def test_the_config_runs_each_check_at_each_stage_it_installs():
@@ -419,17 +419,43 @@ def pushable(gated, tmp_path, name='origin'):
     return remote
 
 
-def test_what_any_remote_has_is_not_read_again(gated, tmp_path):
-    # The term in history already on `origin` does not hold back a push to a new, never-fetched `backup`.
+def test_only_what_the_destination_has_is_not_read_again(gated, tmp_path):
+    # A branch that only a private mirror has is read when it goes to origin; what origin has is not read again.
     pushable(gated, tmp_path)
+    run(gated, 'push', '-q', 'origin', 'main')
+    pushable(gated, tmp_path, 'mirror')
+    run(gated, 'switch', '-q', '-c', 'feat')
     (gated / 'notes.md').write_text(f'{TERM}\n')
     run(gated, 'add', 'notes.md')
     run(gated, 'commit', '-q', '--no-verify', '-m', 'notes')
-    run(gated, 'push', '-q', '--no-verify', 'origin', 'main')
-    pushable(gated, tmp_path, 'backup')
+    run(gated, 'push', '-q', '--no-verify', 'mirror', 'feat')
+    run(gated, 'switch', '-q', 'main')
+    run(gated, 'branch', '-q', '-D', 'feat')
+    assert refused(attempt(gated, 'push', 'origin', 'mirror/feat:refs/heads/feat'), 'notes.md:1 matches withheld term 1')
     run(gated, 'commit', '-q', '--allow-empty', '-m', 'clean')
-    done = attempt(gated, 'push', '-q', 'backup', 'main')
-    assert done.returncode == 0, done.stderr
+    run(gated, 'push', '-q', '--no-verify', 'origin', 'main')  # the mirror's branch is still unpushed to origin
+    run(gated, 'commit', '-q', '--allow-empty', '-m', 'clean 2')
+    assert refused(attempt(gated, 'push', 'origin', 'main'), 'notes.md:1')  # held back while the mirror's branch is not on origin
+
+
+def test_odd_paths_submodules_and_tag_chains_are_read(gated, tmp_path):
+    pushable(gated, tmp_path)
+    run(gated, 'push', '-q', 'origin', 'main')
+    # macOS will not make a file with this name, so it goes straight into the index.
+    blob = subprocess.run(['git', '-C', str(gated), 'hash-object', '-w', '--stdin'], input=b'harmless\n', capture_output=True, check=True).stdout
+    subprocess.run([b'git', b'-C', bytes(gated), b'update-index', b'--add', b'--cacheinfo', b'100644,' + blob.strip() + b',caf\xe9.md'],
+                   capture_output=True, check=True)
+    assert refused(attempt(gated, 'commit', '-m', 'notes'), 'the path caf\\xe9.md is not UTF-8')
+    run(gated, 'reset', '-q', '--hard')
+    head = attempt(gated, 'rev-parse', 'HEAD').stdout.strip()
+    run(gated, 'update-index', '--add', '--cacheinfo', f'160000,{head},vendor/{TERM}')
+    assert refused(attempt(gated, 'commit', '-m', 'submodule'), f'the path vendor/{TERM}:1')
+    run(gated, 'reset', '-q', '--hard')
+    run(gated, 'commit', '-q', '--allow-empty', '-m', 'clean')
+    run(gated, 'tag', '-a', 'inner', '-m', f'the {TERM} release')
+    run(gated, 'tag', '-a', 'outer', 'inner', '-m', 'wraps it')
+    run(gated, 'tag', '-d', 'inner')
+    assert refused(attempt(gated, 'push', 'origin', 'outer'), 'the message of tag')
 
 
 def test_paths_tag_messages_and_ref_names_are_read(gated, tmp_path):
@@ -475,9 +501,10 @@ def test_gitleaks_reads_the_staged_changes_the_message_and_every_unpushed_commit
     run(repo, 'commit', '-q', '--allow-empty', '-m', 'carries a LEAK in its message')
     sha = attempt(repo, 'rev-parse', 'HEAD').stdout.strip()
     fake_gitleaks.write_text('')
-    assert gates.gitleaks_problems(repo, 'pre-push', [sha], ['main']) == ['gitleaks stdin exited 1: see its findings above']
+    assert gates.gitleaks_problems(repo, 'pre-push', 'origin', [sha], ['main']) == ['gitleaks stdin exited 1: see its findings above']
     calls = fake_gitleaks.read_text().splitlines()
-    assert calls[:2] == [f'git --log-opts=--diff-merges=first-parent --branches --tags HEAD {sha} --not --remotes {flags}', f'stdin {flags}']
+    assert calls[:2] == [f'git --log-opts=--diff-merges=first-parent --branches --tags HEAD --remotes {sha} --not --remotes=origin {flags}',
+                         f'stdin {flags}']
     assert 'carries a LEAK' in calls[2] and 'start' in '\n'.join(calls[3:])
 
 

@@ -13,7 +13,7 @@
         Codex PreToolUse adapter for the shared no-silent-fallbacks checker.
     gate.py terms | gitleaks  pre-commit | commit-msg <file> | pre-push
         The commit gate's local hooks, run by pre-commit (.pre-commit-config.yaml); exit 1 refuses. At pre-push the
-        first pushed ref is read from PRE_COMMIT_TO_REF, PRE_COMMIT_LOCAL_BRANCH and PRE_COMMIT_REMOTE_BRANCH, which pre-commit sets.
+        destination remote is read from PRE_COMMIT_REMOTE_NAME and the first pushed ref from PRE_COMMIT_TO_REF, PRE_COMMIT_LOCAL_BRANCH and PRE_COMMIT_REMOTE_BRANCH, which pre-commit sets.
 
 Every subcommand but `ready` is normally run through ops/gate.sh, which picks the project's Python and this
 checkout's library.
@@ -60,7 +60,7 @@ STAGE_ARGS = {
     'commit-msg': lambda args: (args.message_file,),
     # pre-commit describes only the first pushed ref: its object (PRE_COMMIT_TO_REF, not set when that push starts a new history)
     # and its local and remote names.
-    'pre-push': lambda args: ([os.environ[name] for name in ('PRE_COMMIT_TO_REF',) if name in os.environ],
+    'pre-push': lambda args: (os.environ['PRE_COMMIT_REMOTE_NAME'], [os.environ[name] for name in ('PRE_COMMIT_TO_REF',) if name in os.environ],
                               [os.environ[name] for name in ('PRE_COMMIT_LOCAL_BRANCH', 'PRE_COMMIT_REMOTE_BRANCH') if name in os.environ]),
 }
 
