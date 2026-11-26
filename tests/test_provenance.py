@@ -119,7 +119,7 @@ def test_one_view_per_stage_is_read_and_every_other_jsonl_is_listed(tmp_path):
     write(probe/'rows.rescored.jsonl', provenance.stamp([row(), dict(row(), error='timeout')], meta))
     write(probe/'rows.jsonl', [dict(task_id='x', raw='', scored=False, meta=meta)])
     write(tmp_path/'mlx'/'rollouts.jsonl', [row()])
-    write(tmp_path/'raw'/'rows.jsonl', [dict(task_id='x', raw='', scored=False, meta=meta)])
+    write(tmp_path/'raw'/'rows.jsonl', [dict(task_id='x', raw='', scored=False, meta=dict(meta, run='raw'))])
     [entry], refused = provenance.cells(tmp_path)
     assert (entry['run'], entry['answers'], entry['verified_refutation_false'], entry['tasks'], entry['part']) == ('api/probe-120b-low', 1, 1, 'false', 'train')
     why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
@@ -172,7 +172,7 @@ def test_flags_read_as_argparse_reads_them_and_a_copied_run_is_not_counted_twice
     write(tmp_path/'job'/'child'/'rows.rescored.jsonl', [row()], argv=argv, template_kwargs={})
     write(tmp_path/'job'/'rows.rescored.jsonl', [row()], argv=argv, template_kwargs={})  # a copy in the parent folder
     write(tmp_path/'stamped'/'elsewhere'/'rows.rescored.jsonl', provenance.stamp([row()], provenance.meta(**UNTRAINED)))
-    write(tmp_path/'bare'/'rows.rescored.jsonl', [row()], argv=argv + ['--part'], template_kwargs={})
+    write(tmp_path/'bare'/'rows.rescored.jsonl', [row()], argv=argv[:-2] + ['--part'], template_kwargs={})
     [entry], refused = provenance.cells(tmp_path)
     assert entry['run'] == 'job/child'
     why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
@@ -212,8 +212,10 @@ def test_a_run_that_did_not_complete_counts_only_the_steps_it_trained_on(tmp_pat
     table, refused = provenance.cells(tmp_path)
     found = {entry['run']: (entry['answers'], entry['groups']) for entry in table}
     assert found == {'killed-logged': (2, 2), 'failed-old': (1, 1)}
-    [(path, why)] = refused
-    assert 'killed-silent' in path and 'without saying which steps were trained on' in why
+    why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
+    assert 'without saying which steps were trained on' in why['killed-silent/training-rollouts.jsonl']
+    assert 'training rows beside it that are counted' in why['killed-silent/steps.jsonl']  # listed, not skipped
+    assert why.keys() == {'killed-silent/training-rollouts.jsonl', 'killed-silent/steps.jsonl'}
 
 
 def test_a_trainer_run_started_from_an_adapter_is_refused(tmp_path):
@@ -222,3 +224,15 @@ def test_a_trainer_run_started_from_an_adapter_is_refused(tmp_path):
           status='completed', adapter='results/x/train-lambda05/adapter')
     table, [(_, why)] = provenance.cells(tmp_path)
     assert table == [] and 'started from an adapter' in why
+
+
+def test_a_resumed_run_is_refused_and_a_copy_is_refused_as_a_copy_before_anything_else(tmp_path):
+    meta = provenance.meta(**dict(TRAINED, stage='after', part='evaluation'))
+    write(tmp_path/'train-lambda05'/'after-evaluation.jsonl', provenance.stamp([row()], meta),
+          status='completed', adapter=None, resumed_from='results/x/train-lambda05/trainer/checkpoint-20')
+    argv = ['--model', 'm', '--revision', 'r', '--taskset', 'v1', '--variant', 'neutral', '--out', 'results/job/child']
+    write(tmp_path/'job'/'rows.jsonl', [dict(row(), scored=False)], argv=argv, template_kwargs={})  # a raw copy
+    table, refused = provenance.cells(tmp_path)
+    why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
+    assert table == [] and 'resumed another from a checkpoint' in why['train-lambda05/after-evaluation.jsonl']
+    assert "named 'child'" in why['job/rows.jsonl']  # not "rescore them": rescoring a copy would not help

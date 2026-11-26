@@ -44,7 +44,7 @@ Three checks refuse an action with the reason. They enforce rules above that use
   - a driver setting the driver itself refuses (it runs `ops/drive_runpod.sh` in its check-only mode with the `--set` values, before anything is deployed), or a name the driver does not read;
   - a deadline under the remote script's `# deadline:` line, or under the multiple (`gates.MULTIPLES`) of the measured or estimated time its basis names;
   - a judge cap (`JUDGE_MAX_USD`, 1 when not given, counted when `FORWARD_JUDGE_KEY=1`) above `--other-usd`;
-  - uncommitted changes in what the pod would run, a failed budget check (worst case: the deadline, boot to SSH, the provisional timer, the runner's kill-after and the grace period; `gates.overhead_minutes`), or failing tests.
+  - uncommitted changes in what the pod would run, a failed budget check (worst case: the deadline, the wait for SSH and the call that arms the provisional timer, that timer, the runner's kill-after and the grace period; `gates.overhead_minutes`), or failing tests.
 
   It prints the driver command to use. `ops/drive_runpod.sh` checks the record itself, as its first act once its arguments are valid and before it touches a pod (`gate.py launch`), however it is started: same remote script and deadline, same commit and ledger, and exactly the `--set` settings in its environment (an exported setting counts like one typed in front of it). A record covers one launch: the driver marks it used when it starts, so a relaunch needs `ready` again. A relaunch after a fix needs the fix committed and `ready` run again (about 2 minutes). No host skips the check; the driver's tests run a copy of `ops/` with a stub `gate.sh` (`tests/conftest.py`).
 

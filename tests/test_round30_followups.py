@@ -78,3 +78,14 @@ def test_a_timer_that_dies_after_a_slow_start_is_not_taken_for_a_running_one(tmp
     result = subprocess.run(['bash', 'ops/remote_job.sh', str(job), '10'], cwd=ROOT, env=env, capture_output=True, text=True, timeout=60)
     assert result.returncode == 3 and 'did not start' in result.stdout, result.stdout + result.stderr
     assert not ran.exists(), 'the job started with no working timer'
+
+
+def test_the_driver_refuses_at_once_without_a_timeout_command(tmp_path):
+    """Every call that could hold a billing pod runs under `timeout`; without one each would fail as "not found" and the
+    pod would be given up on with no removal timer (review round 36). Nothing but `dirname` is on this PATH."""
+    bin_dir = tmp_path/'bin'
+    bin_dir.mkdir()
+    (bin_dir/'dirname').symlink_to(subprocess.run(['/usr/bin/which', 'dirname'], capture_output=True, text=True, check=True).stdout.strip())
+    done = subprocess.run(['/bin/bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', 'results/x', '60'],
+                          cwd=ROOT, env=dict(PATH=str(bin_dir), HOME=str(tmp_path)), capture_output=True, text=True, timeout=30)
+    assert done.returncode == 2 and 'needs a timeout command' in done.stdout, done.stdout + done.stderr

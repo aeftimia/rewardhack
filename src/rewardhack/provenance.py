@@ -217,23 +217,28 @@ def count_file(path, stage):
     # cell of runs that start from the base model (review round 35). Refused until meta records the starting adapter.
     if STAGES[stage]['trained'] and stated(read_summary(path), 'adapter', 'adapter') is not None:
         raise ValueError('its run started from an adapter (continued training), which its rows do not record')
+    # Likewise a resumed run: its rows start at the checkpoint's step, and the run it continues still holds the steps it
+    # abandoned after that checkpoint (review round 36).
+    if STAGES[stage]['trained'] and stated(read_summary(path), 'resumed_from', 'resume-from') is not None:
+        raise ValueError('its run resumed another from a checkpoint, which its rows do not record')
     trained = trained_through(path) if STAGES[stage]['steps'] else None
     if trained is not None:
         rows = [row for row in rows if row['step'] <= trained]  # older rows without `step` are refused here
     if not rows:
         return None
-    if any('scored' in row and row['scored'] is False for row in rows):
-        raise ValueError('it holds unscored rows: rescore them (entrypoints/rescore.py) and the rescored file is read')
     # Every row of one file has the same provenance: stamped rows carry it, older files take it from their summary.
     stamped = [row['meta'] for row in rows if 'meta' in row]
     if stamped and (len(stamped) != len(rows) or any(other != stamped[0] for other in stamped)):
         raise ValueError('its rows do not all carry the same provenance')
-    provenance = upgraded(stamped[0], path, stage) if stamped else from_summary(path, stage)
     # A copy of another run's rows (once a parent folder held its child's rows.jsonl) would be counted twice; the folder a
-    # run wrote into is the one its rows or its summary name (review round 31).
-    wrote = provenance['run'] if stamped else out_named(path)
+    # run wrote into is the one its rows or its summary name (review round 31). Checked before anything that would ask
+    # for the copy to be fixed, such as rescoring it.
+    wrote = stamped[0]['run'] if stamped else out_named(path)
     if wrote is not None and wrote != path.parent.name:
         raise ValueError(f'its rows were written in a run folder named {wrote!r}, not here: a copy is not counted again')
+    if any('scored' in row and row['scored'] is False for row in rows):
+        raise ValueError('it holds unscored rows: rescore them (entrypoints/rescore.py) and the rescored file is read')
+    provenance = upgraded(stamped[0], path, stage) if stamped else from_summary(path, stage)
     if provenance['stage'] != stage:
         raise ValueError(f"its rows say stage {provenance['stage']!r}, its name says {stage!r}")
     found = dict(answers=len(rows))
@@ -264,6 +269,7 @@ def cells(root):
             if path is not None:
                 chosen[path] = stage
     table, refused = [], []
+    counted_dirs, steps_files = set(), []  # (run folder, stage) counted; steps.jsonl files, settled once those are known
     for path in files:
         if path in chosen:
             try:
@@ -278,10 +284,14 @@ def cells(root):
                 provenance, found = counted
                 kept = {name: provenance[name] for name in FIELDS if name not in ('schema', 'run')}
                 table.append(dict(kept, run=path.parent.relative_to(root).as_posix(), **found))
-        elif path.name == 'steps.jsonl' and preferred(path.parent, VIEWS['training']) in chosen:
-            continue  # read with the training rows beside it
+                counted_dirs.add((path.parent, chosen[path]))
+        elif path.name == 'steps.jsonl':
+            steps_files.append(path)  # read with the training rows beside it, if those are counted (known after the loop)
         else:
             refused.append((str(path), unread(path)))
+    for path in steps_files:
+        if (path.parent, 'training') not in counted_dirs:
+            refused.append((str(path), 'not read: it is read only with training rows beside it that are counted'))
     return table, refused
 
 

@@ -13,7 +13,7 @@ def clean_env(tmp_path, **settings):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()
     stubs = {'ssh': f'echo "$*" >> {tmp_path}/ssh-calls\nexit 255\n', 'rsync': 'exit 1\n', 'sleep': 'exit 0\n',
-             'timeout': TIMEOUT_STUB, 'setsid': 'exec "$@"\n'}  # GNU timeout and setsid are not on macOS
+             'timeout': TIMEOUT_STUB, 'setsid': 'exec "$@"\n'}  # stand-ins, so no test waits on a real limit
     for name, body in stubs.items():
         (bin_dir/name).write_text('#!/bin/bash\n'+body)
         (bin_dir/name).chmod(0o755)
