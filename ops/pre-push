@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# git's pre-push hook, linked from .git/hooks/pre-push (CLAUDE.md, "Commit gate"): entrypoints/gate.py git-pre-push refuses
+# pushed refs pre-commit would not look at, then runs pre-commit's own pre-push hooks. git's list of pushed refs is on stdin.
+set -euo pipefail
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+exec bash "$(dirname "$SELF")/gate.sh" git-pre-push "$@"

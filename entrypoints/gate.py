@@ -11,6 +11,9 @@
         Claude Code PreToolUse hook on Bash: the tool call on stdin; exit 2 refuses the command.
     gate.py codex-hook
         Codex PreToolUse adapter for the shared no-silent-fallbacks checker.
+    gate.py git-pre-push <remote> <url>
+        git's pre-push hook (ops/pre-push, linked into .git/hooks): refuses a pushed ref that is not a commit, which
+        pre-commit would not look at, then runs pre-commit's pre-push hooks with git's input; exit non-zero refuses.
     gate.py terms | gitleaks  pre-commit | commit-msg <file> | pre-push
         The commit gate's local hooks, run by pre-commit (.pre-commit-config.yaml); exit 1 refuses. At pre-push the
         destination remote is read from PRE_COMMIT_REMOTE_NAME and the first pushed ref from PRE_COMMIT_TO_REF, PRE_COMMIT_LOCAL_BRANCH and PRE_COMMIT_REMOTE_BRANCH, which pre-commit sets.
@@ -21,12 +24,13 @@ checkout's library.
 import argparse
 import json
 import os
+import subprocess
 import sys
 import traceback
 from pathlib import Path
 
 from rewardhack.budget import LINES
-from rewardhack.gates import BASIS_FORMS, COMMIT_GATE, command_problems, driver_launch, ready
+from rewardhack.gates import BASIS_FORMS, COMMIT_GATE, command_problems, driver_launch, pushed_object_problems, ready
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -71,6 +75,19 @@ def commit_gate(args):
     return refuse(problems, 1, f'gate: {args.cmd} at git {args.stage} refuses: this would publish what must not be.')
 
 
+def git_pre_push(args):
+    """git's own pre-push hook (ops/pre-push): refuse pushed refs pre-commit would not look at, then hand git's input to pre-commit."""
+    updates = sys.stdin.read()
+    root = Path.cwd()  # git runs its hooks at the top of the working tree being pushed from
+    refused = refuse(pushed_object_problems(root, updates), 1, 'gate: git pre-push refuses: no hook could read what this push publishes.')
+    if refused:
+        return refused
+    hooks = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-path', 'hooks'], capture_output=True, text=True, check=True).stdout.strip()
+    # The arguments pre-commit's own installed hook script passes (pre_commit/resources/hook-tmpl).
+    return subprocess.run([sys.executable, '-m', 'pre_commit', 'hook-impl', '--config=.pre-commit-config.yaml', '--hook-type=pre-push',
+                           '--hook-dir', hooks, '--', args.remote, args.url], input=updates, text=True, check=False).returncode  # its exit code is the hook's
+
+
 def settle(args):
     if not all('=' in setting for setting in args.settings):
         raise SystemExit('--set takes NAME=VALUE')
@@ -100,6 +117,10 @@ def main():
         stages.add_parser('pre-commit')
         stages.add_parser('commit-msg').add_argument('message_file', help='the file git holds the commit message in')
         stages.add_parser('pre-push')
+    pushed = sub.add_parser('git-pre-push', help="git's pre-push hook (ops/pre-push); the pushed refs on standard input")
+    pushed.add_argument('remote', help='the name of the remote, or its URL when it has none')
+    pushed.add_argument('url')
+    pushed.set_defaults(run=git_pre_push)
     started = sub.add_parser('launch')
     started.add_argument('--remote', required=True, help='the ops/*.sh script given to the driver')
     started.add_argument('--deadline', type=int, required=True, help='the deadline in minutes given to the driver')

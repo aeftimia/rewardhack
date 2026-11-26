@@ -379,8 +379,9 @@ def command_problems(root, command, remote=False):
 
 MAX_KB = 15000  # check-added-large-files --maxkb in .pre-commit-config.yaml (tests/test_gates.py checks they agree)
 GITLINK = '160000'  # a submodule entry: a commit id, with no content of its own in this repository
-VERBOSE_WARNING = '\n# Do not modify or remove the line above.'  # what git writes after the scissors line in `commit -v`
-SCISSORS = re.compile(r'^\S ------------------------ >8 ------------------------$', re.M)  # `git commit -v`: what follows is the diff, not the message
+SCISSORS = ' ------------------------ >8 ------------------------\n'  # after the comment string; `git commit -v`: the diff follows
+DEFAULT_COMMENT = '#'
+AUTO_COMMENTS = '#;@!$%^&|:'  # core.commentChar=auto: git picks the first of these that starts no line of the message
 
 
 def main_checkout(root):
@@ -448,12 +449,28 @@ def blob_problems(root, blobs, terms):
             for problem in path_problems(path, terms) + ([] if blob is None else content_problems(path, git(root, 'cat-file', 'blob', blob, text=False), terms))]
 
 
-def message_text(message_file):
-    """The message as git will record it. Git cuts at the scissors line only for `git commit -v` in its editor, where the line is
-    followed by its own warning and the diff; with -m or -F a scissors line is kept, so it is read through. Comment lines are kept."""
+def comment_strings(root):
+    """What may start a comment line in this repository's commit messages: core.commentString, else core.commentChar (`auto`
+    standing for any of git's candidates), else '#'. `git config --get` exits 1 for a setting that is not there."""
+    for key in ('core.commentString', 'core.commentChar'):
+        found = subprocess.run(['git', '-C', str(root), 'config', '--get', key], capture_output=True, text=True, check=False)  # exit code read below
+        if found.returncode not in (0, 1):
+            raise RuntimeError(f'git config --get {key} failed: {found.stderr.strip()}')
+        if found.returncode == 0:
+            value = found.stdout.rstrip('\n')
+            return list(AUTO_COMMENTS) if value == 'auto' else [value]
+    return [DEFAULT_COMMENT]
+
+
+def message_text(root, message_file):
+    """The message as git will record it. `git commit -v` in the editor writes a scissors line, a comment line (its warning, in
+    any language) and the diff, and cuts there; that is the only cut made here. With -m or -F git keeps a scissors line, so it is
+    read through; with `-v -m`, commit.verbose or --cleanup=scissors git cuts at a bare scissors line too, and the text after it
+    is read anyway (more than is recorded, never less). Comment lines are kept."""
     text = Path(message_file).read_text()
-    parts = SCISSORS.split(text, maxsplit=1)
-    return parts[0] if len(parts) == 2 and parts[1].startswith(VERBOSE_WARNING) else text
+    cuts = [found.start() for comment in comment_strings(root)
+            for found in [re.search(f'^{re.escape(comment + SCISSORS + comment)}', text, re.M)] if found]
+    return text[:min(cuts)] if cuts else text
 
 
 def unpushed(remote, pushed):
@@ -502,7 +519,7 @@ def staged_terms(root, terms):
 
 
 def message_terms(root, terms, message_file):
-    return text_problems('the commit message', message_text(message_file), terms)
+    return text_problems('the commit message', message_text(root, message_file), terms)
 
 
 def pushed_terms(root, terms, remote, pushed, ref_names):
@@ -538,6 +555,25 @@ def push_problems(root, remote, pushed, ref_names):
     return problems
 
 
+ZERO_ID = re.compile(r'0+')
+
+
+def pushed_object_problems(root, updates):
+    """git's pre-push hook, before pre-commit: each pushed ref (git's standard input lines) whose object, with tags peeled, is not
+    a commit. pre-commit (4.7.0, `hook_impl._pre_push_ns`) looks for new commits only, so a push of a tag (or branch) on a tree
+    or blob runs none of its hooks and nothing in it is read. Deleting a remote ref publishes nothing."""
+    problems = []
+    for line in updates.splitlines():
+        local_ref, local_id, _, _ = line.rsplit(' ', 3)
+        if ZERO_ID.fullmatch(local_id):
+            continue
+        kind = git(root, 'cat-file', '-t', local_id + '^{}').strip()
+        if kind != 'commit':
+            problems.append(f'{local_ref} points at a {kind}, not a commit, and no hook reads what such a push publishes; push it '
+                            'as part of a commit, or ask the owner for a bypass')
+    return problems
+
+
 # Checks that refuse a stage before either hook reads anything.
 STAGE_PROBLEMS = {'pre-commit': lambda root: [], 'commit-msg': lambda root, message_file: [], 'pre-push': push_problems}
 
@@ -555,7 +591,7 @@ GITLEAKS = ['--config=.gitleaks.toml', '--no-banner', '--redact', '--verbose', '
 # Per stage, the gitleaks runs: (arguments, text for its standard input or None).
 GITLEAKS_RUNS = {
     'pre-commit': lambda root: [(['git', '--pre-commit', '--staged'], None)],
-    'commit-msg': lambda root, message_file: [(['stdin'], message_text(message_file))],
+    'commit-msg': lambda root, message_file: [(['stdin'], message_text(root, message_file))],
     # `git log -p` shows no diff for a merge unless asked: first-parent reads what a merge (and its conflict resolution) brings in.
     'pre-push': lambda root, remote, pushed, ref_names: [
         (['git', '--log-opts=' + ' '.join(['--diff-merges=first-parent', *unpushed(remote, pushed)])], None),
