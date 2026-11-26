@@ -443,7 +443,7 @@ def unpushed(remote, pushed):
     passes on only the first one's commit (`pushed`, from PRE_COMMIT_TO_REF; none when that push starts a new history), so the
     refs around it are read too: more than one push adds, never less. A remote given as a URL has no tracking branches, so
     everything is read. Not covered: a second pushed ref that none of these reach (`git push origin a stash@{0}:x`)."""
-    return ['--branches', '--tags', 'HEAD', f'--exclude=refs/remotes/{remote}/*', '--remotes', *pushed, '--not', f'--remotes={remote}']
+    return ['--branches', '--tags', 'HEAD', '--remotes', *pushed, '--not', f'--remotes={remote}']  # `remote`'s own branches drop out below
 
 
 def pushed_commits(root, remote, pushed):

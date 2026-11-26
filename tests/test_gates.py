@@ -439,7 +439,7 @@ def test_gitleaks_reads_the_staged_changes_the_message_and_every_unpushed_commit
     fake_gitleaks.write_text('')
     assert gates.gitleaks_problems(repo, 'pre-push', 'origin', [sha]) == ['gitleaks stdin exited 1: see its findings above']
     calls = fake_gitleaks.read_text().splitlines()
-    assert calls[:2] == [f'git --log-opts=--diff-merges=first-parent --branches --tags HEAD --exclude=refs/remotes/origin/* --remotes {sha} '
+    assert calls[:2] == [f'git --log-opts=--diff-merges=first-parent --branches --tags HEAD --remotes {sha} '
                          f'--not --remotes=origin {flags}', f'stdin {flags}']
     assert 'carries a LEAK' in calls[2] and 'start' in '\n'.join(calls[3:])
 
