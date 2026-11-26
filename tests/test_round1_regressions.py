@@ -173,15 +173,16 @@ def test_a_provisional_timer_can_be_armed_before_the_repo_is_on_the_pod(tmp_path
     def arm(pod, out):
         env = dict(os.environ, PATH=path, REMOTE_JOB_OUT=str(tmp_path/out), RUNPOD_POD_ID=pod, RUNPOD_API_KEY='k')
         return subprocess.run(['bash', '-s', '--', '--arm-only', '77'], stdin=open('ops/remote_job.sh'), env=env, capture_output=True, text=True)
+    pod = f'pod9-{tmp_path.name}'  # this test's own: parallel tests cannot touch its timers
     try:
-        assert arm('pod9', 'a').returncode == 0
-        assert 'armed: pod pod9 is removed at most 77s from now' in (tmp_path/'a'/'autostop.log').read_text()
-        assert subprocess.run(['pgrep', '-f', "sleep 77; while true"], capture_output=True).returncode == 0
+        assert arm(pod, 'a').returncode == 0
+        assert f'armed: pod {pod} is removed at most 77s from now' in (tmp_path/'a'/'autostop.log').read_text()
+        assert subprocess.run(['pgrep', '-f', f"sleep 77; while true; do runpodctl remove pod '{pod}'"], capture_output=True).returncode == 0
         refused = arm('bad', 'b')
         assert refused.returncode == 3 and 'NO_AUTOSTOP' in refused.stdout
         assert not (tmp_path/'a'/'EXIT_CODE').exists(), 'arming is not a job and must not record an exit code'
     finally:
-        subprocess.run(['pkill', '-f', "runpodctl remove pod 'pod9'"])
+        subprocess.run(['pkill', '-f', f"runpodctl remove pod '{pod}'"])
 
 
 def test_a_relaunch_stops_the_earlier_job_first(tmp_path):

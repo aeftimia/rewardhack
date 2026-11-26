@@ -107,6 +107,7 @@ def test_remote_runner_propagates_failure(tmp_path):
 
 def test_remote_runner_arms_pod_removal_or_refuses_to_start(tmp_path):
     """On a RunPod pod the billing time cap is the pod removing itself; without it the job must not start."""
+    pod, other = f'pod1-{tmp_path.name}', f'pod2-{tmp_path.name}'  # this test's own: parallel tests cannot touch its timers
     import os, time
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()
@@ -128,28 +129,28 @@ def test_remote_runner_arms_pod_removal_or_refuses_to_start(tmp_path):
     assert run('', 'nopod').returncode == 3 and not (tmp_path/'job-ran').exists()
     assert run('', 'elsewhere', require='0').returncode == 0 and (tmp_path/'job-ran').exists()  # not RunPod: unchanged
     calls.write_text('')
-    assert run('pod1', 'armed').returncode == 0
+    assert run(pod, 'armed').returncode == 0
     log = (tmp_path/'armed'/'autostop.log').read_text()
     assert 'removed at most 41s from now' in log and 'removing pod in 1s' in log  # 10 + 30 kill grace + 1
     deadline = time.monotonic()+10
-    while 'remove pod pod1' not in calls.read_text() and time.monotonic() < deadline:
+    while f'remove pod {pod}' not in calls.read_text() and time.monotonic() < deadline:
         time.sleep(.2)
-    assert 'remove pod pod1 key=pod-scoped' in calls.read_text()  # after the job ended, with nobody connected
+    assert f'remove pod {pod} key=pod-scoped' in calls.read_text()  # after the job ended, with nobody connected
     # A relaunch proves its new timer alive and only then stops the earlier ones: the first run's deadline timer is gone,
     # and the log names the pid of the timer that replaced it.
-    first = subprocess.run(['pgrep', '-f', "sleep 41; while true"], capture_output=True, text=True).stdout.split()
+    first = subprocess.run(['pgrep', '-f', f"sleep 41; while true; do runpodctl remove pod '{pod}'"], capture_output=True, text=True).stdout.split()
     assert first, 'the deadline timer of the first run should still be waiting'
-    assert run('pod1', 'rearmed').returncode == 0
+    assert run(pod, 'rearmed').returncode == 0
     for _ in range(50):
         if not any(subprocess.run(['kill', '-0', pid], capture_output=True).returncode == 0 for pid in first):
             break
         time.sleep(.1)
     assert not any(subprocess.run(['kill', '-0', pid], capture_output=True).returncode == 0 for pid in first), 'the earlier timer was left to fire mid-run'
     assert 'timer pid' in (tmp_path/'rearmed'/'autostop.log').read_text()
-    subprocess.run(['pkill', '-f', "runpodctl remove pod 'pod1'"])  # this test's own timers: nothing should outlive it
+    subprocess.run(['pkill', '-f', f"runpodctl remove pod '{pod}'"])  # this test's own timers: nothing should outlive it
     now = subprocess.run(['bash', 'ops/remote_job.sh', '--remove-now'], capture_output=True, text=True,
-                         env=dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'], RUNPOD_POD_ID='pod2', REMOTE_JOB_OUT=str(tmp_path/'now')))
-    assert now.returncode == 0 and 'remove pod pod2' in calls.read_text() and not (tmp_path/'now'/'EXIT_CODE').exists()
+                         env=dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'], RUNPOD_POD_ID=other, REMOTE_JOB_OUT=str(tmp_path/'now')))
+    assert now.returncode == 0 and f'remove pod {other}' in calls.read_text() and not (tmp_path/'now'/'EXIT_CODE').exists()
 
 
 def test_reward_groups_measure_within_prompt_variation():
