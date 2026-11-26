@@ -35,6 +35,8 @@ elif args[:2] == ['s3api', 'list-objects-v2']:
     bucket, prefix = args[args.index('--bucket')+1], args[args.index('--prefix')+1]
     files = sorted(f for f in (root/bucket).rglob('*') if f.is_file() and f.relative_to(root/bucket).as_posix().startswith(prefix))
     print('\n'.join(f'{f.relative_to(root/bucket).as_posix()}\t{f.stat().st_size}' for f in files) or 'None')
+elif args[:2] == ['s3', 'cp'] and args[3] == '-':
+    sys.stdout.buffer.write(path(args[2]).read_bytes())
 elif args[:2] == ['s3', 'presign']:
     print(f'https://example.invalid/{args[2].removeprefix("s3://")}?expires={args[args.index("--expires-in")+1]}')
 else:
@@ -190,3 +192,26 @@ def test_prune_refuses_a_manifest_written_after_the_mark(tmp_path, run):
     assert manifest('write', run, run/'SHA256SUMS').returncode == 0
     code, output = archive(tmp_path, 'prune', run)
     assert code == 1 and 'not the manifest its ARCHIVED mark covers' in output
+
+
+def test_prune_refuses_when_a_same_named_run_replaced_the_bucket_copy(tmp_path, run):
+    """Round 35: another folder of the same name, uploaded since, replaced same-size checkpoints; sizes cannot show it."""
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    other = tmp_path/'elsewhere'/'runpod-part1-test'
+    import shutil
+    shutil.copytree(run, other)
+    (other/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x04' * 1000)
+    assert archive(tmp_path, 'upload', other)[0] == 0
+    code, output = archive(tmp_path, 'prune', run)
+    assert code == 1 and 'not this folder' in output and (run/'train-a'/'trainer'/'checkpoint-60').exists()
+
+
+def test_prune_keeps_the_results_of_a_run_stored_under_a_checkpoint_path(tmp_path):
+    """Round 35: matched against the whole path, a run kept under .../trainer/checkpoint-3/ lost everything inside it."""
+    run = tmp_path/'trainer'/'checkpoint-3'/'myrun'
+    (run/'adapter').mkdir(parents=True)
+    (run/'adapter'/'w.bin').write_bytes(b'\x01')
+    (run/'steps.jsonl').write_text('{}')
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    assert archive(tmp_path, 'prune', run)[0] == 0
+    assert (run/'steps.jsonl').exists() and (run/'adapter'/'w.bin').exists()

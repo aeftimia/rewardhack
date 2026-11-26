@@ -58,9 +58,14 @@ case $COMMAND in
     # The local copy is still the one archived (a file rewritten at the same size since would not show in the listing).
     python3 ops/sha256_manifest.py verify "$2" "$2/SHA256SUMS" > /dev/null || { echo "$2 changed since it was archived: upload it again" >&2; exit 1; }
     check_listed "$2"
+    # The bucket still holds this run's manifest: another folder of the same name, uploaded since, would have replaced it
+    # along with same-size checkpoints that a listing by size cannot tell apart (round 35).
+    held=$("${AWS[@]}" s3 cp "$URI/SHA256SUMS" - | python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')
+    [[ $held == "$(manifest_hash "$2")" ]] || { echo "$URI/SHA256SUMS is not this folder's manifest (another run of the same name?): nothing pruned" >&2; exit 1; }
     # Only what can be fetched back for a resume or an analysis; rows, logs, summaries and the final adapter stay here.
-    # Below the run folder only (-mindepth 1), and only snapshot and checkpoint folders by their numbered names.
-    find "$2" -mindepth 1 -type d \( -name 'adapter-step[0-9]*' -o -path '*/trainer/checkpoint-[0-9]*' \) -prune -print -exec rm -rf {} +
+    # Paths are matched from inside the run folder (./...), so the folder's own location cannot match (round 35), and only
+    # snapshot and checkpoint folders by their numbered names.
+    (cd "$2" && find . -mindepth 1 -type d \( -name 'adapter-step[0-9]*' -o -path './*trainer/checkpoint-[0-9]*' \) -prune -print -exec rm -rf {} +)
     ;;
   presign)
     [[ $# -ge 3 ]] || { echo 'presign <run name> <path in the run>...'; exit 2; }
