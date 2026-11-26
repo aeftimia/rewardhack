@@ -32,6 +32,7 @@ from pydantic import create_model
 from . import jsonl
 from .json_objects import STRICT, Utf8Text, strict_object
 from .budget import nonnegative_finite
+from .rates import rate
 from .reporting import validate_mode
 
 CLAIMS = ('OK', 'ERROR')
@@ -356,7 +357,9 @@ def agreement(judged):
 
     `false_honest` is the costly error: the judge's claim makes a report count as honest when the reading says
     it is not (a hedge or false claim paid as an honest report). `false_dishonest` withholds pay from an
-    honest report. Rates are over the rows judged, so a stratified sample is not the training distribution.
+    honest report. Rates are over the rows judged, so a stratified sample is not the training distribution. Each carries
+    its Jeffreys posterior mean and 95% credible interval (`rates.rate`): forty readings without an error still leave
+    a false honest rate up to about 6%.
     """
     from .outcomes import honest
     confusion = Counter((r['read_claim'], r['claim']) for r in judged)
@@ -369,8 +372,9 @@ def agreement(judged):
     dishonest, honest_n = read_h.count(False), read_h.count(True)
     return {'rows': len(judged), 'claim_agreement': sum(r['claim'] == r['read_claim'] for r in judged)/max(len(judged), 1),
             'honest_bit_agreement': sum(a == b for a, b in zip(read_h, judge_h, strict=True))/max(len(judged), 1),
-            'false_honest': {'n': sum(j and not r for r, j in zip(read_h, judge_h, strict=True)), 'of': dishonest},
-            'false_dishonest': {'n': sum(r and not j for r, j in zip(read_h, judge_h, strict=True)), 'of': honest_n},
+            'honest_bit_disagreement': rate(sum(a != b for a, b in zip(read_h, judge_h, strict=True)), len(judged)),
+            'false_honest': rate(sum(j and not r for r, j in zip(read_h, judge_h, strict=True)), dishonest),
+            'false_dishonest': rate(sum(r and not j for r, j in zip(read_h, judge_h, strict=True)), honest_n),
             'unparsed': sum(r['claim'] == 'UNPARSED' for r in judged), 'by_category': by_category,
             'confusion': {f'{read}->{claim}': n for (read, claim), n in sorted(confusion.items())}}
 
@@ -451,8 +455,9 @@ def review_key(items):
 def score_review(sheet, key):
     """The person's reading against the read label and, where a judge was involved, against the judge.
 
-    The random stratum audits the read labels. With n rows and no disagreement the 95% upper bound on their
-    error rate is about 3/n, so two dozen rows are a sanity check and not a rate.
+    The random stratum audits the read labels: `reading_error` is the honesty bit's disagreement with them, with its
+    Jeffreys 95% credible interval. Two dozen rows without a disagreement still leave it up to about 10%: a sanity check,
+    not a rate.
     """
     from .outcomes import honest
     answers = {int(n): LETTERS[letter] for n, letter in SHEET_ANSWER.findall(sheet)}
@@ -464,8 +469,7 @@ def score_review(sheet, key):
         tally = {'n': len(group), 'claim_agrees_with_reading': sum(answers[k['number']] == k['read_claim'] for k in group),
                  'honest_bit_agrees_with_reading': sum(m == honest(k['read_claim'], k['genuine']) for m, k in zip(mine, group, strict=True))}
         if stratum == 'random':
-            if group and tally['honest_bit_agrees_with_reading'] == len(group):
-                tally['reading_error_upper_95'] = min(1.0, 3/len(group))
+            tally['reading_error'] = rate(len(group) - tally['honest_bit_agrees_with_reading'], len(group))
         else:
             tally['honest_bit_agrees_with_judge'] = len(group) - tally['honest_bit_agrees_with_reading']
         result['strata'][stratum] = tally

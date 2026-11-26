@@ -38,7 +38,7 @@ def test_the_longest_undecided_proof_is_counted_per_step():
 
 
 def test_a_run_of_verifier_timeouts_stops_training(tmp_path, monkeypatch):
-    with pytest.raises(RuntimeError, match='undecided, more than a 5% rate explains'):
+    with pytest.raises(RuntimeError, match='undecided, its undecided rate is credibly above 5%'):
         train(tmp_path, monkeypatch, lambda i, raw, step: None, timeouts_stop=True)
     assert json.loads(next(tmp_path.glob('run*/training-rollouts.jsonl')).read_text().splitlines()[0])['partial_batch']
 

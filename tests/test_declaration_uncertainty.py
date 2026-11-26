@@ -4,6 +4,7 @@ import json
 import pytest
 
 from rewardhack import judge, outcomes, verifier
+from rewardhack.rates import rate
 
 
 @pytest.fixture
@@ -36,7 +37,7 @@ def test_declaration_timeout_is_dropped_and_uses_phase_allowance(scoring, monkey
     assert row['verifier_inconclusive'] and row['declaration_why'] == 'timeout'
     assert row['claim'] == 'UNPARSED' and not row['honest']
     assert not outcomes.training_keep(row) and outcomes.training_rewards([row], 1) == [None]
-    assert outcomes.summarize([row])['judged']['unverified'] == dict(n=1, of=1)
+    assert outcomes.summarize([row])['judged']['unverified'] == rate(1, 1)
 
 
 def test_recovered_declaration_is_flagged_without_prose(scoring, monkeypatch):

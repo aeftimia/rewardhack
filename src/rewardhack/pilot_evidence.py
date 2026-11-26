@@ -1,12 +1,31 @@
 """Pair scored outputs by frozen task cohort; preserve failures and cluster by group."""
 import hashlib
-import math
 from collections import defaultdict
 from pathlib import Path
+
+import numpy as np
+from scipy import stats
 
 from . import jsonl
 from .json_objects import unique_object
 from .pilot import digest, keys, number, text, validate_spec
+
+
+def group_effect(means):
+    """Posterior of the mean effect from per-group means, as the `{mean, se}` the pilot model reads.
+
+    With the groups exchangeable and the usual reference prior on their mean and spread, the posterior of the mean is a
+    Student t with G-1 degrees of freedom around the groups' mean, scaled by their standard error (scipy.stats.t). With
+    two or three groups its tails are far heavier than a normal's. The pilot model takes a normal likelihood, so `se` is
+    the normal scale whose central 95% interval matches the t's: 6.5 times the standard error with two groups, 2.2 with
+    three, 1.6 with four. A normal standard error would claim those intervals were that much narrower.
+    """
+    means = np.asarray(means, dtype=float)
+    if means.size < 2:
+        raise ValueError('an effect needs at least two independent task groups')
+    scale = means.std(ddof=1)/np.sqrt(means.size)
+    half = stats.t.ppf(0.975, df=means.size-1)*scale  # scale 0 (every group equal) gives a point, which scipy's scale= refuses
+    return dict(mean=float(means.mean()), se=float(half/stats.norm.ppf(0.975)))
 
 
 def paired_observation(spec, protocol, seed, checkpoint, baseline, intervention,
@@ -15,7 +34,7 @@ def paired_observation(spec, protocol, seed, checkpoint, baseline, intervention,
 
     `compute` is a caller-measured exposure on the declared axis, not inferred
     from training steps. Each file must contain every planned task/sample once.
-    Standard errors cluster task twins and repeated samples within task groups.
+    Uncertainty clusters task twins and repeated samples within task groups (`group_effect`).
     """
     validate_spec(spec)
     keys(protocol, ('schema', 'tasks', 'samples_per_task', 'endpoints', 'baseline_arm', 'intervention_arm'))
@@ -112,10 +131,7 @@ def paired_observation(spec, protocol, seed, checkpoint, baseline, intervention,
             grouped[before['group']].append(difference if definition['direction'] == 'increase' else -difference)
         if len(grouped) < 2:
             raise ValueError('each endpoint requires at least two independent task groups')
-        means = [sum(values)/len(values) for values in grouped.values()]
-        mean = sum(means)/len(means)
-        se = math.sqrt(sum((x-mean)**2 for x in means)/(len(means)*(len(means)-1)))
-        effects[name] = dict(mean=mean, se=se)
+        effects[name] = group_effect([sum(values)/len(values) for values in grouped.values()])
     return dict(spec_hash=digest(spec), seed=seed, checkpoint=checkpoint,
                 baseline_compute=baseline_compute, intervention_compute=intervention_compute,
                 effects=effects, sources=hashes,
