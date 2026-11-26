@@ -22,7 +22,7 @@ def digest(path):
 
 # Files at the top of a results folder that are not part of the run: the manifest itself, the archive's marker, and the
 # laptop's SSH trust for the job's pod. Only these names, only at the top (ops/s3_archive.sh excludes the same).
-NOT_THE_RUN = ('SHA256SUMS', 'ARCHIVED', 'known_hosts')
+NOT_THE_RUN = ('SHA256SUMS', 'ARCHIVED', 'ORIGIN', 'known_hosts')
 
 
 def run_files(root):

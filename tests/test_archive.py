@@ -35,6 +35,9 @@ elif args[:2] == ['s3api', 'list-objects-v2']:
     bucket, prefix = args[args.index('--bucket')+1], args[args.index('--prefix')+1]
     files = sorted(f for f in (root/bucket).rglob('*') if f.is_file() and f.relative_to(root/bucket).as_posix().startswith(prefix))
     print('\n'.join(f'{f.relative_to(root/bucket).as_posix()}\t{f.stat().st_size}' for f in files) or 'None')
+elif args[:2] == ['s3', 'cp'] and args[3].startswith('s3://'):
+    path(args[3]).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(args[2], path(args[3]))
 elif args[:2] == ['s3', 'cp'] and args[3] == '-':
     sys.stdout.buffer.write(path(args[2]).read_bytes())
 elif args[:2] == ['s3', 'presign']:
@@ -166,12 +169,15 @@ def test_prune_refuses_a_local_copy_changed_since_the_upload(tmp_path, run):
 def test_prune_never_deletes_the_run_folder_itself(tmp_path):
     """Round 33: a run folder named like a snapshot matched find's own starting point."""
     run = tmp_path/'adapter-step40'
-    (run/'adapter-step8').mkdir(parents=True)
-    (run/'adapter-step8'/'w.bin').write_bytes(b'\x01')
+    (run/'train-a'/'adapter-step8').mkdir(parents=True)
+    (run/'train-a'/'adapter-step8'/'w.bin').write_bytes(b'\x01')
+    (run/'train-a'/'notes'/'adapter-step9').mkdir(parents=True)  # not where the trainer writes snapshots: kept (round 36)
+    (run/'train-a'/'notes'/'adapter-step9'/'n.txt').write_text('keep')
     (run/'steps.jsonl').write_text('{}')
     assert archive(tmp_path, 'upload', run)[0] == 0
     assert archive(tmp_path, 'prune', run)[0] == 0
-    assert (run/'steps.jsonl').exists() and not (run/'adapter-step8').exists()
+    assert (run/'steps.jsonl').exists() and not (run/'train-a'/'adapter-step8').exists()
+    assert (run/'train-a'/'notes'/'adapter-step9'/'n.txt').exists()
 
 
 def test_an_interrupted_reupload_leaves_nothing_to_prune(tmp_path, run):
@@ -201,9 +207,11 @@ def test_prune_refuses_when_a_same_named_run_replaced_the_bucket_copy(tmp_path, 
     import shutil
     shutil.copytree(run, other)
     (other/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x04' * 1000)
-    assert archive(tmp_path, 'upload', other)[0] == 0
-    code, output = archive(tmp_path, 'prune', run)
-    assert code == 1 and 'not this folder' in output and (run/'train-a'/'trainer'/'checkpoint-60').exists()
+    # Refused before it sends anything (round 36: a failed upload of it could overwrite some checkpoints first).
+    code, output = archive(tmp_path, 'upload', other)
+    assert code == 1 and 'belongs to' in output
+    assert (stored(tmp_path)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
+    assert archive(tmp_path, 'prune', run)[0] == 0
 
 
 def test_prune_keeps_the_results_of_a_run_stored_under_a_checkpoint_path(tmp_path):
@@ -215,3 +223,13 @@ def test_prune_keeps_the_results_of_a_run_stored_under_a_checkpoint_path(tmp_pat
     assert archive(tmp_path, 'upload', run)[0] == 0
     assert archive(tmp_path, 'prune', run)[0] == 0
     assert (run/'steps.jsonl').exists() and (run/'adapter'/'w.bin').exists()
+
+
+def test_a_relative_folder_is_read_from_where_the_command_runs(tmp_path, run):
+    """Round 36: the script moves to the repository first; a relative path is resolved before that."""
+    bin_dir = tmp_path/'bin'
+    archive(tmp_path, 'presign', 'x', 'y')  # writes the stand-ins
+    result = subprocess.run(['bash', str(PROJECT/'ops'/'s3_archive.sh'), 'upload', run.name], cwd=tmp_path, capture_output=True, text=True,
+                            env=dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_S3=str(tmp_path/'s3')))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (stored(tmp_path)/'ORIGIN').read_text() == str(run.resolve())
