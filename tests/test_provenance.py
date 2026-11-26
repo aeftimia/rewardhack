@@ -35,13 +35,27 @@ def test_stamped_runs_are_counted_per_run_with_their_groups(tmp_path):
     meta = provenance.meta(**TRAINED)
     rows = [row(genuine=True), row(verified_refutation='verified'), row(exploit=True), row(exploit=True)]
     rows += [dict(row(exploit=True), partial_batch=True), dict(row(exploit=True), copied_from='elsewhere')]  # counted elsewhere
+    rows = [dict(each, step=1) for each in rows] + [dict(row(verified_refutation='verified'), step=2)]  # step 2: never trained on
     (run/'training-rollouts.jsonl').write_text(jsonl.dumps(provenance.stamp(rows, meta)))
-    (run/'steps.jsonl').write_text(jsonl.dumps([dict(step=1, mixed_groups=1, zero_advantage_groups=3, meta=meta)]))
+    (run/'steps.jsonl').write_text(jsonl.dumps([dict(step=1, mixed_groups=1, zero_advantage_groups=3, meta=meta),
+                                                dict(step=2, mixed_groups=1, zero_advantage_groups=0, meta=meta)]))
+    (run/'summary.json').write_text(json.dumps(dict(status='failed', untrained_step=2)))
     [entry], refused = provenance.cells(tmp_path)
     assert refused == []
     assert (entry['answers'], entry['genuine'], entry['refutation'], entry['exploit']) == (4, 1, 1, 2)
     assert (entry['groups'], entry['mixed_groups']) == (4, 1)
     assert (entry['model'], entry['arm'], entry['penalty'], entry['run']) == ('openai/gpt-oss-20b', 'report_correct', 0.5, 'train-lambda05')
+
+
+def test_a_row_file_with_nothing_of_its_own_is_listed_and_an_abbreviated_flag_is_refused(tmp_path):
+    meta = provenance.meta(**dict(TRAINED, stage='before', part='evaluation'))
+    write(tmp_path/'train-lambda05'/'before-evaluation.jsonl', provenance.stamp([dict(row(), copied_from='x')], meta))
+    write(tmp_path/'probe'/'rows.rescored.jsonl', [row()], argv=['--model', 'm', '--revision', 'r', '--taskset', 'v1',
+                                                                 '--variant', 'neutral', '--task', 'false'], template_kwargs={})
+    table, refused = provenance.cells(tmp_path)
+    why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
+    assert table == [] and 'nothing of its own to count' in why['train-lambda05/before-evaluation.jsonl']
+    assert 'as --task, which argparse may have read' in why['probe/rows.rescored.jsonl']
 
 
 def test_an_older_run_is_read_from_what_its_summary_states_and_refused_when_it_states_too_little(tmp_path):
@@ -64,7 +78,8 @@ def test_an_older_run_is_read_from_what_its_summary_states_and_refused_when_it_s
 def test_a_file_that_fails_part_way_adds_nothing(tmp_path):
     run = tmp_path/'train-lambda05'
     run.mkdir()
-    (run/'training-rollouts.jsonl').write_text(jsonl.dumps(provenance.stamp([row()], provenance.meta(**TRAINED))))
+    (run/'training-rollouts.jsonl').write_text(jsonl.dumps(provenance.stamp([dict(row(), step=1)], provenance.meta(**TRAINED))))
+    (run/'summary.json').write_text(json.dumps(dict(status='completed')))
     # no steps.jsonl: the rows were readable, the groups are not
     table, [(_, why)] = provenance.cells(tmp_path)
     assert table == [] and 'steps.jsonl' in why

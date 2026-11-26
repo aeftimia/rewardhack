@@ -92,6 +92,9 @@ def flag(argv, name):
     pod scripts append overrides to a base argv (review round 31)."""
     found = None
     for index, word in enumerate(argv):
+        given = word.split('=', 1)[0]
+        if len(given) > 2 and given != f'--{name}' and f'--{name}'.startswith(given):
+            raise ValueError(f'its argv abbreviates --{name} as {given}, which argparse may have read as it or as another option')
         if word == f'--{name}':
             if index + 1 == len(argv):
                 raise ValueError(f'its argv ends with --{name} and no value')
@@ -176,6 +179,12 @@ def count_file(path, stage):
     """(provenance, counts) of one row file, or None when it has no row of its own to count. Raises when its provenance
     is unclear or a count cannot be read, so that a file refused part way adds nothing."""
     rows = [row for row in jsonl.read(path) if 'copied_from' not in row and 'partial_batch' not in row]
+    left_out = set()  # training steps whose rows were scored but never trained on
+    if STAGES[stage]['steps']:
+        summary = read_summary(path)
+        if 'untrained_step' in summary:  # a failed run's step in progress (hf_grpo): its rows and steps line say nothing of training
+            left_out.add(summary['untrained_step'])
+            rows = [row for row in rows if row['step'] not in left_out]  # older rows without `step` are refused here
     if not rows:
         return None
     if any('scored' in row and row['scored'] is False for row in rows):
@@ -194,7 +203,7 @@ def count_file(path, stage):
         raise ValueError(f"its rows say stage {provenance['stage']!r}, its name says {stage!r}")
     found = dict(answers=len(rows), **{outcome: sum(read(row) for row in rows) for outcome, read in OUTCOMES.items()})
     if STAGES[stage]['steps']:
-        lines = [line for line in jsonl.read(path.parent/'steps.jsonl') if 'copied_from' not in line]
+        lines = [line for line in jsonl.read(path.parent/'steps.jsonl') if 'copied_from' not in line and line['step'] not in left_out]
         found.update(groups=sum(line['mixed_groups'] + line['zero_advantage_groups'] for line in lines),
                      mixed_groups=sum(line['mixed_groups'] for line in lines))
     return provenance, found
@@ -224,7 +233,10 @@ def cells(root):
             except (KeyError, ValueError, TypeError, OSError) as error:  # reported to the caller in `refused`, never counted
                 refused.append((str(path), f'{type(error).__name__}: {error}'))
                 continue
-            if counted is not None:  # None: only rows counted in another run, or none at all
+            if counted is None:
+                refused.append((str(path), 'nothing of its own to count: no rows, or only rows copied from another run, '
+                                           'of a batch cut short, or of a step never trained on'))
+            else:
                 provenance, found = counted
                 kept = {name: provenance[name] for name in FIELDS if name not in ('schema', 'run')}
                 table.append(dict(kept, run=path.parent.relative_to(root).as_posix(), **found))

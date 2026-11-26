@@ -54,6 +54,6 @@ def test_a_failed_download_is_retried_once_within_its_limit(tmp_path):
 
 def test_a_download_that_used_its_whole_limit_is_not_retried(tmp_path):
     count = tmp_path/'attempts'
-    code, steps = fetch(tmp_path, f'echo attempt >> {count}\nsleep 30\n', 2)
+    code, steps = fetch(tmp_path, f'echo attempt >> {count}\nsleep 30\n', 5)
     assert code != 0 and len(count.read_text().splitlines()) == 1
-    assert steps == ['download org/model used its whole limit of 2 s (see ' + str(tmp_path) + '/out/download-model.log)']
+    assert steps == ['download org/model used its whole limit of 5 s (see ' + str(tmp_path) + '/out/download-model.log)']

@@ -139,7 +139,7 @@ if [[ ${DRIVE_CHECK_ONLY:-0} == 1 ]]; then echo 'check passed'; exit 0; fi
 # marked used here. No host is exempt: tests run a copy of ops/ whose gate.sh is a stub (tests/conftest.py).
 bash ops/gate.sh launch --remote "$REMOTE" --deadline "$DEADLINE" || { echo 'not started: the launch check above refused it, before any pod was contacted' >&2; exit 2; }
 mkdir -p "$RESULTS"
-SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$RESULTS/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$RESULTS/known_hosts" -o ConnectTimeout=10 -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 # rsync never deletes here, so every resumable checkpoint an interim copy saw would stay on this machine (the trainer keeps
 # two on the pod; with expert LoRA each is about 3 GB). Interim copies leave them out; the final copy takes the ones left.
 # The vLLM hand-over adapter (rewritten every step) and the reload-check adapter are scratch, about 1 GB each: never copied.
@@ -212,12 +212,14 @@ finish() {
 }
 ARMED=0
 trap finish EXIT
-# Within SSH_UP_SECONDS (ops/pod_pins.env), which the launch gate counts: each try is at most ssh's ConnectTimeout of
-# 10 s and a 15 s pause, 25 s in all. A pod slower than that is given up on here, not waited on: no timer is armed on it, so the exit says to terminate it
-# in the console (review round 31). The
-# refusals while it boots are kept in ssh-wait.log; the last try shows its own.
-for _ in $(seq $((SSH_UP_SECONDS / 25 - 1))); do "${SSH[@]}" "root@$HOST" true 2>> "$RESULTS/ssh-wait.log" && break; sleep 15; done
-"${SSH[@]}" "root@$HOST" true || { echo "ssh failed: the pod did not accept SSH within $SSH_UP_SECONDS s"; exit 1; }
+# Within SSH_UP_SECONDS (ops/pod_pins.env), which the launch gate counts: each try is bounded as a whole (ssh's
+# ConnectTimeout covers only the connection; BatchMode keeps it from waiting on a prompt) and followed by a 15 s pause.
+# The refusals while the pod boots are kept in ssh-wait.log; the last try shows its own (review rounds 31 and 32).
+# cap: 2.5x estimated 10 s (one ssh try that answers: connect, key exchange, `true`)
+SSH_TRY_SECONDS=25
+try_ssh() { timeout "$SSH_TRY_SECONDS" "${SSH[@]}" "root@$HOST" true; }
+for _ in $(seq $((SSH_UP_SECONDS / (SSH_TRY_SECONDS + 15) - 1))); do try_ssh 2>> "$RESULTS/ssh-wait.log" && break; sleep 15; done
+try_ssh || { echo "ssh failed: the pod did not accept SSH within $SSH_UP_SECONDS s"; exit 1; }
 # Before anything else on a billing pod: a provisional removal timer, so an interrupted copy or a sleeping laptop is bounded.
 # The job's own timer replaces it when the job starts.
 "${SSH[@]}" "root@$HOST" 'bash -s -- --arm-only 900' < ops/remote_job.sh || { echo 'could not arm a provisional removal timer on the pod'; exit 1; }

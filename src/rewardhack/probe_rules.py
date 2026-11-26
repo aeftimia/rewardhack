@@ -33,7 +33,7 @@ def stage(path):
     if 'rows_written' not in summary:  # written only by the final summary
         return f"status={summary['status']}: killed before its final summary, so rows written is unknown (count rows.jsonl)"
     said = f"status={summary['status']} rows_written={summary['rows_written']}"
-    if 'error' not in summary:
+    if 'error' not in summary or summary['error'] is None:
         return f'{said}; no error recorded'
     stopped = summary['error'].startswith(f'{HardDeadline.__name__}:')
     return f"{said} {'stopped at its --max-seconds' if stopped else 'ended by an error'}: {summary['error']}"
