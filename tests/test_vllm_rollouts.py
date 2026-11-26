@@ -39,7 +39,7 @@ def test_parallel_responses_preserve_group_order_and_unique_seeds(backend):
         time.sleep((3-index)*0.005)
         return httpx.Response(200, json={'choices': [choice(3+index % 2)]})
     connect(backend, handler)
-    ids, logs, masks = backend.completions([[8], [8], [9], [9]], seed=7, max_tokens=2)
+    ids, logs, masks = backend.completions([[8], [8], [9], [9]], seed=7, max_tokens=2, model='m')
     assert ids == [[3, 1], [4, 1], [3, 1], [4, 1]]
     assert masks is None and len(logs) == 4
     assert all((b['sampling_params']['temperature'], b['sampling_params']['top_p'], b['sampling_params']['top_k']) == (1.0, 1.0, 0) for b in seen)
@@ -57,7 +57,7 @@ def test_invalid_rollouts_fail_instead_of_training(backend, damage):
     connect(backend, lambda request: httpx.Response(503 if damage == 'http' else 200,
         json={'choices': [row, row] if damage == 'extra' else [row]}))
     with pytest.raises((ValueError, KeyError, httpx.HTTPStatusError)):
-        backend.completions([[8]], seed=7, max_tokens=2)
+        backend.completions([[8]], seed=7, max_tokens=2, model='m')
 
 
 @pytest.mark.parametrize('wrong', ['version', 'model', 'logprobs', 'mask', 'context', 'awake'])
@@ -255,4 +255,26 @@ def test_a_request_longer_than_the_server_context_is_refused_before_it_is_sent(b
     """A fixed 4,096-token server context refused every request once the answer limit was 4,096 (review round 6)."""
     connect(backend, lambda request: pytest.fail('an over-long request reached the server'))
     with pytest.raises(ValueError, match='exceed the vLLM context'):
-        backend.completions([[8]*15], seed=7, max_tokens=2)
+        backend.completions([[8]*15], seed=7, max_tokens=2, model='m')
+
+
+def test_sampling_without_an_adapter_asks_the_served_base_model_and_loads_nothing(backend):
+    """The before-evaluation samples the base model through the same server (owner, 26 Nov)."""
+    sleeping, seen = [True], []
+    def handler(request):
+        path = request.url.path
+        if path == '/wake_up': sleeping[0] = False
+        if path == '/sleep': sleeping[0] = True
+        assert path != '/v1/load_lora_adapter', 'no adapter to load'
+        if path == '/inference/v1/generate':
+            assert not sleeping[0]
+            seen.append(json.loads(request.content))
+            return httpx.Response(200, json={'choices': [choice()]})
+        return httpx.Response(200, json={'is_sleeping': sleeping[0], 'success': True})
+    connect(backend, handler)
+    ids, _, masks = backend.sample(None, [[8], [8], [9]], seed=100, record=dict(evaluation='before'))
+    assert sleeping[0] and len(ids) == 3 and masks is None
+    assert {body['model'] for body in seen} == {'model@revision'}
+    assert sorted(body['sampling_params']['seed'] for body in seen) == [100, 101, 102]
+    record = json.loads(backend.log.read_text().splitlines()[-1])
+    assert record['evaluation'] == 'before' and record['adapter_sha256'] is None and record['status'] == 'completed'

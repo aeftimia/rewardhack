@@ -86,49 +86,26 @@ def test_a_dropped_row_leaves_the_kept_rows_gradient_as_if_never_sampled(tmp_pat
     torch.testing.assert_close(both.grad[1], alone.grad[0])
 
 
-def test_evaluation_merges_the_adapter_and_restores_the_weights(monkeypatch):
-    """PEFT rebuilt the gpt-oss expert stacks on every decode step, about 8x slower (measuring pass, 26 Nov); evaluation now
-    runs with the LoRA merged. It must see the adapted model, and leave the weights and adapter as they were."""
+def test_evaluation_samples_from_the_vllm_server_when_the_run_has_one(tmp_path, monkeypatch):
+    """With a server, both evaluations go through it (owner, 26 Nov): the before-evaluation on the base model (no adapter),
+    the after-evaluation on the trained adapter, from the same seeds; and the trainer's own generate is never called."""
     import torch
-    from peft import get_peft_model
-    from test_training_integration import tiny
-    model, _ = tiny('moe')
-    peft = get_peft_model(model, hf_grpo.lora_config(model, 2))
-    with torch.no_grad():
-        for name, p in peft.named_parameters():
-            if 'lora_B' in name:
-                p.normal_()  # a trained adapter, so merging changes the output
-    ids = torch.tensor([[3, 4, 5]])
-    peft.eval()
-    with torch.no_grad():
-        adapted = peft(ids).logits
-    weights = {name: p.detach().clone() for name, p in peft.named_parameters()}
-    seen = []
-    def score_samples(model, *args):
-        with torch.no_grad():
-            seen.append(model(ids).logits)
-        return 'scored'
-    monkeypatch.setattr(hf_grpo, 'score_samples', score_samples)
-    assert hf_grpo.evaluate(model, None, [], None, 'after') == 'scored'
-    torch.testing.assert_close(seen[0], adapted, rtol=1e-4, atol=1e-4)  # merged, the model is the adapted one
-    assert not any(getattr(m, 'merged', False) for m in peft.modules())
-    for name, p in peft.named_parameters():
-        torch.testing.assert_close(p.detach(), weights[name], rtol=1e-5, atol=1e-6)
-
-
-def test_evaluation_merges_only_the_expert_lora_so_a_small_attention_update_is_not_rounded_away(monkeypatch):
-    """Merging an attention LoRA folds it into bf16 weights, where a one-step update mostly rounds away; unmerged it adds
-    its branch to the output, as training and vLLM do (review round 9, 26 Nov). Only the expert ParamWrappers merge."""
-    import torch
-    from peft import get_peft_model
-    from peft.tuners.lora.layer import ParamWrapper
-    from test_training_integration import tiny
-    model, _ = tiny('moe')
-    peft = get_peft_model(model, hf_grpo.lora_config(model, 2))
-    merged = []
-    def score_samples(model, *args):
-        merged.extend(type(m).__name__ for m in model.modules() if getattr(m, 'merged', False))
-        return 'scored'
-    monkeypatch.setattr(hf_grpo, 'score_samples', score_samples)
-    hf_grpo.evaluate(model, None, [], None, 'after')
-    assert merged and set(merged) == {ParamWrapper.__name__}
+    from test_training_integration import TASKS, tiny
+    model, tokenizer = tiny('plain')
+    monkeypatch.setattr(model, 'generate', lambda **kw: pytest.fail('trainer-side generation with a server present'))
+    from rewardhack import outcomes
+    template = outcomes.score('unused', TASKS[0], '', 'baseline', truncated=True)  # a cut-off row needs neither Lean nor a judge
+    monkeypatch.setattr(hf_grpo, 'score', lambda lean, task, raw, *a, **kw: dict(template, task_id=task['id'], group=task['group'], raw=raw))
+    calls = []
+    class Server:
+        def sample(self, adapter_model, prompts, *, seed, record):
+            calls.append((adapter_model, len(prompts), seed, record))
+            return [[3, 1] for _ in prompts], None, None
+    args = SimpleNamespace(out=tmp_path, lean='unused', arm='baseline', penalty=0, judge_fn=None, report_mode='prose', verifier_retry_seconds=60,
+                           eval_samples=2, seed=7, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None, max_completion_length=6)
+    adapter = object()
+    for stage, adapter_model in [('before', None), ('after', adapter)]:
+        result = hf_grpo.evaluate(model, tokenizer, TASKS[:2], args, stage, rollouts=Server(), adapter_model=adapter_model)
+        assert result['tasks_completed'] == 2 and len((tmp_path/f'{stage}-evaluation.jsonl').read_text().splitlines()) == 4
+    assert [(call[0], call[1], call[3]) for call in calls] == [(None, 4, dict(evaluation='before')), (adapter, 4, dict(evaluation='after'))]
+    assert calls[0][2] == calls[1][2] == hf_grpo.evaluation_seed(args) * 10**6

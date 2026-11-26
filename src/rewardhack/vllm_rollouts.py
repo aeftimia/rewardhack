@@ -88,7 +88,7 @@ class AdapterRollouts:
         if self.request('POST', '/reset_prefix_cache').json()['success'] is not True:
             raise RuntimeError('vLLM did not reset the prefix cache after adapter loading')
 
-    def completions(self, prompts, *, seed, max_tokens):
+    def completions(self, prompts, *, seed, max_tokens, model):
         if not prompts:
             raise ValueError('rollout prompts must not be empty')
         longest = max(map(len, prompts))
@@ -100,7 +100,7 @@ class AdapterRollouts:
                           top_p=TOP_P, top_k=TOP_K,
                           seed=seed+index, stop_token_ids=[self.stops], ignore_eos=True,
                           skip_special_tokens=False, logprobs=0, output_kind=2)
-            body = dict(model=self.name, request_id=str(uuid.uuid4()), token_ids=prompt, sampling_params=params)
+            body = dict(model=model, request_id=str(uuid.uuid4()), token_ids=prompt, sampling_params=params)
             reply = self.request('POST', '/inference/v1/generate', body=body, timeout=330).json()
             if len(reply['choices']) != 1:
                 raise ValueError('vLLM must return exactly one completion per request')
@@ -148,7 +148,7 @@ class AdapterRollouts:
         if not kinds['linear']:
             raise ValueError('adapter has no LoRA B matrices for the synchronization check')
         def sample():
-            return self.completions([prompt], seed=0, max_tokens=1)
+            return self.completions([prompt], seed=0, max_tokens=1, model=self.name)
         def matches(left, right):
             return left[0] == right[0] and math.isclose(left[1][0][0], right[1][0][0], abs_tol=1e-4, rel_tol=0)
         checks = {}
@@ -171,20 +171,27 @@ class AdapterRollouts:
         return checks
 
     def generate(self, trainer, prompts, num_generations):
-        import torch
         if trainer.accelerator.num_processes != 1 or trainer.tools:
             raise ValueError('external adapter rollouts support one process and no tools')
         if len(prompts) % num_generations or any(
                 group != prompts[start] for start in range(0, len(prompts), num_generations)
                 for group in prompts[start:start+num_generations]):
             raise ValueError('TRL must supply contiguous repeated prompt groups')
-        began = time.monotonic()
-        trainer.model.save_pretrained(self.path, safe_serialization=True)
-        digest = hashlib.sha256((self.path/'adapter_model.safetensors').read_bytes()).hexdigest()
         # `step` counts from 1, as the rollout rows and steps.jsonl do. Each run's seeds start SEED_STRIDE apart, so runs whose
         # --seed differs by one do not share request seeds a slot apart (a run uses far fewer than SEED_STRIDE requests).
-        record = dict(step=trainer.state.global_step + 1, adapter_sha256=digest,
-                      seed=self.args.seed * SEED_STRIDE + trainer.state.global_step * len(prompts), status='failed')
+        return self.sample(trainer.model, prompts, seed=self.args.seed * SEED_STRIDE + trainer.state.global_step * len(prompts),
+                           record=dict(step=trainer.state.global_step + 1))
+
+    def sample(self, adapter_model, prompts, *, seed, record):
+        """Wake the server, load `adapter_model`'s current adapter (None: sample the served base model), sample each
+        prompt once with seeds from `seed`, and put the server back to sleep whatever happens. Training rollouts and the
+        before- and after-evaluations all come through here; each call is a line of rollout-backend.jsonl."""
+        import torch
+        began = time.monotonic()
+        record = dict(record, seed=seed, adapter_sha256=None, status='failed')
+        if adapter_model is not None:
+            adapter_model.save_pretrained(self.path, safe_serialization=True)
+            record['adapter_sha256'] = hashlib.sha256((self.path/'adapter_model.safetensors').read_bytes()).hexdigest()
         # No live activations exist between steps. Return cached blocks to CUDA
         # before waking the second process; its weights sleep during the update.
         if torch.cuda.is_available():
@@ -194,11 +201,13 @@ class AdapterRollouts:
         try:
             self.request('POST', '/wake_up')
             self.require_sleep(False)
-            self.load(self.path)
-            if not self.checked_reload:
-                record['reload_check'] = self.verify_reload(prompts[0])
+            if adapter_model is not None:
+                self.load(self.path)
+                if not self.checked_reload:
+                    record['reload_check'] = self.verify_reload(prompts[0])
             record['sync_seconds'] = time.monotonic() - began
-            ids, logprobs, masks = self.completions(prompts, seed=record['seed'], max_tokens=self.args.max_completion_length)
+            served = self.name if adapter_model is not None else f'{self.args.model}@{self.args.revision}'
+            ids, logprobs, masks = self.completions(prompts, seed=seed, max_tokens=self.args.max_completion_length, model=served)
             record['status'] = 'completed'
         finally:
             # A failed sleep is fatal too: never proceed into backward with the
