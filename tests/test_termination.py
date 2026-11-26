@@ -71,6 +71,8 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
 
     class Trainer:
         def __init__(self, model, reward_funcs, **kwargs):
+            # Token-level loss: per-answer length normalisation let the 26 Nov baseline drift to the token limit.
+            assert kwargs['args']['loss_type'] == 'dapo'
             self.model, self.reward = model, reward_funcs
             self.state = SimpleNamespace(global_step=0, log_history=[])
             self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary

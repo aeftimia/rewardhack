@@ -497,7 +497,11 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
                         # --save-every steps; only the latest two are kept, as a resume needs one. The adapter-stepN snapshots above
                         # keep every interval's weights for evaluation.
                         save_strategy='steps', save_steps=args.save_every, save_total_limit=2,
-                        report_to='none', seed=args.seed, dataloader_num_workers=0, loss_type='grpo',
+                        report_to='none', seed=args.seed, dataloader_num_workers=0,
+                        # TRL's default: average the loss over every token in the batch. 'grpo' divided each answer's loss by its
+                        # own length, so a long wrong answer was penalised less per token than a short one; the 60-step baseline
+                        # of 26 Nov drifted to the token limit under it (notes sections 70-71; DAPO, Dr. GRPO).
+                        loss_type='dapo',
                         # Two library defaults that changed the objective until 2026-11-25. Left unset, TRL takes the model's own
                         # router load-balancing coefficient (0.9 for gpt-oss), which made the logged loss 0.9 x that term; and the
                         # learning rate decays linearly to zero over --steps, so a run's rate depended on its length.
