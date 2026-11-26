@@ -411,6 +411,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     import torch
     from datasets import Dataset
     from transformers import TrainerCallback, set_seed
+    from transformers.integrations import TensorBoardCallback
     from trl import GRPOConfig, GRPOTrainer
     by_statement = {t['statement']: t for t in tasks}
     report_mode = args.report_mode
@@ -560,7 +561,10 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
                         # --save-every steps; only the latest two are kept, as a resume needs one. The adapter-stepN snapshots above
                         # keep every interval's weights for evaluation.
                         save_strategy='steps', save_steps=args.save_every, save_total_limit=2,
-                        report_to='none', seed=args.seed, dataloader_num_workers=0,
+                        # Training metrics as TensorBoard event files on the run's own disk (<out>/tensorboard): no account, no
+                        # network, nothing leaves the machine. TRL's `log_completions` stays off: it only prints tables and
+                        # writes parquet copies of what training-rollouts.jsonl already keeps with its scoring.
+                        report_to=['tensorboard'], seed=args.seed, dataloader_num_workers=0,
                         # TRL's default: average the loss over every token in the batch. 'grpo' divided each answer's loss by its
                         # own length, so a long wrong answer was penalised less per token than a short one; the 60-step baseline
                         # of 26 Nov drifted to the token limit under it (notes sections 70-71; DAPO, Dr. GRPO).
@@ -602,6 +606,10 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
 
     trainer = VerifiedTrainer(model=model, args=config, reward_funcs=reward_fn, train_dataset=dataset, processing_class=tokenizer, callbacks=[Instrument()],
                           peft_config=None if args.adapter else lora_config(model, args.lora_rank))
+    # The callback `report_to` added writes under trainer/runs/<date_host> unless told otherwise: one fixed folder per run.
+    # A resumed run adds a new event file beside the first, and TensorBoard reads the folder as one run.
+    [board] = [c for c in trainer.callback_handler.callbacks if isinstance(c, TensorBoardCallback)]
+    board.logging_dir = str(args.out/'tensorboard')
     # TRL 1.19 unions model-only stops into its completion mask. Keep that mask
     # aligned with our explicit generation stop and evaluation cutoff detector.
     trainer.eos_token_ids = [stops]
