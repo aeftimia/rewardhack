@@ -24,7 +24,7 @@ train = ["torch==2.15.0", "trl==1.19.0", "peft==0.21.0", "transformers==5.17.0",
 mlx = ["mlx-lm"]
 # vLLM has incompatible Torch/NumPy constraints; install requirements-vllm.txt in a separate environment.
 # pre-commit runs the commit gate (.pre-commit-config.yaml), which pins its own hooks.
-dev = ["pytest>=8", "pre-commit==4.7.0"]
+dev = ["pytest>=8", "pytest-xdist==3.8.0", "pre-commit==4.7.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -35,3 +35,6 @@ rewardhack = ["*.json"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+# Every run of the suite is parallel, wherever it is started (the launch gate, the commit hooks, by hand): about 75 s
+# instead of 150 s on this laptop (owner, 26 Nov). Tests that share machine-wide state run in one xdist group.
+addopts = "-n auto --dist loadgroup"

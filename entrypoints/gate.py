@@ -26,7 +26,7 @@ import traceback
 from pathlib import Path
 
 from rewardhack.budget import LINES
-from rewardhack.gates import COMMIT_GATE, command_problems, driver_launch, ready
+from rewardhack.gates import BASIS_FORMS, COMMIT_GATE, command_problems, driver_launch, ready
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -104,7 +104,7 @@ def main():
     settle_parser = sub.add_parser('ready')
     settle_parser.add_argument('--remote', required=True, help='the ops/*.sh script the pod will run')
     settle_parser.add_argument('--deadline', type=int, required=True, help='job deadline in minutes, as given to ops/drive_runpod.sh')
-    settle_parser.add_argument('--basis', required=True, help="what the deadline is sized from: '2x measured 30 min' or '1.5x estimated 20 min'")
+    settle_parser.add_argument('--basis', required=True, help=f'what the deadline is sized from: {BASIS_FORMS}')
     settle_parser.add_argument('--line', required=True, choices=sorted(LINES), help='grant budget line this launch is charged to')
     settle_parser.add_argument('--hourly', type=float, required=True, help='pod price in USD per hour')
     settle_parser.add_argument('--other-usd', type=float, required=True,

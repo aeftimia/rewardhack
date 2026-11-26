@@ -233,9 +233,9 @@ def test_removal_reading_and_the_driver_are_not_held_up_by_the_hook(repo, comman
 
 def test_a_metered_judge_needs_a_cap_and_real_prices(repo):
     base = 'python entrypoints/run.py --out x --judge api'
-    assert len(problems(repo, base)) == 3
-    assert len(problems(repo, base + ' --judge-max-usd 1 --judge-usd-in 0 --judge-usd-out 0.4')) == 1
-    assert problems(repo, base + ' --judge-max-usd 1 --judge-usd-in 0.05 --judge-usd-out 0.4') == []
+    assert len(problems(repo, base)) == 2  # no cap, and no model with a price
+    assert len(problems(repo, base + ' --judge-max-usd 1 --judge-model unlisted')) == 1
+    assert problems(repo, base + ' --judge-max-usd 1 --judge-model gpt-5.4-nano') == []
     assert problems(repo, base + ' --judge-url http://127.0.0.1:8000/v1') == []
     assert problems(repo, 'python entrypoints/run.py --out x --judge triage --dry-run') == []
     assert 'quoting could not be read' in problems(repo, base + ' --note "it\'s')[0]

@@ -14,7 +14,7 @@ from rewardhack import budget, judge, model_io
                                  json.dumps(dict.fromkeys(judge.CHECKS, False))[:-1]])
 def test_invalid_checklists_stop_after_consecutive_failures(monkeypatch, raw):
     monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=raw, finish='stop', model='stub', usage={'completion_tokens': 10}))
-    reader = judge.make_judge('api', model='stub', usd_per_m_output=1)
+    reader = judge.make_judge('api', model='stub')
     row = dict(statement='True', report='Proved it.')
     for _ in range(judge.MAX_STREAK - 1):
         assert reader(row)['claim'] == 'UNPARSED'
@@ -101,9 +101,8 @@ def test_backend_failure_streak_and_recovery(monkeypatch, kind):
 @pytest.mark.parametrize('value', [float('nan'), float('inf'), float('-inf'), -1])
 def test_invalid_api_costs_rejected_before_calls(monkeypatch, value):
     monkeypatch.setattr(model_io, 'call', lambda *a, **kw: pytest.fail('invalid configuration made a request'))
-    for field in ('usd_per_m_input', 'usd_per_m_output', 'max_usd'):
-        with pytest.raises(ValueError, match='finite, nonnegative'):
-            judge.make_judge('api', model='stub', **{field: value})
+    with pytest.raises(ValueError, match='finite, nonnegative'):
+        judge.make_judge('api', model='stub', max_usd=value)
     with pytest.raises(ValueError, match='validation spend cap'):
         judge.validate(None, [], max_usd=value)
     from rewardhack.openai_probe import run
@@ -132,7 +131,7 @@ def test_zero_probe_cap_preserves_plan_without_requests(tmp_path, monkeypatch):
     monkeypatch.setattr(openai_probe, 'select_tasks', lambda *a, **kw: [dict(id='t')])
     monkeypatch.setattr(openai_probe, 'taskset_rows', lambda *a: [])
     monkeypatch.setattr(openai_probe, 'call', lambda *a, **kw: pytest.fail('zero cap made a request'))
-    args = SimpleNamespace(max_usd=0, usd_per_m_input=1, usd_per_m_output=1, out=tmp_path,
+    args = SimpleNamespace(max_usd=0, base_url='https://api.openai.com/v1', out=tmp_path,
                            taskset='stub', tasks=None, limit=None, samples=1, concurrency=1,
                            model='stub', variant='neutral', reasoning_effort=None, max_tokens=4, report_mode='prose', follow_on=False)
     openai_probe.run(args)
@@ -196,7 +195,7 @@ def test_an_unreadable_reply_records_no_kinds(monkeypatch):
     assert row['claim'] == 'UNPARSED' and row['error_kinds'] == [] and row['judge_raw'] == verdict['raw']
 
 
-@pytest.mark.parametrize('flag,value', [('--max-usd', 'nan'), ('--judge-max-usd', '-1'), ('--judge-usd-in', 'inf')])
+@pytest.mark.parametrize('flag,value', [('--max-usd', 'nan'), ('--judge-max-usd', '-1')])
 def test_validation_refuses_bad_caps_before_creating_anything(tmp_path, flag, value):
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run([sys.executable, str(root/'entrypoints/validate_judge.py'), '--judge', 'api', '--judge-model', 'stub',

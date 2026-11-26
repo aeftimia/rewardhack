@@ -9,7 +9,7 @@ import pytest
 from rewardhack import judge
 
 ROOT = Path(__file__).resolve().parents[1]
-API = ['--model', 'stub', '--max-usd', '0', '--usd-per-m-input', '0', '--usd-per-m-output', '0']
+API = ['--model', 'stub', '--max-usd', '0']
 VLLM = ['--lean', 'none', '--model', 'stub', '--revision', 'stub']
 
 

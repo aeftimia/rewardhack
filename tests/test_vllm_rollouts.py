@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from rewardhack.vllm_rollouts import AdapterRollouts, check_args
+from rewardhack.vllm_rollouts import VLLM_VERSION, AdapterRollouts, check_args
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ def test_invalid_rollouts_fail_instead_of_training(backend, damage):
 @pytest.mark.parametrize('wrong', ['version', 'model', 'logprobs', 'mask', 'context', 'awake'])
 def test_preflight_checks_server_contract(backend, wrong):
     responses = {
-        '/version': {'version': 'wrong' if wrong == 'version' else '0.34.0'},
+        '/version': {'version': 'wrong' if wrong == 'version' else VLLM_VERSION},
         '/v1/models': {'data': [{'id': 'wrong' if wrong == 'model' else 'model@revision'}]},
         '/server_info': {'vllm_config': {'model_config': {'logprobs_mode': 'raw_logprobs' if wrong == 'logprobs' else 'processed_logprobs',
                                                        'return_sampling_mask': wrong == 'mask',

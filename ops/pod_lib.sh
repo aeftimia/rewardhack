@@ -2,6 +2,11 @@
 # Shared by the pod job scripts (sourced, not run). Each function exists because its absence cost a paid run.
 # Callers define `log` and `fail`.
 set -euo pipefail
+source ops/pod_pins.env  # models, revisions, versions and ports: stated once there
+# The rollout server and a judge served on the pod have their own ports (pod_pins.env), so the two are never confused.
+# 15 minutes for a vLLM server to answer. Its first start took 6.5 minutes (390 s) on this pod type with its own weight fetch.
+# cap: 2x measured 390 s
+SERVER_WAIT=900
 
 # Seconds-long checks of what the job assumes about the machine, before any install or download is paid for.
 # Usage: pod_self_test <free GB needed under /workspace> <free GB needed for ~/out> <port that must be free>...

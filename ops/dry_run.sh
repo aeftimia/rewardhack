@@ -3,8 +3,8 @@
 # Tests plumbing only. The model emits noise, so no behavioural conclusion is possible.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-LEAN="$PWD/.tools/lean-4.19.0-darwin_aarch64/bin/lean"
 PY=.tools/venv/bin/python
+LEAN="$PWD/.tools/lean-$("$PY" -c 'from rewardhack.verifier import LEAN_VERSION; print(LEAN_VERSION)')-darwin_aarch64/bin/lean"
 OUT=.tools/dry
 rm -rf "$OUT"
 COMMON=(--lean "$LEAN" --model hf-internal-testing/tiny-random-LlamaForCausalLM
