@@ -46,9 +46,12 @@ def test_every_time_limit_in_the_pod_pins_states_its_basis():
     script scan does not match (review round 25): each `*_SECONDS=` there states its basis on the line above."""
     import re
     lines = (ROOT/'ops/pod_pins.env').read_text().splitlines()
-    named = [number for number, line in enumerate(lines) if re.match(r'[A-Z_]+_SECONDS=', line)]
-    limits = [(number, int(match.group(1))) for number in named if (match := re.match(r'[A-Z_]+_SECONDS=(\d+)\b', lines[number]))]
-    assert limits and len(limits) == len(named), 'every *_SECONDS in ops/pod_pins.env is a plain whole number of seconds'
+    # Setup allowances are in minutes (MODEL_SETUP_MINUTES, notes section 78), read in seconds here.
+    named = [number for number, line in enumerate(lines) if re.match(r'[A-Z0-9_]+_(?:SECONDS|MINUTES)=', line)]
+    per_unit = {'SECONDS': 1, 'MINUTES': 60}
+    limits = [(number, int(match.group(2)) * per_unit[match.group(1)]) for number in named
+              if (match := re.match(r'[A-Z0-9_]+_(SECONDS|MINUTES)=(\d+)\b', lines[number]))]
+    assert limits and len(limits) == len(named), 'every *_SECONDS or *_MINUTES in ops/pod_pins.env is a plain whole number'
     for number, seconds in limits:
         # Its own comment line, not the trailing comment of an assignment above (which would lend it another's basis).
         cap = gates.CAP_COMMENT.search(lines[number-1]) if number > 0 and lines[number-1].startswith('#') else None

@@ -31,6 +31,14 @@ if [[ -n ${SMOKE_PROBE_LARGE+set} ]]; then PROBE_LARGE=$SMOKE_PROBE_LARGE; else 
 [[ $PART_ONE == 0 || ${#PART_ONE_JOB[@]} -gt 0 || $PROBE_LARGE == 1 ]] || { echo "SMOKE_PART_ONE=$PART_ONE has no training runs: it is only for SMOKE_PROBE_LARGE=1"; exit 2; }
 # The probe runs after a Part 1 job's training, on the vLLM path that job already requires.
 [[ $PROBE_LARGE == 0 || $PART_ONE != 0 ]] || { echo 'SMOKE_PROBE_LARGE=1 runs after a Part 1 job: set SMOKE_PART_ONE too'; exit 2; }
+# The job's training model (ops/pod_pins.env). The gpt-oss-120b probe takes one whole card after a one-card job's training.
+MODEL_INDEX=${PART_ONE_MODEL[$PART_ONE]}
+[[ $PROBE_LARGE == 0 || ${MODEL_GPUS[$MODEL_INDEX]} == 1 ]] || { echo "SMOKE_PROBE_LARGE=1 follows a one-card job; SMOKE_PART_ONE=$PART_ONE trains ${MODEL_REPOS[$MODEL_INDEX]} on ${MODEL_GPUS[$MODEL_INDEX]} cards"; exit 2; }
+# SMOKE_VOLUME=1: the job's whole output goes to the network volume, under the results folder's own name (notes section 78).
+if [[ -n ${SMOKE_VOLUME+set} ]]; then VOLUME=$SMOKE_VOLUME; else VOLUME=0; fi  # unset: ~/out on the container disk, as before
+[[ $VOLUME == 0 || $VOLUME == 1 ]] || { echo 'SMOKE_VOLUME must be 0 or 1'; exit 2; }
+RUN_ID=${RESULTS%/}; RUN_ID=${RUN_ID##*/}
+[[ $VOLUME == 0 || $RUN_ID =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "SMOKE_VOLUME=1 names the run on the volume after the results folder, which must be letters, digits, '.', '_' or '-': $RUN_ID"; exit 2; }
 if [[ $PART_ONE != 0 ]]; then
   # A Part 1 job's runs are the whole training (the gpt-oss-120b probe may follow): no preflight probe, no funded-arm runs, and its length and time limit stated, not
   # taken from the preflight defaults (12 steps, 60 minutes). ${X+set} tests whether the launch set X (bash 3.2 has no -v).
@@ -42,10 +50,9 @@ if [[ $PART_ONE != 0 ]]; then
   }
   # The setup allowance below is the API judge's; a judge served on the pod adds its download, start and validation.
   [[ -z ${JUDGE_KIND+set} || $JUDGE_KIND == api ]] || { echo "SMOKE_PART_ONE=$PART_ONE is sized for JUDGE_KIND=api"; exit 2; }
-  # The runs one after the other, each allowed SMOKE_TRAIN_SECONDS, after setup and the vLLM server start (15 minutes
-  # measured on 25 Nov): a shorter job deadline would end the last run before its after-evaluation.
-  # cap: 2x measured 15 min
-  PART1_SETUP_MINUTES=30
+  # The runs one after the other, each allowed SMOKE_TRAIN_SECONDS, after setup and the vLLM server start (per model, with
+  # its basis, in ops/pod_pins.env): a shorter job deadline would end the last run before its after-evaluation.
+  PART1_SETUP_MINUTES=${MODEL_SETUP_LIMITS[$MODEL_INDEX]}
   # Whole numbers before any arithmetic: bash evaluates text inside (( )) as an expression. At most six digits (about 11
   # days of seconds): a longer one overflows bash's arithmetic and turned the deadline check below into a pass (round 28).
   [[ $DEADLINE =~ ^[1-9][0-9]{0,5}$ && $SMOKE_TRAIN_SECONDS =~ ^[1-9][0-9]{0,5}$ && $SMOKE_FINAL_EVAL_SECONDS =~ ^[1-9][0-9]{0,5}$ ]] || {
@@ -147,6 +154,10 @@ pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" --exclude='adapter-roll
 # Sizes in the final copy, smallest first: the pod removes itself at most 10 minutes after the job ends.
 SMALL=(--exclude='adapter*/' --exclude='trainer/checkpoint-*/')  # logs, rows, summaries, evaluations
 ADAPTERS=(--exclude='trainer/checkpoint-*/')                      # and the saved adapters, about 1 GB each
+# With the network volume the whole output stays there (notes section 78): the laptop takes the final adapter only, not the
+# snapshots every few steps, and no resumable checkpoint (a copy is fetched from the volume when needed: ops/volume_upload.sh
+# says how the layout matches).
+if [[ $VOLUME == 1 ]]; then ADAPTERS+=(--exclude='adapter-step*/'); fi
 say() { echo "$*" >> "$RESULTS/driver.log"; echo "$*"; }
 # The results are only on the pod until this machine copies them, and the pod removes itself a grace period after the job ends:
 # a laptop that goes to sleep in between loses them. macOS: hold off idle sleep for as long as this script lives (closing the lid
@@ -170,15 +181,24 @@ finish() {
   # itself at most 10 minutes after the job ends, and a slow copy must cost the checkpoints, never the results.
   # Results and checkpoints are recorded apart, so that a failed checkpoint copy is not reported as lost results.
   COPIED=0 CHECKPOINTS=0 SMALL_COPIED=0
+  # A pod that answered but never started the job (no volume mounted, a failed sync) holds nothing to copy: it is removed
+  # at once, not left for its provisional timer. A pod that never answered still takes the path below that says so.
+  NOTHING_TO_COPY=$((ARMED == 1 && STARTED == 0))
+  if [[ $NOTHING_TO_COPY == 1 ]]; then say 'the job never started on the pod: nothing to copy'; fi
   for attempt in 1 2 3; do
+    [[ $NOTHING_TO_COPY == 0 ]] || break
     if pull "${SMALL[@]}"; then SMALL_COPIED=1; fi
     if [[ $SMALL_COPIED == 1 ]] && pull "${ADAPTERS[@]}"; then COPIED=1; break; fi
     say "copy attempt $attempt failed"; sleep 10
   done
-  if [[ $SMALL_COPIED == 0 ]]; then say 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'
+  if [[ $NOTHING_TO_COPY == 1 ]]; then :
+  elif [[ $SMALL_COPIED == 0 ]]; then say 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'
   elif [[ $COPIED == 0 ]]; then say 'the logs, rows, summaries and evaluations are copied but the saved adapters are not: the pod is not removed from here, so they can still be fetched until its own timer removes it'
   else
+    # With the network volume the checkpoints and snapshots are already kept there, and are not copied.
+    if [[ $VOLUME == 1 ]]; then CHECKPOINTS=1; say "the snapshots and checkpoints stay on the network volume, in $VOLUME_RUNS/$RUN_ID"; fi
     for attempt in 1 2 3; do
+      [[ $CHECKPOINTS == 0 ]] || break
       if pull; then CHECKPOINTS=1; break; fi
       say "checkpoint copy attempt $attempt failed"; sleep 10
     done
@@ -186,7 +206,7 @@ finish() {
   fi
   if ! "${SSH[@]}" "root@$HOST" 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
-  if [[ $KEEP == 1 || $CHECKPOINTS == 0 ]]; then
+  if [[ $KEEP == 1 || ( $CHECKPOINTS == 0 && $NOTHING_TO_COPY == 0 ) ]]; then
     # Left running on purpose: say so only if a removal timer is really armed there. A pod that no longer answers has
     # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
@@ -205,12 +225,12 @@ finish() {
     if [[ $GONE == 1 ]]; then say "pod removed: it no longer answers"
     else say "REMINDER: RunPod accepted the removal but the pod still answers after a minute. Check the console now"; code=97; fi
   else say "REMINDER: could not remove the pod from here. Terminate it in the RunPod console now"; code=97; fi
-  if [[ $SMALL_COPIED == 0 && $code == 0 ]]; then code=96; fi
+  if [[ $NOTHING_TO_COPY == 0 && $SMALL_COPIED == 0 && $code == 0 ]]; then code=96; fi
   if [[ $SMALL_COPIED == 1 && $COPIED == 0 && $code == 0 ]]; then code=94; fi
   if [[ $COPIED == 1 && $CHECKPOINTS == 0 && $code == 0 ]]; then code=95; fi
   exit "$code"
 }
-ARMED=0
+ARMED=0 STARTED=0
 trap finish EXIT
 for _ in $(seq 20); do "${SSH[@]}" "root@$HOST" true 2>/dev/null && break; sleep 15; done
 "${SSH[@]}" "root@$HOST" true || { echo 'ssh failed'; exit 1; }
@@ -218,6 +238,12 @@ for _ in $(seq 20); do "${SSH[@]}" "root@$HOST" true 2>/dev/null && break; sleep
 # The job's own timer replaces it when the job starts.
 "${SSH[@]}" "root@$HOST" 'bash -s -- --arm-only 900' < ops/remote_job.sh || { echo 'could not arm a provisional removal timer on the pod'; exit 1; }
 ARMED=1  # from here a removal timer runs on the pod, so a pod that stops answering has most likely removed itself
+# The network volume is attached only to pods deployed in its datacenter, at the mount path chosen there. Checked before the
+# sync, so a pod deployed without it is removed within a minute (finish: nothing to copy).
+if [[ $VOLUME == 1 ]]; then
+  "${SSH[@]}" "root@$HOST" "mountpoint -q $VOLUME_MOUNT" || {
+    echo "SMOKE_VOLUME=1 but $VOLUME_MOUNT is not mounted on the pod: deploy it in $VOLUME_DATACENTER with the network volume at $VOLUME_MOUNT"; exit 1; }
+fi
 # results/ stays behind except the model-read labels, which judge validation on the pod needs (7 MB).
 rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
 # The API judge needs the OpenAI key on the pod. It is sent only on request, over the SSH channel into a mode-600
@@ -226,8 +252,16 @@ if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && ${
   printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | "${SSH[@]}" "root@$HOST" 'umask 077; cat > ~/.judge_key'
 fi
 # A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
-# The remote log goes inside it so the runner's own errors are pulled with the results.
-"${SSH[@]}" "root@$HOST" "if [ -e out ]; then mv out out.prev.\$(date +%s); fi; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=${AUTOSTOP_GRACE_SECONDS:-600} ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
+# The remote log goes inside it so the runner's own errors are pulled with the results. With the volume, out is a link to
+# the run's folder there, named as the results folder here; an earlier launch's folder of that name is kept beside it.
+FRESH_OUT=('mkdir -p out' "D=$VOLUME_RUNS/$RUN_ID; if [ -e \$D ]; then mv \$D \$D.prev.\$(date +%s); fi; mkdir -p \$D && ln -s \$D out")  # indexed by VOLUME
+# The values the pod gets for settings left unset: the documented defaults the checks above validated (as before the volume).
+if [[ -n ${JUDGE_KIND:-} ]]; then SENT_JUDGE_KIND=$JUDGE_KIND; else SENT_JUDGE_KIND=api; fi
+if [[ -n ${LEAN_ISOLATION:-} ]]; then SENT_ISOLATION=$LEAN_ISOLATION; else SENT_ISOLATION=required; fi
+if [[ -n ${JUDGE_MAX_USD:-} ]]; then SENT_JUDGE_MAX_USD=$JUDGE_MAX_USD; else SENT_JUDGE_MAX_USD=1; fi
+if [[ -n ${AUTOSTOP_GRACE_SECONDS:-} ]]; then SENT_GRACE=$AUTOSTOP_GRACE_SECONDS; else SENT_GRACE=600; fi
+STARTED=1  # from here the job may be running, and whatever it wrote is copied
+"${SSH[@]}" "root@$HOST" "if [ -e out ] || [ -L out ]; then mv out out.prev.\$(date +%s); fi; ${FRESH_OUT[$VOLUME]}; JUDGE_KIND=$SENT_JUDGE_KIND LEAN_ISOLATION=$SENT_ISOLATION JUDGE_MAX_USD=$SENT_JUDGE_MAX_USD REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=$SENT_GRACE ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60+90))  # the remote timeout is DEADLINE; the extra time is for it to write EXIT_CODE
 while ((SECONDS < END)); do
