@@ -166,6 +166,10 @@ else
     echo 'the note above could not be printed: this script has no terminal' >> "$RESULTS/driver.log"
   fi
 fi
+# Asked of a pod this run armed no timer on (see `finish`): whether any job was ever launched there. POSIX sh, as the
+# pod's login shell runs it; tests/test_round30_followups.py runs it against a real failed --arm-only.
+# shellcheck disable=SC2016  # expanded by the pod's shell, not here
+JOB_TRACES='set -- out.prev.*; if [ -e out/remote.log ] || [ -e "$1" ]; then echo held; else echo empty; fi'
 # One command on the pod, bounded as a whole: the cleanup below asks the RunPod API too (`--remove-now`), and a stalled
 # API must end in the reminders, not hold the driver with the pod billing (review round 35). ARM_SECONDS: ops/pod_pins.env.
 # shellcheck disable=SC2329  # run by `finish` below
@@ -199,10 +203,12 @@ finish() {
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
   # This run armed no timer, so it started no job. A fresh pod then holds nothing and is removed here whatever KEEP_POD
   # says (review round 39: a failed arm call on a reachable pod was left with a reminder and no bound on its billing). A
-  # kept pod (a relaunch) may hold an earlier job's results in out/, and its earlier timer: it is removed only when it
-  # answers that it holds no out/; otherwise the timer check below says whether a timer still runs (review round 40).
+  # kept pod (a relaunch) may hold an earlier job's results, and its earlier timer: it is removed only when it answers
+  # that no job was ever launched on it; otherwise the timer check below says whether a timer still runs (review round
+  # 40). Only a launched job leaves out/remote.log (the launch below writes it) or an out.prev.* (a relaunch's move);
+  # out/ alone is no sign, since the runner creates it before arming (review round 41).
   HELD=unknown
-  if [[ $ARMED == 0 ]]; then HELD=$(on_pod 'if [ -e out ]; then echo held; else echo empty; fi'); fi
+  if [[ $ARMED == 0 ]]; then HELD=$(on_pod "$JOB_TRACES"); fi
   if [[ $ARMED == 0 && -z $HELD ]] && ! on_pod true; then
     say "REMINDER: the pod never accepted SSH, so this run armed no removal timer on it (a kept pod keeps its earlier one). Terminate it in the RunPod console now unless out/autostop.log there shows one"; code=97
   elif [[ ( $ARMED == 1 && ( $KEEP == 1 || $CHECKPOINTS == 0 ) ) || ( $ARMED == 0 && $HELD != empty ) ]]; then

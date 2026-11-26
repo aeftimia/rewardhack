@@ -98,7 +98,7 @@ def arm_fails(tmp_path, out_on_pod):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir(parents=True)
     ssh = (f'echo "$*" >> {calls}\n[[ "$*" != *--arm-only* ]] || exit 1\n'
-           f'if [[ "$*" == *"[ -e out ]"* ]]; then echo {out_on_pod}; fi\n')
+           f'if [[ "$*" == *out/remote.log* ]]; then echo {out_on_pod}; fi\n')  # the answer to JOB_TRACES
     stubs = {'ssh': ssh, 'rsync': 'exit 1\n', 'sleep': 'exit 0\n', 'timeout': TIMEOUT_STUB}
     for name, body in stubs.items():
         (bin_dir/name).write_text('#!/bin/bash\n' + body)
@@ -120,3 +120,31 @@ def test_a_wait_that_connected_makes_no_further_unretried_try_and_a_failed_arm_r
     assert any('--remove-now' in line for line in sent), sent
     output, sent = arm_fails(tmp_path/'kept', 'held')
     assert not any('--remove-now' in line for line in sent) and 'removal timer is running' in output, sent
+
+
+def test_a_failed_arm_call_on_a_fresh_pod_leaves_no_trace_of_a_job(tmp_path):
+    """Round 41: the runner creates out/ before arming, so `out/` was no sign of an earlier job and a fresh pod whose arm
+    call failed was left billing with no timer. The driver's own check (JOB_TRACES), run where a real failed
+    --arm-only ran, answers empty; a launched job's remote.log or a relaunch's out.prev.* answers held."""
+    import re
+    traces = re.search(r"^JOB_TRACES='([^']*)'$", (ROOT/'ops/drive_runpod.sh').read_text(), re.M).group(1)
+    home = tmp_path/'home'
+    home.mkdir()
+    bin_dir = tmp_path/'bin'
+    bin_dir.mkdir()
+    (bin_dir/'runpodctl').write_text('#!/bin/bash\nexit 1\n')  # its key refused: this pod cannot remove itself
+    (bin_dir/'runpodctl').chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", HOME=str(home), RUNPOD_POD_ID='podfresh', RUNPOD_API_KEY='k')
+    env.pop('REMOTE_JOB_OUT', None)
+    with open(ROOT/'ops/remote_job.sh') as script:
+        armed = subprocess.run(['bash', '-s', '--', '--arm-only', '900'], stdin=script, cwd=home, env=env, capture_output=True, text=True, timeout=60)
+    assert armed.returncode == 3 and (home/'out').is_dir()  # failed, and out/ is there all the same
+
+    def ask():
+        return subprocess.run(['sh', '-c', traces], cwd=home, capture_output=True, text=True, check=True).stdout.strip()
+    assert ask() == 'empty'
+    (home/'out'/'remote.log').write_text('')
+    assert ask() == 'held'
+    (home/'out'/'remote.log').unlink()
+    (home/'out.prev.1764100000').mkdir()
+    assert ask() == 'held'
