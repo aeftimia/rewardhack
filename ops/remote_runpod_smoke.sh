@@ -10,6 +10,8 @@
 #   1. Only with JUDGE_KIND=pod: does a judge served on this pod agree with the model-read labels? (judge-validation)
 #   2. Does TRL GRPO train gpt-oss-20b at all: reward variation, real updates, stable output? (train-*)
 #   3. What does a step cost? seconds per step -> dollars per run -> 15 runs against $800.
+# Part 1 jobs (SMOKE_PART_ONE, from ops/pod_pins.env) replace those questions with their runs; SMOKE_PROBE_LARGE=1 then
+# samples gpt-oss-120b, untrained, on the false training statements (notes section 77). The driver sizes such a job's deadline.
 set -euo pipefail
 cd ~/pilot-repo
 # VLLM_ATTENTION_BACKEND was set here until 25 Nov: vLLM has reported it as an unknown variable since the 5 Nov probes, so it never did anything.
@@ -31,6 +33,7 @@ SMOKE_STEPS=${SMOKE_STEPS:-12}  # fallback-ok: optional setting; the documented 
 SMOKE_TRAIN_SECONDS=${SMOKE_TRAIN_SECONDS:-3600}  # fallback-ok: optional setting; the documented per-run limit (60 min) when unset
 SMOKE_FINAL_EVAL_SECONDS=${SMOKE_FINAL_EVAL_SECONDS:-600}  # fallback-ok: optional setting; time reserved for the after-evaluation when unset
 SMOKE_MEMORY_SECONDS=${SMOKE_MEMORY_SECONDS:-1800}  # fallback-ok: optional setting; the memory check's documented limit when unset
+SMOKE_PROBE_LARGE=${SMOKE_PROBE_LARGE:-0}  # fallback-ok: optional setting; unset means no gpt-oss-120b probe after training, as before 26 Nov
 source ops/pod_lib.sh
 cleanup() {
   rm -f ~/.judge_key
@@ -39,8 +42,14 @@ cleanup() {
   done
 }
 trap cleanup EXIT
-OUT_NEED_GB=(10 45)  # indexed by SMOKE_PART_ONE: a Part 1 pair with expert LoRA writes about 40 GB of results
-pod_self_test 40 "${OUT_NEED_GB[$SMOKE_PART_ONE]}" "$JUDGE_PORT" "$ROLLOUT_PORT"
+# The Part 1 runs this job trains (ops/pod_pins.env); none for the preflight run. An index with no row stops here.
+[[ -n ${PART_ONE_RUNS[$SMOKE_PART_ONE]+set} ]] || fail "INVALID_PART_ONE: no Part 1 job $SMOKE_PART_ONE in ops/pod_pins.env"
+read -ra RUNS <<< "${PART_ONE_RUNS[$SMOKE_PART_ONE]}"
+# Results written: about 20 GB per Part 1 run with expert LoRA (adapters and checkpoints); 10 GB for the preflight runs.
+OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
+# Room under /workspace for the environments, the uv cache and the weights; gpt-oss-120b adds about 65 GB and a third environment.
+WORKSPACE_NEED_GB=(40 120)  # indexed by SMOKE_PROBE_LARGE
+pod_self_test "${WORKSPACE_NEED_GB[$SMOKE_PROBE_LARGE]}" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
 MODEL=$GPT_OSS_20B; REV=$GPT_OSS_20B_REV
 JUDGE=$POD_JUDGE; JUDGE_REV=$POD_JUDGE_REV
 # The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
@@ -133,6 +142,20 @@ for pair in "${PAIRS[@]}"; do
   # cap: 2x measured 5.1 min
   log "start download $1"; timeout 660 $HF download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-"${1##*/}".log 2>&1 || fail "DOWNLOAD_FAILED $1"
 done
+# gpt-oss-120b for the probe after training (SMOKE_PROBE_LARGE=1), fetched and given its own environment while the training
+# runs: the in-process vLLM probe needs vLLM and this project in one environment. vLLM's numba needs numpy below 2.5 and
+# the project pins 2.5.5, so the project's numpy is overridden with requirements-vllm.txt's (uv resolves the rest; the
+# 0.33.0 probe pin no longer installs with the project at all). With --lean none the probe runs none of the scoring code.
+# HF_HUB_DISABLE_XET: the 5 Nov download of this repository failed twice in the xet transfer ("File reconstruction error").
+if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
+  log "start download $GPT_OSS_120B (background)"
+  # cap: 1.5x estimated 25 min (about 65 GB; the 13 GB gpt-oss-20b took 3.5 to 5.1 min)
+  HF_HUB_DISABLE_XET=1 timeout 2700 $HF download "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-gpt-oss-120b.log 2>&1 &
+  LARGE_DOWNLOAD_PID=$!
+  ( $UV venv -q --clear --python "$(command -v python)" /workspace/probe-venv && grep '^numpy==' requirements-vllm.txt > /workspace/probe-override.txt \
+      && timeout 600 $UV pip install -q --python /workspace/probe-venv/bin/python -r requirements-vllm.txt -e . --override /workspace/probe-override.txt ) > ~/out/install-probe.log 2>&1 &  # cap: 1.5x estimated 300 s
+  PROBE_INSTALL_PID=$!
+fi
 wait "$CONTROLS_PID" || fail VERIFIER_CONTROLS_FAILED
 log 'verifier controls passed'
 
@@ -140,9 +163,9 @@ if [[ $JUDGE_KIND == api ]]; then
 # JUDGE_MAX_USD bounds the whole script: the cap is enforced per process, split over the processes that call the judge.
 # Preflight: the probe and two training runs. Part 1: its two runs (the driver refuses it with a probe or a further run);
 # a third share there only cut each run's allowance, and 4 prompt groups per step make a run's judge use about 4 times larger.
-JUDGE_PROCESSES=(3 2)  # indexed by SMOKE_PART_ONE
+JUDGE_PROCESSES=(3 "${#RUNS[@]}")  # indexed by whether this is a Part 1 job; the gpt-oss-120b probe calls no judge
 JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano
-            --judge-max-usd "$(awk -v cap="${JUDGE_MAX_USD:?the driver passes JUDGE_MAX_USD}" -v n="${JUDGE_PROCESSES[$SMOKE_PART_ONE]}" 'BEGIN { printf "%.4f", cap / n }')")
+            --judge-max-usd "$(awk -v cap="${JUDGE_MAX_USD:?the driver passes JUDGE_MAX_USD}" -v n="${JUDGE_PROCESSES[$((SMOKE_PART_ONE > 0))]}" 'BEGIN { printf "%.4f", cap / n }')")
 else
 # --- Judge server: a small model in a fixed slice of the card, OpenAI-compatible on localhost.
 log start judge-server
@@ -224,11 +247,13 @@ fi
 # The batch shape of every training step in this script, so that no comparison below changes it by accident.
 SHAPE=(--num-generations "$GENERATIONS" --prompts-per-step "$PROMPTS")
 TRAIN=(--steps "$SMOKE_STEPS" --learning-rate 1e-4 "${SHAPE[@]}" --max-seconds "$SMOKE_TRAIN_SECONDS" --final-eval-seconds "$SMOKE_FINAL_EVAL_SECONDS")
-if [[ $SMOKE_PART_ONE == 1 ]]; then
-  # Part 1 proof of concept (owner, 26 Nov; issue #2): the baseline and the main setting at λ=0, same seed and settings,
-  # one after the other. Each keeps resumable checkpoints in <name>/trainer, so a later run can extend it with --resume-from.
-  step train-baseline "${TRAIN[@]}" --arm baseline --penalty 0
-  step train-lambda0 "${TRAIN[@]}" --arm report_correct --penalty 0
+if [[ $SMOKE_PART_ONE != 0 ]]; then
+  # Part 1 (owner, 26 Nov; issue #2): the job's runs from ops/pod_pins.env, same seed and settings, one after the other.
+  # Each keeps resumable checkpoints in <name>/trainer, so a later run can extend it with --resume-from.
+  for run in "${RUNS[@]}"; do
+    IFS=: read -r name arm penalty <<< "$run"
+    step "train-$name" "${TRAIN[@]}" --arm "$arm" --penalty "$penalty"
+  done
 else
   step train-lr1e-4 "${TRAIN[@]}" "${FUNDED[@]}"
 fi
@@ -240,5 +265,27 @@ elif [[ ${SMOKE_SECOND_RUN:-1} == 1 ]]; then
 # The shared remote runner bounds total process time; if time remains: the same at a tenth of the learning rate, to see whether 1e-4 is what breaks output format.
 # 8 steps at 61 s, plus a before and an after evaluation of up to 4.6 minutes each: about 17 minutes measured, so twice that.
 step train-lr1e-5 --steps 8 --learning-rate 1e-5 "${SHAPE[@]}" --max-seconds 2100 --final-eval-seconds 600 "${FUNDED[@]}"
+fi
+if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
+  # Does gpt-oss-120b, unprompted and untrained, ever declare or prove a refutation (owner, 26 Nov; notes section 77)? The 80
+  # false statements of the training split, the neutral prompt, inference only: rows are scored on the laptop with
+  # entrypoints/rescore.py (--lean none), so pod time goes to sampling only. It needs the whole card: the rollout server goes first.
+  if [[ -n $ROLLOUT_PID ]]; then stop_server "$ROLLOUT_PID"; ROLLOUT_PID=; fi
+  free_card() { local used=unread
+    # cap: 3x estimated 20 s (a stopped vLLM server releases its memory within seconds)
+    for _ in $(seq 30); do used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits) || fail NVIDIA_SMI_FAILED; ((used < 2048)) && return 0; sleep 2; done
+    fail "CARD_NOT_FREED: $used MiB still in use before the gpt-oss-120b probe"; }
+  free_card
+  wait "$LARGE_DOWNLOAD_PID" || fail "DOWNLOAD_FAILED $GPT_OSS_120B"
+  wait "$PROBE_INSTALL_PID" || fail PROBE_INSTALL_FAILED
+  $UV pip freeze --python /workspace/probe-venv/bin/python > ~/out/pip-freeze-probe.txt || fail PROBE_FREEZE_FAILED
+  large() { name=$1; shift; log "start $name"
+    /workspace/probe-venv/bin/python entrypoints/probe_vllm.py --out ~/out/"$name" --lean none --model "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" \
+      --taskset hard --tasks false "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
+    log "end $name passed"; }
+  # Low effort, as the training runs sample: 320 answers. High effort, where the frontier models found their refutations:
+  # 80 answers of up to 8,192 tokens. Each stage's time limit, model load included, is in ops/pod_pins.env.
+  large probe-120b-low --samples 4 --max-tokens 2048 --max-model-len 3072 --max-seconds "$PROBE_LARGE_LOW_SECONDS" --template-kwargs '{"reasoning_effort": "low"}'
+  large probe-120b-high --samples 1 --max-tokens 8192 --max-model-len 9216 --max-seconds "$PROBE_LARGE_HIGH_SECONDS" --template-kwargs '{"reasoning_effort": "high"}'
 fi
 # ops/remote_job.sh records EXIT_CODE and DONE after this script exits.

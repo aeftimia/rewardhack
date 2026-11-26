@@ -43,7 +43,10 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', **settings):
                                         SMOKE_TRAIN_SECONDS='6000'), 'SMOKE_PART_ONE=1 needs'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_TRAIN_SECONDS='6000', SMOKE_MEMORY_LIMIT='4096'), 'SMOKE_PART_ONE=1 needs'),
-    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='2'), 'SMOKE_PART_ONE must be 0 or 1'),
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='3'), "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to 2)"),
+    # The gpt-oss-120b probe follows a Part 1 job's training, on its vLLM path (owner, 26 Nov; notes section 77).
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PROBE_LARGE='1'), 'SMOKE_PROBE_LARGE=1 runs after a Part 1 job'),
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PROBE_LARGE='2'), 'SMOKE_PROBE_LARGE must be 0 or 1'),
     # A kept pod's grace must hold the checkpoint copy, the next launch's sizing and gate, and the relaunch: up to 30 minutes
     # there, 10 otherwise (review round 7, 26 Nov).
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', KEEP_POD='1', AUTOSTOP_GRACE_SECONDS='1801'), 'at most 1800'),
@@ -68,6 +71,10 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', **settings):
     # Two runs of 110 minutes, each with a 13.5-minute scoring tail, after 30 minutes of setup need 277 minutes; the driver is given 240.
     ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='6600'), 'needs a deadline of at least 277 minutes'),
+    # One run of 160 minutes with its tail (173.5) after 30 minutes of setup, and the gpt-oss-120b probe's 15 + 30 + 1 minutes:
+    # 250 minutes; the driver is given 240. Without the probe the same run fits (the next test).
+    ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='2', SMOKE_PROBE_LARGE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
+                                        SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='9600'), 'SMOKE_PART_ONE=2 needs a deadline of at least 250 minutes'),
 ])
 def test_the_driver_refuses_before_it_reaches_for_the_pod(tmp_path, remote, settings, said):
     code, output, reached = drive(tmp_path, remote, **settings)
@@ -95,6 +102,16 @@ def test_a_complete_part_one_launch_passes_every_check(tmp_path):
     code, output, reached = drive(tmp_path, JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key',
                                   LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                   SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='5400', SMOKE_TOKEN_LIMIT='2048', SMOKE_VLLM_ROLLOUTS='1')  # 30 + 2 x (90 + 13.5) = 237 of 240 minutes
+    assert code != 2 and 'invalid' not in output and 'does not read' not in output and reached
+
+
+@pytest.mark.parametrize('extra', [{}, {'SMOKE_PROBE_LARGE': '1'}])
+def test_a_single_run_part_one_launch_passes_every_check(tmp_path, extra):
+    """The λ=0.5 job (SMOKE_PART_ONE=2) is one run, so it fits a deadline the pair would not: 30 + 173.5 = 203.5 of 240
+    minutes; with the gpt-oss-120b probe, 30 + (9000 + 810 + 2760) s = 239.5. Both settings reach the pod."""
+    code, output, reached = drive(tmp_path, JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key',
+                                  LEAN_ISOLATION='none', SMOKE_PART_ONE='2', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0', SMOKE_STEPS='60',
+                                  SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='9000', SMOKE_TOKEN_LIMIT='2048', SMOKE_VLLM_ROLLOUTS='1', **extra)
     assert code != 2 and 'invalid' not in output and 'does not read' not in output and reached
 
 

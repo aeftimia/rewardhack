@@ -19,37 +19,48 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   # The vLLM server's context is sized to SMOKE_TOKEN_LIMIT: a longer memory step could never be sampled there.
   [[ -z ${SMOKE_MEMORY_LIMIT+set} ]] || { echo 'SMOKE_MEMORY_LIMIT is a question for the transformers sampler: not with SMOKE_VLLM_ROLLOUTS=1'; exit 2; }
 fi
-[[ -z ${SMOKE_PART_ONE+set} || $SMOKE_PART_ONE == 0 || $SMOKE_PART_ONE == 1 ]] || { echo 'SMOKE_PART_ONE must be 0 or 1'; exit 2; }
-if [[ -n ${SMOKE_PART_ONE+set} && $SMOKE_PART_ONE == 1 ]]; then
-  # The Part 1 pair is the whole job: no probe, no funded-arm runs after it, and its length and time limit stated, not
+source ops/pod_pins.env  # PART_ONE_RUNS: the Part 1 jobs and their runs
+if [[ -n ${SMOKE_PART_ONE+set} ]]; then PART_ONE=$SMOKE_PART_ONE; else PART_ONE=0; fi  # unset: the preflight run
+[[ $PART_ONE =~ ^[0-9]+$ && -n ${PART_ONE_RUNS[$PART_ONE]+set} ]] || { echo "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to $((${#PART_ONE_RUNS[@]} - 1)))"; exit 2; }
+read -ra PART_ONE_JOB <<< "${PART_ONE_RUNS[$PART_ONE]}"
+if [[ -n ${SMOKE_PROBE_LARGE+set} ]]; then PROBE_LARGE=$SMOKE_PROBE_LARGE; else PROBE_LARGE=0; fi  # unset: no gpt-oss-120b probe
+[[ $PROBE_LARGE == 0 || $PROBE_LARGE == 1 ]] || { echo 'SMOKE_PROBE_LARGE must be 0 or 1'; exit 2; }
+# The probe runs after a Part 1 job's training, on the vLLM path that job already requires.
+[[ $PROBE_LARGE == 0 || $PART_ONE != 0 ]] || { echo 'SMOKE_PROBE_LARGE=1 runs after a Part 1 job: set SMOKE_PART_ONE too'; exit 2; }
+if [[ $PART_ONE != 0 ]]; then
+  # A Part 1 job's runs are the whole training (the gpt-oss-120b probe may follow): no preflight probe, no funded-arm runs, and its length and time limit stated, not
   # taken from the preflight defaults (12 steps, 60 minutes). ${X+set} tests whether the launch set X (bash 3.2 has no -v).
   # vLLM samples the rollouts and evaluations: without it the pair would run on the trainer's own sampler, many times
   # slower, and record a run on the wrong backend (review round 16).
   [[ -n ${SMOKE_SKIP_PROBE+set} && $SMOKE_SKIP_PROBE == 1 && -n ${SMOKE_SECOND_RUN+set} && $SMOKE_SECOND_RUN == 0 && $SMOKE_VLLM_ROLLOUTS == 1
      && -z ${SMOKE_MEMORY_LIMIT+set} && -n ${SMOKE_STEPS+set} && -n ${SMOKE_TRAIN_SECONDS+set} && -n ${SMOKE_FINAL_EVAL_SECONDS+set} ]] || {
-    echo 'SMOKE_PART_ONE=1 needs SMOKE_SKIP_PROBE=1, SMOKE_SECOND_RUN=0, SMOKE_VLLM_ROLLOUTS=1, no SMOKE_MEMORY_LIMIT, and SMOKE_STEPS, SMOKE_TRAIN_SECONDS and SMOKE_FINAL_EVAL_SECONDS set'; exit 2;
+    echo "SMOKE_PART_ONE=$PART_ONE needs SMOKE_SKIP_PROBE=1, SMOKE_SECOND_RUN=0, SMOKE_VLLM_ROLLOUTS=1, no SMOKE_MEMORY_LIMIT, and SMOKE_STEPS, SMOKE_TRAIN_SECONDS and SMOKE_FINAL_EVAL_SECONDS set"; exit 2;
   }
   # The setup allowance below is the API judge's; a judge served on the pod adds its download, start and validation.
-  [[ -z ${JUDGE_KIND+set} || $JUDGE_KIND == api ]] || { echo 'SMOKE_PART_ONE=1 is sized for JUDGE_KIND=api'; exit 2; }
-  # Two runs one after the other, each allowed SMOKE_TRAIN_SECONDS, after setup and the vLLM server start (15 minutes
-  # measured on 25 Nov): a shorter job deadline would end the second run before its after-evaluation.
+  [[ -z ${JUDGE_KIND+set} || $JUDGE_KIND == api ]] || { echo "SMOKE_PART_ONE=$PART_ONE is sized for JUDGE_KIND=api"; exit 2; }
+  # The runs one after the other, each allowed SMOKE_TRAIN_SECONDS, after setup and the vLLM server start (15 minutes
+  # measured on 25 Nov): a shorter job deadline would end the last run before its after-evaluation.
   # cap: 2x measured 15 min
   PART1_SETUP_MINUTES=30
   # Whole numbers before any arithmetic: bash evaluates text inside (( )) as an expression.
   [[ $DEADLINE =~ ^[1-9][0-9]*$ && $SMOKE_TRAIN_SECONDS =~ ^[1-9][0-9]*$ && $SMOKE_FINAL_EVAL_SECONDS =~ ^[1-9][0-9]*$ ]] || {
-    echo 'SMOKE_PART_ONE=1 needs the deadline, SMOKE_TRAIN_SECONDS and SMOKE_FINAL_EVAL_SECONDS as whole numbers'; exit 2;
+    echo "SMOKE_PART_ONE=$PART_ONE needs the deadline, SMOKE_TRAIN_SECONDS and SMOKE_FINAL_EVAL_SECONDS as whole numbers"; exit 2;
   }
   # The after-evaluation's reserve comes out of each run's limit and must leave the before-evaluation and some training.
   ((SMOKE_FINAL_EVAL_SECONDS < SMOKE_TRAIN_SECONDS)) || {
-    echo 'SMOKE_PART_ONE=1 needs SMOKE_FINAL_EVAL_SECONDS below SMOKE_TRAIN_SECONDS'; exit 2;
+    echo "SMOKE_PART_ONE=$PART_ONE needs SMOKE_FINAL_EVAL_SECONDS below SMOKE_TRAIN_SECONDS"; exit 2;
   }
   # A run stopped at its own limit exits only once the answers already being scored finish (outcomes.score_concurrently):
   # one row's worst case, a grader check (10 s), three verifier checks with retries (3 x 80 s) and a judge request with its
   # retries (4 x 60 s): 490 s, and the OpenAI client's waits between retries on top (review round 14).
   # cap: 1.5x estimated 540 s
   SCORING_TAIL_SECONDS=810
-  ((DEADLINE*60 >= PART1_SETUP_MINUTES*60 + 2*(SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS))) || {
-    echo "SMOKE_PART_ONE=1 needs a deadline of at least $((PART1_SETUP_MINUTES + (2*(SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS)+59)/60)) minutes: setup and two runs of SMOKE_TRAIN_SECONDS, each with its scoring tail"; exit 2;
+  # The gpt-oss-120b probe after training: its two stages' limits (ops/pod_pins.env) and the wait for the card to be freed
+  # (60 s); the download and its environment are ready long before, during the training.
+  PROBE_LARGE_SECONDS=(0 $((PROBE_LARGE_LOW_SECONDS + PROBE_LARGE_HIGH_SECONDS + 60)))  # indexed by SMOKE_PROBE_LARGE
+  RUNS_SECONDS=$((${#PART_ONE_JOB[@]} * (SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS) + ${PROBE_LARGE_SECONDS[$PROBE_LARGE]}))
+  ((DEADLINE*60 >= PART1_SETUP_MINUTES*60 + RUNS_SECONDS)) || {
+    echo "SMOKE_PART_ONE=$PART_ONE needs a deadline of at least $((PART1_SETUP_MINUTES + (RUNS_SECONDS+59)/60)) minutes: setup, ${#PART_ONE_JOB[@]} run(s) of SMOKE_TRAIN_SECONDS each with its scoring tail, and the gpt-oss-120b probe if set"; exit 2;
   }
 fi
 [[ $REMOTE =~ ^ops/[a-zA-Z0-9_-]+\.sh$ && -f $REMOTE && $DEADLINE =~ ^[1-9][0-9]*$ ]] || { echo 'the remote script must be an existing ops/*.sh and the deadline a whole number of minutes'; exit 2; }
