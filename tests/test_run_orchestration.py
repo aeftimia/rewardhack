@@ -79,7 +79,7 @@ def run_args(tmp_path, **overrides):
         experts_implementation=None, thinking='unsupported', reasoning_effort=None, arm='baseline', penalty=0.0, beta=0.0, prompt_variant='neutral',
         report_mode='prose', verifier_retry_seconds=RETRY_SECONDS, taskset='hard', adapter=None, resume_from=None, steps=2, prompts_per_step=1, num_generations=4, learning_rate=1e-2, lr_schedule='constant',
         scale_rewards='group', max_grad_norm=1.0, router_aux_loss_coef=0.0, lora_rank=2, max_completion_length=6, eval_samples=2, eval_limit=2,
-        train_limit=4, save_every=99, stop_no_variation=99, seed=3, max_seconds=600, final_eval_seconds=60,
+        train_limit=4, save_every=99, stop_no_variation=99, stop_saturated=True, seed=3, max_seconds=600, final_eval_seconds=60,
         judge='none', judge_model=None, judge_revision=None, judge_url='http://127.0.0.1:1/v1', judge_key_env='UNUSED', judge_usd_in=0.0, judge_usd_out=0.0,
         judge_extra={}, judge_max_usd=None, dry_run=False, rollout_backend='transformers', rollout_url='http://127.0.0.1:8011')
     vars(args).update(overrides)

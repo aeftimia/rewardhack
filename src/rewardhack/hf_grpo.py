@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import deadline, jsonl
 from .gpu import GpuSampler
-from .outcomes import accumulate, compare, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, ScoringStopped, verifier_advice, completion_truncated, reward_groups, score, score_concurrently, stop_ids, summarize, tally, training_rewards, training_keep
+from .outcomes import accumulate, compare, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, SATURATED, saturated, RetryBudget, ScoringStopped, verifier_advice, completion_truncated, reward_groups, score, score_concurrently, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import split, stratified_limit, taskset_rows
@@ -70,7 +70,7 @@ def evaluation_seed(args):
 RESUME_SETTINGS = ('model', 'revision', 'arm', 'penalty', 'report_mode', 'taskset', 'train_limit', 'prompt_variant', 'reasoning_effort',
                    'thinking', 'mxfp4', 'quant', 'attn_implementation', 'experts_implementation', 'lora_rank', 'learning_rate',
                    'lr_schedule', 'scale_rewards', 'max_grad_norm', 'router_aux_loss_coef', 'beta', 'num_generations',
-                   'prompts_per_step', 'max_completion_length', 'seed', 'save_every', 'stop_no_variation', 'rollout_backend',
+                   'prompts_per_step', 'max_completion_length', 'seed', 'save_every', 'stop_no_variation', 'stop_saturated', 'rollout_backend',
                    'judge', 'judge_model', 'judge_revision', 'judge_url', 'judge_extra', 'verifier_retry_seconds', 'adapter',
                    # The resumed run carries the original's before-evaluation over, so its after-evaluation must match it.
                    'eval_limit', 'eval_samples')
@@ -146,8 +146,9 @@ def check_resume(args):
     # `run` writes summary.json as it starts and again as it ends; one killed from outside keeps the first, without an
     # early stop, which only a run that ended itself can record.
     outcome = json.loads((original/'summary.json').read_text())
-    if 'early_stop' in outcome and outcome['early_stop'] in (NO_VARIATION, VERIFIER_UNDECIDED):
-        # Its replayed groups have no variation, so a resume would pay for setup and one step and then stop again.
+    if 'early_stop' in outcome and outcome['early_stop'] in (NO_VARIATION, VERIFIER_UNDECIDED, SATURATED):
+        # Its replayed groups have no variation (or too little), so a resume would pay for setup and one step and then
+        # stop again.
         raise ValueError(f"{original} stopped for {outcome['early_stop']!r}; resuming it would stop again after one step")
     if saved['adapter'] is not None:
         raise ValueError(f"{original} started from --adapter {saved['adapter']}; resuming it would measure its before-evaluation on the base model")
@@ -541,6 +542,9 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
                 verifier = summary.setdefault('training_verifier', {})
                 verifier['variation_lost_groups'] = sum(lost)
                 summary['early_stop'] = VERIFIER_UNDECIDED if sum(lost) else NO_VARIATION  # rollouts left out for any reason, the judge's failures included
+                control.should_training_stop = True
+            elif run_args.stop_saturated and saturated(groups):
+                summary['early_stop'] = SATURATED
                 control.should_training_stop = True
             if time.monotonic() > run_args.train_deadline:
                 summary['early_stop'] = 'deadline'

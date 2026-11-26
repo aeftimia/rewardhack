@@ -56,6 +56,8 @@ def main():
     ap.add_argument('--train-limit', type=int)
     ap.add_argument('--save-every', type=int, default=16)
     ap.add_argument('--stop-no-variation', type=int, default=24)
+    ap.add_argument('--stop-saturated', action=argparse.BooleanOptionalAction, default=True,
+                    help='stop once reward variation is credibly below 5%% of the latest 80 prompt groups (outcomes.saturated)')
     ap.add_argument('--seed', type=int, default=42)
     ap.add_argument('--max-seconds', type=int, default=3600)
     ap.add_argument('--final-eval-seconds', type=int, default=600, help='reserved after training for the after-evaluation')

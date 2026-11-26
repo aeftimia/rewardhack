@@ -104,7 +104,7 @@ SETTINGS = dict(model='m', revision='r', arm='report_correct', penalty=0.5, repo
                 prompt_variant='neutral', reasoning_effort='low', thinking='unsupported', mxfp4='dequantize', quant='none',
                 attn_implementation='eager', experts_implementation=None, lora_rank=16, learning_rate=1e-4, lr_schedule='constant',
                 scale_rewards='none', max_grad_norm=1.0, router_aux_loss_coef=0.0, beta=0.0, num_generations=4, prompts_per_step=1,
-                max_completion_length=2048, seed=7, save_every=2, stop_no_variation=99, rollout_backend='vllm', judge='api',
+                max_completion_length=2048, seed=7, save_every=2, stop_no_variation=99, stop_saturated=True, rollout_backend='vllm', judge='api',
                 judge_model='gpt-5.4-nano', judge_revision=None, judge_url='https://api.openai.com/v1', judge_extra={},
                 verifier_retry_seconds=120.0, adapter=None, eval_limit=12, eval_samples=2)
 
@@ -146,6 +146,7 @@ def test_the_same_settings_pass(saved, tmp_path):
     (dict(judge_extra={'temperature': 0}), 'judge_extra'),
     (dict(verifier_retry_seconds=0.0), 'verifier_retry_seconds'),
     (dict(stop_no_variation=24), 'stop_no_variation'),
+    (dict(stop_saturated=False), 'stop_saturated'),
     (dict(attn_implementation='sdpa'), 'attn_implementation'),
     (dict(steps=2), 'must exceed the 2 steps'),
     (dict(eval_limit=24), 'eval_limit 12 -> 24'),
@@ -286,7 +287,7 @@ def test_an_incomplete_checkpoint_is_refused(saved, tmp_path, lost):
         hf_grpo.check_resume(resume_args(saved, tmp_path))
 
 
-@pytest.mark.parametrize('stop', [hf_grpo.NO_VARIATION, hf_grpo.VERIFIER_UNDECIDED])
+@pytest.mark.parametrize('stop', [hf_grpo.NO_VARIATION, hf_grpo.VERIFIER_UNDECIDED, hf_grpo.SATURATED])
 def test_a_run_that_stopped_for_no_variation_is_not_resumed(saved, tmp_path, stop):
     (saved/'summary.json').write_text(json.dumps({'status': 'completed', 'early_stop': stop}))
     with pytest.raises(ValueError, match='would stop again after one step'):

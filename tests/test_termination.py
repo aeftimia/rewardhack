@@ -19,7 +19,7 @@ def args(tmp_path):
                            judge_fn=lambda row: dict(claim='OK', raw=''), eval_samples=1, rollout_backend='transformers',
                            max_completion_length=4, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
                            num_generations=1, prompts_per_step=1, steps=1, learning_rate=.01,
-                           beta=0, seed=0, adapter=True, resume_from=None, save_every=99, lora_rank=1, lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0)
+                           beta=0, seed=0, adapter=True, resume_from=None, save_every=99, stop_saturated=True, lora_rank=1, lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0)
 
 
 def stub_model_tokenizer(tokens):
@@ -492,3 +492,46 @@ def test_rescore_keeps_the_partial_batch_mark(args, monkeypatch):
     path.write_text(json.dumps(dict(task_id='true', raw=RAW, arm='baseline', genuine_why='truncated', truncated=True, partial_batch=True))+'\n')
     rescore.rescore_file(path, args.lean, {'true': TASK})
     assert json.loads(path.with_suffix('.rescored.jsonl').read_text())['partial_batch'] is True
+
+
+def test_saturation_needs_a_full_window_and_credibly_few_mixed_groups():
+    window = outcomes.SATURATION_WINDOW
+    assert not outcomes.saturated([False]*(window-1))  # too few groups yet
+    assert outcomes.saturated([True]*40 + [False]*window)  # early variation is outside the window
+    assert outcomes.saturated([True] + [False]*(window-1))  # 1 mixed in 80
+    assert not outcomes.saturated([True]*2 + [False]*(window-2))  # 2 in 80 is not credibly under 5%
+
+
+def test_the_26_nov_pair_stops_the_baseline_and_not_lambda0():
+    """The calibration in outcomes.py's comment: mixed groups per step of the 60-step pair (4 groups a step)."""
+    runs = dict(baseline=([2, 3, 3, 4, 1, 2, 3, 1, 4, 2, 3, 3, 1, 2, 4, 1, 3, 2, 2, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0], 48),
+                lambda0=([3, 4, 3, 3, 4, 4, 3, 4, 4, 2, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0,
+                                1, 1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 2, 0, 0, 1, 1, 0, 0, 0], None))
+    for mixed, expected in runs.values():
+        groups, stop = [], None
+        for step, m in enumerate(mixed, 1):
+            groups.extend([True]*m + [False]*(4-m))
+            if stop is None and outcomes.saturated(groups):
+                stop = step
+        assert stop == expected
+
+
+@pytest.mark.parametrize('on', [True, False])
+def test_a_saturated_run_stops_only_when_the_stop_is_on(args, monkeypatch, on):
+    model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])
+    args.num_generations, args.stop_no_variation, args.save_every, args.train_deadline, args.stop_saturated = 2, 1, 99, float('inf'), on
+    # Two groups can never be credible at 0.95: P(share < 5%) after 0 of 2 is 0.41, after 1 of 2 almost 0.
+    monkeypatch.setattr(outcomes, 'SATURATION_WINDOW', 2)
+    monkeypatch.setattr(outcomes, 'SATURATION_CONFIDENCE', 0.3)
+    scripted_scores(monkeypatch, [(0.0, False), (1.0, False)] + [(0.0, False)]*4)  # one mixed group, then two without
+    stops = []
+    def drive(reward, callback):
+        for step in (1, 2, 3):
+            reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
+            control = callback.on_step_end(None, SimpleNamespace(global_step=step, log_history=[]), SimpleNamespace(should_training_stop=False, should_save=False), model=None)
+            stops.append(control.should_training_stop)
+    trl_stub(monkeypatch, drive)
+    summary = dict(rollouts={})
+    hf_grpo.train(model, tokenizer, [TASK], args, summary)
+    assert stops == [False, False, on] and (summary.get('early_stop') == outcomes.SATURATED) == on
