@@ -203,6 +203,11 @@ authorization. The separate bounded pilot controller is described below.
 
 ### Sequential spending and compute-aware stopping — owner policy, 2026-11-24
 
+**Owner, 2026-11-26: start without the λ sweep.** Run the main penalty setting first (Part 1 of
+[issue #2](https://github.com/aeftimia/rewardhack/issues/2)). The sweep's budget is held in reserve and can be spent
+later if Part 1 calls for it; moving those funds to another experiment needs the funder's approval first. No paid run
+is authorized by this. Notes, section 68.
+
 The five settings and three seeds are a maximum design envelope, not a spending target. Train in short,
 checkpointed increments and evaluate at prespecified boundaries. Stop purchasing further training or
 evaluation for a question as soon as the evidence is sufficient, or continuing has little decision value.
