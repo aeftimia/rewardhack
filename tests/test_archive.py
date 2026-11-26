@@ -38,6 +38,10 @@ elif args[:2] == ['s3api', 'list-objects-v2']:
 elif args[:2] == ['s3', 'cp'] and args[3].startswith('s3://'):
     path(args[3]).parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(args[2], path(args[3]))
+elif args[:2] == ['s3', 'cp'] and args[2].startswith('s3://') and args[3] != '-':
+    if not path(args[2]).exists():
+        sys.exit('download failed: 404')
+    shutil.copy(path(args[2]), args[3])
 elif args[:2] == ['s3', 'cp'] and args[3] == '-':
     sys.stdout.buffer.write(path(args[2]).read_bytes())
 elif args[:2] == ['s3', 'presign']:
@@ -79,13 +83,13 @@ def stored(tmp_path):
 def test_an_upload_keeps_the_layout_and_checks_every_file(tmp_path, run):
     code, output = archive(tmp_path, 'upload', run)
     assert code == 0, output
-    assert 'all 5 files are in' in output and (run/'ARCHIVED').exists()
+    assert 'all 4 files are in' in output and (run/'ARCHIVED').exists()
     assert (stored(tmp_path)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').exists()
     assert (stored(tmp_path)/'SHA256SUMS').exists() and not (stored(tmp_path)/'known_hosts').exists()
     # A second upload (more files since) rewrites the manifest and passes again: the manifest is never listed in itself.
     (run/'train-a'/'late.json').write_text('{}')
     code, output = archive(tmp_path, 'upload', run)
-    assert code == 0 and 'all 6 files are in' in output, output
+    assert code == 0 and 'all 5 files are in' in output, output
 
 
 def test_a_file_that_did_not_arrive_fails_the_upload_and_nothing_is_marked(tmp_path, run):
@@ -163,7 +167,7 @@ def test_prune_refuses_a_local_copy_changed_since_the_upload(tmp_path, run):
     assert archive(tmp_path, 'upload', run)[0] == 0
     (run/'train-a'/'adapter-step8'/'weights.bin').write_bytes(b'\x02' * 1000)
     code, output = archive(tmp_path, 'prune', run)
-    assert code == 1 and 'changed since it was archived' in output and (run/'train-a'/'adapter-step8').exists()
+    assert code == 1 and 'NOT ARCHIVED AS IT IS train-a/adapter-step8/weights.bin' in output and (run/'train-a'/'adapter-step8').exists()
 
 
 def test_prune_never_deletes_the_run_folder_itself(tmp_path):
@@ -207,9 +211,9 @@ def test_prune_refuses_when_a_same_named_run_replaced_the_bucket_copy(tmp_path, 
     import shutil
     shutil.copytree(run, other)
     (other/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x04' * 1000)
-    # Refused before it sends anything (round 36: a failed upload of it could overwrite some checkpoints first).
+    # Refused before it sends anything (rounds 36-37: a failed upload of it could overwrite some checkpoints first).
     code, output = archive(tmp_path, 'upload', other)
-    assert code == 1 and 'belongs to' in output
+    assert code == 1 and 'other bytes' in output and 'train-a/trainer/checkpoint-60/weights.bin' in output
     assert (stored(tmp_path)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
     assert archive(tmp_path, 'prune', run)[0] == 0
 
@@ -232,4 +236,38 @@ def test_a_relative_folder_is_read_from_where_the_command_runs(tmp_path, run):
     result = subprocess.run(['bash', str(PROJECT/'ops'/'s3_archive.sh'), 'upload', run.name], cwd=tmp_path, capture_output=True, text=True,
                             env=dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_S3=str(tmp_path/'s3')))
     assert result.returncode == 0, result.stdout + result.stderr
-    assert (stored(tmp_path)/'ORIGIN').read_text() == str(run.resolve())
+    assert (stored(tmp_path)/'SHA256SUMS').exists()
+
+
+def test_a_moved_folder_is_the_same_run(tmp_path, run):
+    """Round 37: a run is identified by its files, not its path; a moved copy uploads and prunes as before."""
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    moved = tmp_path/'main-checkout'/'results'/run.name
+    moved.parent.mkdir(parents=True)
+    run.rename(moved)
+    assert archive(tmp_path, 'upload', moved)[0] == 0
+    assert archive(tmp_path, 'prune', moved)[0] == 0 and not (moved/'train-a'/'adapter-step8').exists()
+
+
+def test_a_reused_path_cannot_overwrite_a_pruned_run(tmp_path, run):
+    """Round 37: after a prune, a new run written to the same folder would have replaced the only copy of the old checkpoints."""
+    assert archive(tmp_path, 'upload', run)[0] == 0 and archive(tmp_path, 'prune', run)[0] == 0
+    import shutil
+    shutil.rmtree(run)
+    (run/'train-a'/'adapter-step8').mkdir(parents=True)
+    (run/'train-a'/'adapter-step8'/'weights.bin').write_bytes(b'\x09' * 1000)
+    code, output = archive(tmp_path, 'upload', run)
+    assert code == 1 and 'other bytes' in output
+    assert (stored(tmp_path)/'train-a'/'adapter-step8'/'weights.bin').read_bytes() == b'\x01' * 1000
+
+
+def test_prune_keeps_a_folder_holding_a_file_that_was_never_archived(tmp_path, run):
+    """Round 37: what is deleted is decided from the files there now, each against its archived hash."""
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    (run/'train-a'/'trainer'/'checkpoint-60'/'late.bin').write_bytes(b'\x05')
+    # The folder no longer matches its manifest, so the checks before the deletion already refuse.
+    code, output = archive(tmp_path, 'prune', run)
+    assert code == 1 and (run/'train-a'/'trainer'/'checkpoint-60'/'late.bin').exists()
+    checked = subprocess.run([sys.executable, str(PROJECT/'ops'/'sha256_manifest.py'), 'prunable', str(run), str(run/'SHA256SUMS')],
+                             capture_output=True, text=True)
+    assert checked.returncode == 1 and 'train-a/trainer/checkpoint-60/late.bin' in checked.stderr

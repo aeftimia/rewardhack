@@ -5,9 +5,12 @@ checked anywhere, a pod included. Usage:
   python3 sha256_manifest.py write <folder> <manifest file>   # every file of the run, in `sha256sum` format
   python3 sha256_manifest.py verify <folder> <manifest file>  # exit 1 naming each missing or differing file
   python3 sha256_manifest.py listed <folder> <manifest file>  # 'path size' per file; exit 1 if the folder and manifest differ
+  python3 sha256_manifest.py compatible <manifest> <archived manifest>  # exit 1 if a file both name has another hash
+  python3 sha256_manifest.py prunable <folder> <manifest file>  # snapshot and checkpoint folders archived exactly as they are
 Files are hashed in a thread pool (hashlib releases the GIL on large reads); results keep the sorted path order.
 """
 import hashlib
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -22,7 +25,7 @@ def digest(path):
 
 # Files at the top of a results folder that are not part of the run: the manifest itself, the archive's marker, and the
 # laptop's SSH trust for the job's pod. Only these names, only at the top (ops/s3_archive.sh excludes the same).
-NOT_THE_RUN = ('SHA256SUMS', 'ARCHIVED', 'ORIGIN', 'known_hosts')
+NOT_THE_RUN = ('SHA256SUMS', 'ARCHIVED', 'known_hosts')
 
 
 def run_files(root):
@@ -78,9 +81,66 @@ def listed(folder, manifest):
     return 0
 
 
-COMMANDS = {'write': write, 'verify': verify, 'listed': listed}
+def entries(manifest):
+    return dict(reversed(line.split('  ', 1)) for line in Path(manifest).read_text().splitlines())
+
+
+def compatible(manifest, stored):
+    """0 if every file named in both manifests has the same hash: an upload may add files to an archived run, never replace
+    archived bytes (review round 37). 1, naming the files, otherwise."""
+    ours, theirs = entries(manifest), entries(stored)
+    clashes = sorted(name for name in ours.keys() & theirs.keys() if ours[name] != theirs[name])
+    for name in clashes[:20]:
+        print(f'ARCHIVED DIFFERENTLY {name}')
+    return 1 if clashes else 0
+
+
+def merge(manifest, stored, out):
+    """The archive's manifest after an upload: what it held and this folder's files (compatible() checked first)."""
+    union = {**entries(stored), **entries(manifest)}
+    Path(out).write_text(''.join(f'{union[name]}  {name}\n' for name in sorted(union)))
+    return 0
+
+
+def covered(manifest, stored):
+    """0 if the archive's manifest names every file of this one with the same hash; 1, naming the rest, otherwise."""
+    ours, theirs = entries(manifest), entries(stored)
+    missing = sorted(name for name in ours if theirs.get(name) != ours[name])
+    for name in missing[:20]:
+        print(f'NOT IN THE ARCHIVE AS IT IS {name}')
+    return 1 if missing or not ours else 0
+
+
+# Where the trainer writes what prune may delete (hf_grpo: adapter-step{global_step}; the trainer's checkpoint-{step}), one
+# run folder down, digits only.
+PRUNABLE = re.compile(r'[^/]+/(?:adapter-step|trainer/checkpoint-)\d+')
+
+
+def prunable(folder, manifest):
+    """The snapshot and checkpoint folders whose every file is in the manifest with its hash, read now, as paths under
+    folder; exit 1 naming any that hold a file the manifest lacks or one that differs (review round 37)."""
+    root, named = Path(folder), entries(manifest)
+    found, problems = [], []
+    for candidate in sorted({'/'.join(name.split('/')[:3 if '/trainer/' in name else 2]) for name in named}):
+        if PRUNABLE.fullmatch(candidate) and (root/candidate).is_dir():
+            for path in sorted(p for p in (root/candidate).rglob('*') if not p.is_dir()):
+                name = path.relative_to(root).as_posix()
+                if path.is_symlink() or named.get(name) != digest(path):
+                    problems.append(name)
+            found.append(candidate)
+    for name in problems[:20]:
+        print(f'NOT ARCHIVED AS IT IS {name}', file=sys.stderr)
+    if problems:
+        return 1
+    print(''.join(f'{candidate}\n' for candidate in found), end='')
+    return 0
+
+
+# Each command with the number of paths it takes.
+COMMANDS = {'write': (write, 2), 'verify': (verify, 2), 'listed': (listed, 2), 'compatible': (compatible, 2),
+            'merge': (merge, 3), 'covered': (covered, 2), 'prunable': (prunable, 2)}
 
 if __name__ == '__main__':
-    if len(sys.argv) != 4 or sys.argv[1] not in COMMANDS:
+    if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS or len(sys.argv) != 2 + COMMANDS[sys.argv[1]][1]:
         sys.exit(__doc__)
-    sys.exit(COMMANDS[sys.argv[1]](sys.argv[2], sys.argv[3]))
+    sys.exit(COMMANDS[sys.argv[1]][0](*sys.argv[2:]))
