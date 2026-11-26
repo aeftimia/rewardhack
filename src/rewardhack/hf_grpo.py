@@ -543,13 +543,16 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
                 verifier['variation_lost_groups'] = sum(lost)
                 summary['early_stop'] = VERIFIER_UNDECIDED if sum(lost) else NO_VARIATION  # rollouts left out for any reason, the judge's failures included
                 control.should_training_stop = True
-            elif run_args.stop_saturated and saturated(groups):
+            # Only once some group has varied: a run that never varied is the no-variation stop's case, which waits for
+            # its own step and records whether the verifier lost the variation.
+            elif run_args.stop_saturated and any(groups) and saturated(groups, run_args.prompts_per_step):
                 summary['early_stop'] = SATURATED
                 control.should_training_stop = True
-            if time.monotonic() > run_args.train_deadline:
+            # A stop recorded above keeps its reason: it is what decides whether the run may be resumed.
+            if time.monotonic() > run_args.train_deadline and not control.should_training_stop:
                 summary['early_stop'] = 'deadline'
                 control.should_training_stop = True
-            # A run stopped here (deadline, no variation, or its last step) keeps a checkpoint of that step, so a resume repeats
+            # A run stopped here (deadline, no variation, saturation, or its last step) keeps a checkpoint of that step, so a resume repeats
             # no paid step; `fit` does the same for a stop by exception.
             control.should_save = control.should_save or control.should_training_stop
             return control

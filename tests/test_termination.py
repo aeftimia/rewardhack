@@ -496,10 +496,17 @@ def test_rescore_keeps_the_partial_batch_mark(args, monkeypatch):
 
 def test_saturation_needs_a_full_window_and_credibly_few_mixed_groups():
     window = outcomes.SATURATION_WINDOW
-    assert not outcomes.saturated([False]*(window-1))  # too few groups yet
-    assert outcomes.saturated([True]*40 + [False]*window)  # early variation is outside the window
-    assert outcomes.saturated([True] + [False]*(window-1))  # 1 mixed in 80
-    assert not outcomes.saturated([True]*2 + [False]*(window-2))  # 2 in 80 is not credibly under 5%
+    assert not outcomes.saturated([False]*(window-1), 1)  # too few groups yet
+    assert outcomes.saturated([True]*40 + [False]*window, 1)  # early variation is outside the window
+    assert outcomes.saturated([True] + [False]*(window-1), 1)  # 1 mixed in 80
+    assert not outcomes.saturated([True]*2 + [False]*(window-2), 1)  # 2 in 80 is not credibly under 5%
+
+
+def test_saturation_takes_whole_steps():
+    """80 groups at 3 a step is 26 steps and 2 groups; the window takes 27 whole steps, so the mixed groups listed first
+    in the oldest step are counted rather than cut off."""
+    oldest = [True, True, False]
+    assert not outcomes.saturated(oldest + [False]*78, 3)  # 2 mixed in 81
 
 
 def test_the_26_nov_pair_stops_the_baseline_and_not_lambda0():
@@ -512,7 +519,7 @@ def test_the_26_nov_pair_stops_the_baseline_and_not_lambda0():
         groups, stop = [], None
         for step, m in enumerate(mixed, 1):
             groups.extend([True]*m + [False]*(4-m))
-            if stop is None and outcomes.saturated(groups):
+            if stop is None and outcomes.saturated(groups, 4):
                 stop = step
         assert stop == expected
 
@@ -535,3 +542,44 @@ def test_a_saturated_run_stops_only_when_the_stop_is_on(args, monkeypatch, on):
     summary = dict(rollouts={})
     hf_grpo.train(model, tokenizer, [TASK], args, summary)
     assert stops == [False, False, on] and (summary.get('early_stop') == outcomes.SATURATED) == on
+
+
+@pytest.mark.parametrize('scores, stop', [([(0.0, False)]*2, outcomes.NO_VARIATION),
+                                           ([(0.0, False), (1.0, False)] + [(0.0, False)]*4, outcomes.SATURATED)])
+def test_a_deadline_does_not_overwrite_an_earlier_stop(args, monkeypatch, scores, stop):
+    model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])
+    args.num_generations, args.stop_no_variation, args.save_every, args.stop_saturated = 2, 1, 99, True
+    args.train_deadline = float('inf')
+    monkeypatch.setattr(outcomes, 'SATURATION_WINDOW', 2)
+    monkeypatch.setattr(outcomes, 'SATURATION_CONFIDENCE', 0.3)
+    scripted_scores(monkeypatch, scores)
+    def drive(reward, callback):
+        for step in range(1, len(scores)//2 + 1):
+            if step == len(scores)//2:
+                args.train_deadline = 0.0  # the deadline passes at the step the other stop fires
+            reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
+            callback.on_step_end(None, SimpleNamespace(global_step=step, log_history=[]), SimpleNamespace(should_training_stop=False, should_save=False), model=None)
+    trl_stub(monkeypatch, drive)
+    summary = dict(rollouts={})
+    hf_grpo.train(model, tokenizer, [TASK], args, summary)
+    assert summary['early_stop'] == stop  # the deadline has passed too, but this decides the resume
+
+
+def test_a_run_that_never_varied_gets_the_no_variation_stop_not_saturation(args, monkeypatch):
+    model, tokenizer = stub_model_tokenizer([2, 3, 4, 9])
+    args.num_generations, args.stop_no_variation, args.save_every, args.train_deadline, args.stop_saturated = 2, 3, 99, float('inf'), True
+    # At window 2 and 0.3, two groups without variation count as saturated (0.41 > 0.3): without the guard this run would
+    # stop at step 2 for saturation.
+    monkeypatch.setattr(outcomes, 'SATURATION_WINDOW', 2)
+    monkeypatch.setattr(outcomes, 'SATURATION_CONFIDENCE', 0.3)
+    assert outcomes.saturated([False, False], 1)
+    scripted_scores(monkeypatch, [(0.0, False)]*6)
+    stops = []
+    def drive(reward, callback):
+        for step in (1, 2, 3):
+            reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
+            stops.append(callback.on_step_end(None, SimpleNamespace(global_step=step, log_history=[]), SimpleNamespace(should_training_stop=False, should_save=False), model=None).should_training_stop)
+    trl_stub(monkeypatch, drive)
+    summary = dict(rollouts={})
+    hf_grpo.train(model, tokenizer, [TASK], args, summary)
+    assert stops == [False, False, True] and summary['early_stop'] == outcomes.NO_VARIATION

@@ -492,18 +492,21 @@ NO_VARIATION, VERIFIER_UNDECIDED = 'no within-prompt reward variation', 'no deci
 # this covers one that varied and then settled. It stops when, over the latest SATURATION_WINDOW groups, the posterior
 # (Jeffreys prior) puts more than SATURATION_CONFIDENCE on the share of mixed groups being under SATURATION_FLOOR: at
 # most 1 mixed group in 80. On the 26 Nov 60-step pair it stops the baseline at step 48 (1 mixed group in its last 80)
-# and not λ=0 (9 to 11 in 80 throughout its second half). A wrong stop costs the rest of a saturated run's steps.
+# and not λ=0 (6 to 13 in 80 throughout its second half). A wrong stop costs the rest of a saturated run's steps.
 SATURATED = 'reward variation credibly below 5% of groups'
 SATURATION_WINDOW = 80
 SATURATION_FLOOR = 0.05
 SATURATION_CONFIDENCE = 0.95
 
 
-def saturated(groups):
-    """Whether the latest SATURATION_WINDOW entries of `groups` (True for a group with reward variation) are credibly
-    below SATURATION_FLOOR mixed. Fewer entries than the window never stop."""
-    window = groups[-SATURATION_WINDOW:]
-    return len(window) == SATURATION_WINDOW and bool(1 - above(sum(window), len(window), SATURATION_FLOOR) > SATURATION_CONFIDENCE)
+def saturated(groups, per_step):
+    """Whether the latest whole steps covering SATURATION_WINDOW entries of `groups` (True for a group with reward
+    variation, `per_step` groups a step) are credibly below SATURATION_FLOOR mixed. Whole steps, because a step's groups
+    are not recorded in sampling order (its mixed ones come first), so a cut inside a step would miss them. Fewer entries
+    than that never stop."""
+    size = -(-SATURATION_WINDOW // per_step) * per_step
+    window = groups[-size:]
+    return len(window) == size and bool(1 - above(sum(window), len(window), SATURATION_FLOOR) > SATURATION_CONFIDENCE)
 
 
 # How each `tally` key combines across steps: counts and reward sums add, a largest value takes the max. A key added to
