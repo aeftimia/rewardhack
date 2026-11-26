@@ -1,57 +1,27 @@
-# Commit gate (CLAUDE.md, "Hooks"). Installed once per clone, from the main checkout, with `pre-commit install`.
-# Every hook runs whatever files changed: gitleaks and the terms check read git's own objects, not a file list.
+# Commit gate (CLAUDE.md, "Hooks"): commit-gate, developed and released in github.com/aeftimia/commit-gate, whose README
+# lists what it reads and its gaps. Installed once per clone, from the main checkout (CLAUDE.md gives the command).
 minimum_pre_commit_version: 4.7.0
-default_install_hook_types: [pre-commit, commit-msg]  # pre-push: ops/pre-push, linked by hand (CLAUDE.md)
+default_install_hook_types: [pre-commit, commit-msg]  # pre-push: `commit-gate install-pre-push`
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       # 15 MB: the largest result file tracked on purpose is 11 MB of rows; model files start above this.
-      # --enforce-all: a file that grows past the limit is refused too, not only a new one.
+      # --enforce-all: a file that grows past the limit is refused too, not only a new one. At a push, withheld-terms-push
+      # reads every pushed file's size against the same limit.
       - id: check-added-large-files
         args: [--maxkb=15000, --enforce-all]
-        stages: [pre-commit, pre-push]
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.1
-    hooks:
-      # The upstream hook builds this release's gitleaks; the entry runs it with the project's flags (src/rewardhack/gates.py).
-      - id: gitleaks
-        name: gitleaks (staged changes)
-        entry: bash ops/gate.sh gitleaks pre-commit
-        always_run: true
-        pass_filenames: false
         stages: [pre-commit]
-      - id: gitleaks
-        name: gitleaks (commit message)
-        entry: bash ops/gate.sh gitleaks commit-msg
-        pass_filenames: true
-        always_run: true
-        stages: [commit-msg]
-      - id: gitleaks
-        name: gitleaks (every commit the push may publish)
-        entry: bash ops/gate.sh gitleaks pre-push
-        always_run: true
-        pass_filenames: false
-        stages: [pre-push]
-  - repo: local
+  - repo: https://github.com/aeftimia/commit-gate
+    rev: v0.1.0
     hooks:
-      - id: withheld-terms
-        name: withheld terms (staged files)
-        entry: bash ops/gate.sh terms pre-commit
-        language: unsupported
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
+      - id: withheld-terms  # the terms file: .claude/commit-gate-terms.txt in the main checkout, untracked (the default)
       - id: withheld-terms-message
-        name: withheld terms (commit message)
-        entry: bash ops/gate.sh terms commit-msg
-        language: unsupported
-        always_run: true
-        stages: [commit-msg]
       - id: withheld-terms-push
-        name: withheld terms (every commit the push may publish)
-        entry: bash ops/gate.sh terms pre-push
-        language: unsupported
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
+        args: [--max-kb, "15000"]
+      - id: gitleaks  # this project's allowlists: .gitleaks.toml
+        args: [--config, .gitleaks.toml]
+      - id: gitleaks-message
+        args: [--config, .gitleaks.toml]
+      - id: gitleaks-push
+        args: [--config, .gitleaks.toml]

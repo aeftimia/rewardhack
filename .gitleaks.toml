@@ -1,10 +1,4 @@
-# Commit gate, secrets: gitleaks' own rules plus this project's (run by `entrypoints/gate.py gitleaks`, see CLAUDE.md "Hooks").
-title = "rewardhack commit gate"
-minVersion = "v8.30.1"
-
-[extend]
-useDefault = true
-
+# This project's additions to commit-gate's gitleaks configuration (its README): only [[rules]] and [[allowlists]] tables.
 # What the built-in generic-api-key rule found in this repository's tracked files (26 Nov 2026), none of them a secret.
 [[allowlists]]
 description = "Model revisions and content digests, named as such"
@@ -16,25 +10,3 @@ regexes = ['''(?i)(revision|sha256)['"]?\s*[:=]\s*['"]?[0-9a-f]{40,64}\b''']
 description = "Driver settings (NAME= or NAME=1) and dotted Lean names, read as the value after a key-like word"
 targetRules = ["generic-api-key"]
 regexes = ['''^[A-Z][A-Z0-9_]*=\w{0,3}$''', '''^[A-Z][A-Za-z]*\.[a-z_][A-Za-z0-9_]*$''']
-
-[[rules]]
-id = "secret-file-name"
-description = "A file named like a secret or a key file"
-path = '''(^|/)(\.env(\..+)?|\.netrc|id_rsa.*|id_ed25519.*|.*\.pem|.*\.key|.*_key)$'''
-
-[[rules]]
-id = "gitleaks-ignore-file"
-description = "A .gitleaksignore file, which would let later findings through"
-path = '''(^|/)\.gitleaksignore$'''
-
-[[rules]]
-id = "openai-style-key"
-description = "An OpenAI-style key (sk-...), including project and service keys the built-in rule needs a marker for"
-regex = '''\bsk-[A-Za-z0-9_-]{20,}'''
-keywords = ["sk-"]
-
-[[rules]]
-id = "runpod-key"
-description = "A RunPod API key"
-regex = '''\brpa_[A-Za-z0-9]{20,}'''
-keywords = ["rpa_"]

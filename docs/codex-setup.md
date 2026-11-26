@@ -32,7 +32,7 @@ It never applies the patch itself. Checks cover newly introduced findings,
 using the destination's project settings when moving files.
 
 Git commit/push checks remain Git hooks and need no Codex-specific installation.
-They are the pre-commit framework's hooks (CLAUDE.md, "Commit gate"); `ls .git/hooks` in the main checkout verifies their installation.
+They are commit-gate's hooks (CLAUDE.md, "Commit gate"); `ls .git/hooks` in the main checkout verifies their installation.
 
 Tool hooks are guardrails, not a universal interception layer. Hosted tools and
 some specialized tool paths are outside coverage; `write_stdin` does not rerun a
