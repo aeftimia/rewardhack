@@ -5,7 +5,8 @@ AWS credentials; they get presigned URLs for what they must read.
       # archives the folder under a new run id, s3://<bucket>/<run id>/, every file's SHA-256 checked by S3, and appends
       # the archive to <results folder>/archive.json, the small record committed with the run's results
   python3 ops/run_archive.py resume <run id | archive.json> <run>/trainer/checkpoint-<step>
-      # 'sha256 path url' per file of that one checkpoint (GET URLs an hour long), for ops/fetch_checkpoint.sh on a pod
+      # 'sha256 path url' per file of that one checkpoint, then 'END <count>' (GET URLs ARCHIVE_URL_SECONDS long),
+      # for ops/fetch_checkpoint.sh on a pod
 
 A run id is <UTC time>-<results folder name>-<8 random hex digits>: made when the upload starts, never derived from anything
 that can repeat (owner, 26 Nov). archive.json holds, per archive: the run id, its URI, the storage class, the git commit the
@@ -184,6 +185,8 @@ def archive_entry(source):
             if done.returncode != 0:
                 raise SystemExit(f'no archive {source}: {done.stderr.strip()}')
             [entry] = read_record_entry(Path(scratch)/RECORD)
+        if entry['run_id'] != source:
+            raise SystemExit(f'{source}/{RECORD} names another archive, {entry["run_id"]}')
         return entry
     path = Path(source)
     if path.name != RECORD or not path.is_file():

@@ -220,11 +220,14 @@ def test_the_pod_fetches_the_whole_checkpoint_and_checks_every_hash(tmp_path, ru
     assert fetch(tmp_path, tmp_path/'pod2', '\n'.join(body[:1]) + '\n')[0] == 2
     other = body[0].replace('checkpoint-60', 'checkpoint-56')
     assert fetch(tmp_path, tmp_path/'pod3', '\n'.join([body[0], other, 'END 2']) + '\n')[0] == 2
+    # Two lists pasted together are refused (round 43).
+    assert fetch(tmp_path, tmp_path/'pod5', lines + lines)[0] == 2
     # A stored file with other bytes is never kept.
     (stored(tmp_path, records(run)[-1])/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x00')
     code, output = fetch(tmp_path, tmp_path/'pod4', lines)
     assert code == 1 and 'SHA-256 differs' in output
-    assert not (tmp_path/'pod4'/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').exists()
+    # Round 43: nothing of a failed fetch stays, not the files that did arrive, nor the temporary folder.
+    assert list((tmp_path/'pod4').iterdir()) == []
 
 
 API = dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none',
