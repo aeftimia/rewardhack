@@ -190,7 +190,9 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   curl -fsS --max-time 120 -X POST 'http://127.0.0.1:8011/sleep?level=1' > ~/out/rollout-initial-sleep.txt || fail ROLLOUT_SLEEP_FAILED
   BASE+=(--rollout-backend vllm --rollout-url http://127.0.0.1:8011)
 fi
-TRAIN=(--steps "$SMOKE_STEPS" --learning-rate 1e-4 --num-generations "$GENERATIONS" --prompts-per-step "$PROMPTS" --max-seconds "$SMOKE_TRAIN_SECONDS" --final-eval-seconds "$SMOKE_FINAL_EVAL_SECONDS")
+# The batch shape of every training step in this script, so that no comparison below changes it by accident.
+SHAPE=(--num-generations "$GENERATIONS" --prompts-per-step "$PROMPTS")
+TRAIN=(--steps "$SMOKE_STEPS" --learning-rate 1e-4 "${SHAPE[@]}" --max-seconds "$SMOKE_TRAIN_SECONDS" --final-eval-seconds "$SMOKE_FINAL_EVAL_SECONDS")
 if [[ $SMOKE_PART_ONE == 1 ]]; then
   # Part 1 proof of concept (owner, 26 Nov; issue #2): the baseline and the main setting at λ=0, same seed and settings,
   # one after the other. Each keeps resumable checkpoints in <name>/trainer, so a later run can extend it with --resume-from.
@@ -202,10 +204,10 @@ fi
 if [[ -n ${SMOKE_MEMORY_LIMIT:-} ]]; then
   # Memory question only: two steps at a longer token limit. Eager attention holds batch x heads x length^2 per layer,
   # so the limit the cut-off rule asks for may not fit this card at eight generations. It runs last: a failure here costs nothing above.
-  step "train-limit$SMOKE_MEMORY_LIMIT" --steps 2 --learning-rate 1e-4 --num-generations "$GENERATIONS" --max-completion-length "$SMOKE_MEMORY_LIMIT" --eval-limit 2 --max-seconds "$SMOKE_MEMORY_SECONDS" --final-eval-seconds 450 "${FUNDED[@]}"
+  step "train-limit$SMOKE_MEMORY_LIMIT" --steps 2 --learning-rate 1e-4 "${SHAPE[@]}" --max-completion-length "$SMOKE_MEMORY_LIMIT" --eval-limit 2 --max-seconds "$SMOKE_MEMORY_SECONDS" --final-eval-seconds 450 "${FUNDED[@]}"
 elif [[ ${SMOKE_SECOND_RUN:-1} == 1 ]]; then
 # The shared remote runner bounds total process time; if time remains: the same at a tenth of the learning rate, to see whether 1e-4 is what breaks output format.
 # 8 steps at 61 s, plus a before and an after evaluation of up to 4.6 minutes each: about 17 minutes measured, so twice that.
-step train-lr1e-5 --steps 8 --learning-rate 1e-5 --num-generations "$GENERATIONS" --max-seconds 2100 --final-eval-seconds 600 "${FUNDED[@]}"
+step train-lr1e-5 --steps 8 --learning-rate 1e-5 "${SHAPE[@]}" --max-seconds 2100 --final-eval-seconds 600 "${FUNDED[@]}"
 fi
 # ops/remote_job.sh records EXIT_CODE and DONE after this script exits.

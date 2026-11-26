@@ -22,8 +22,8 @@ if [[ -n ${SMOKE_PART_ONE+set} && $SMOKE_PART_ONE == 1 ]]; then
   # The Part 1 pair is the whole job: no probe, no funded-arm runs after it, and its length and time limit stated, not
   # taken from the preflight defaults (12 steps, 60 minutes). ${X+set} tests whether the launch set X (bash 3.2 has no -v).
   [[ -n ${SMOKE_SKIP_PROBE+set} && $SMOKE_SKIP_PROBE == 1 && -n ${SMOKE_SECOND_RUN+set} && $SMOKE_SECOND_RUN == 0
-     && -z ${SMOKE_MEMORY_LIMIT+set} && -n ${SMOKE_STEPS+set} && -n ${SMOKE_TRAIN_SECONDS+set} ]] || {
-    echo 'SMOKE_PART_ONE=1 needs SMOKE_SKIP_PROBE=1, SMOKE_SECOND_RUN=0, no SMOKE_MEMORY_LIMIT, and SMOKE_STEPS and SMOKE_TRAIN_SECONDS set'; exit 2;
+     && -z ${SMOKE_MEMORY_LIMIT+set} && -n ${SMOKE_STEPS+set} && -n ${SMOKE_TRAIN_SECONDS+set} && -n ${SMOKE_FINAL_EVAL_SECONDS+set} ]] || {
+    echo 'SMOKE_PART_ONE=1 needs SMOKE_SKIP_PROBE=1, SMOKE_SECOND_RUN=0, no SMOKE_MEMORY_LIMIT, and SMOKE_STEPS, SMOKE_TRAIN_SECONDS and SMOKE_FINAL_EVAL_SECONDS set'; exit 2;
   }
   # The setup allowance below is the API judge's; a judge served on the pod adds its download, start and validation.
   [[ -z ${JUDGE_KIND+set} || $JUDGE_KIND == api ]] || { echo 'SMOKE_PART_ONE=1 is sized for JUDGE_KIND=api'; exit 2; }
@@ -32,8 +32,12 @@ if [[ -n ${SMOKE_PART_ONE+set} && $SMOKE_PART_ONE == 1 ]]; then
   # cap: 2x measured 15 min
   PART1_SETUP_MINUTES=30
   # Whole numbers before any arithmetic: bash evaluates text inside (( )) as an expression.
-  [[ $DEADLINE =~ ^[1-9][0-9]*$ && $SMOKE_TRAIN_SECONDS =~ ^[1-9][0-9]*$ ]] || {
-    echo 'SMOKE_PART_ONE=1 needs the deadline and SMOKE_TRAIN_SECONDS as whole numbers'; exit 2;
+  [[ $DEADLINE =~ ^[1-9][0-9]*$ && $SMOKE_TRAIN_SECONDS =~ ^[1-9][0-9]*$ && $SMOKE_FINAL_EVAL_SECONDS =~ ^[1-9][0-9]*$ ]] || {
+    echo 'SMOKE_PART_ONE=1 needs the deadline, SMOKE_TRAIN_SECONDS and SMOKE_FINAL_EVAL_SECONDS as whole numbers'; exit 2;
+  }
+  # The after-evaluation's reserve comes out of each run's limit and must leave the before-evaluation and some training.
+  ((SMOKE_FINAL_EVAL_SECONDS < SMOKE_TRAIN_SECONDS)) || {
+    echo 'SMOKE_PART_ONE=1 needs SMOKE_FINAL_EVAL_SECONDS below SMOKE_TRAIN_SECONDS'; exit 2;
   }
   ((DEADLINE*60 >= PART1_SETUP_MINUTES*60 + 2*SMOKE_TRAIN_SECONDS)) || {
     echo "SMOKE_PART_ONE=1 needs a deadline of at least $((PART1_SETUP_MINUTES + (2*SMOKE_TRAIN_SECONDS+59)/60)) minutes: setup and two runs of SMOKE_TRAIN_SECONDS"; exit 2;
@@ -126,8 +130,10 @@ finish() {
   set +e
   say "copying results"
   COPIED=0
+  # Everything but the resumable checkpoints first, then the checkpoints (several GB with expert LoRA): the pod removes
+  # itself at most 10 minutes after the job ends, and a slow copy must cost the checkpoints, never the results.
   for attempt in 1 2 3; do
-    if pull; then COPIED=1; break; fi
+    if pull --exclude='trainer/checkpoint-*/' && pull; then COPIED=1; break; fi
     say "copy attempt $attempt failed"; sleep 10
   done
   if [[ $COPIED == 0 ]]; then say 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'; fi
