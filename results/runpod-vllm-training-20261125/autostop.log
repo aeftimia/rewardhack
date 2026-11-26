@@ -1,0 +1,4 @@
+ID            	NAME                    	GPU           	IMAGE NAME                                     	STATUS  
+hd0lwl3nojz2ab	vllm-training-validation	1 RTX PRO 6000	runpod/pytorch:2.1.0-cu1320-torch280-ubuntu2404	RUNNING	
+2026-11-25T20:16:54Z armed: pod hd0lwl3nojz2ab is removed at most 10830s from now (timer pid 538)
+2026-11-25T20:27:36Z job ended with 1; removing pod in 600s

@@ -1,0 +1,4 @@
+2026-11-25T20:41:23Z self-test passed: NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 80 GB free
+2026-11-25T20:41:23Z WARNING: no network namespace; Lean runs as an unprivileged user with an empty environment (LEAN_ISOLATION=none)
+2026-11-25T20:41:23Z start lean
+2026-11-25T20:42:23Z LEAN_DOWNLOAD_FAILED

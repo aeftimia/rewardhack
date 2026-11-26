@@ -62,10 +62,10 @@ fi
 
 # --- Lean, isolated. Proof bodies are model-written, so Lean runs with an empty environment and no network.
 log start lean
-# A stalled download used to hold the billing pod until the job deadline. Download plus unpacking took 2, 4, 4 and 5 s on the four
-# pod runs of 24 and 25 Nov (steps.log, `start lean` to the next line). 60 s is 12x the longest: past that it is a hang, and tar then fails on the cut-off stream.
-# cap: 2x measured 5 s
-mkdir -p /workspace/lean && curl -fsSL --max-time 60 https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst | tar --zstd -xf - -C /workspace/lean \
+# Earlier hosts downloaded and unpacked in 2–5 s. On 25 Nov the retry host transferred
+# 163446784 of 343842845 bytes in 60 s: allow 3x an estimated 140 s at that rate.
+# cap: 3x estimated 140 s
+mkdir -p /workspace/lean && curl -fsSL --max-time 420 https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst | tar --zstd -xf - -C /workspace/lean \
   || fail LEAN_DOWNLOAD_FAILED
 LEAN_BIN=/workspace/lean/lean-4.19.0-linux/bin/lean
 # The verifier writes each source into a private temporary folder; the unprivileged user needs to read that one file.

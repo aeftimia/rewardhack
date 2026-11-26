@@ -1,0 +1,17 @@
+{
+  "date": "2026-11-25",
+  "commit": "35e973e",
+  "pod_id": "w0mlpvqkhgm2e3",
+  "deploy_observed_utc": "2026-11-25 20:12:40 UTC",
+  "status": "removed_before_driver_start",
+  "reason": "Automatic approval review rejected forwarding OPENAI_API_KEY to the RunPod host without explicit credential-transfer approval.",
+  "training_started": false,
+  "key_forwarded": false,
+  "removal_command_succeeded": true,
+  "console_spend_rate_after_removal_usd_hour": 0,
+  "balance_before_usd": 13.61,
+  "initial_balance_after_usd": 13.59,
+  "billing_settled": false,
+  "approved_pilot_worst_case_usd": 15,
+  "gate_worst_case_usd": 9.0575
+}

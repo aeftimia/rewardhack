@@ -1,0 +1,6 @@
+curl: (28) Operation timed out after 59887 milliseconds with 163446784 out of 343842845 bytes received
+/*stdin*\ : Read error (39) : premature end 
+tar: Unexpected EOF in archive
+tar: Unexpected EOF in archive
+tar: Error is not recoverable: exiting now
+pilot-repo/ops/remote_job.sh: line 40: kill: (-573) - No such process
