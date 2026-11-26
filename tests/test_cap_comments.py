@@ -46,8 +46,9 @@ def test_every_time_limit_in_the_pod_pins_states_its_basis():
     script scan does not match (review round 25): each `*_SECONDS=` there states its basis on the line above."""
     import re
     lines = (ROOT/'ops/pod_pins.env').read_text().splitlines()
-    limits = [(number, int(match.group(1))) for number, line in enumerate(lines) if (match := re.match(r'[A-Z_]+_SECONDS=(\d+)$', line))]
-    assert limits
+    named = [number for number, line in enumerate(lines) if re.match(r'[A-Z_]+_SECONDS=', line)]
+    limits = [(number, int(match.group(1))) for number in named if (match := re.match(r'[A-Z_]+_SECONDS=(\d+)\b', lines[number]))]
+    assert limits and len(limits) == len(named), 'every *_SECONDS in ops/pod_pins.env is a plain whole number of seconds'
     for number, seconds in limits:
         cap = gates.CAP_COMMENT.search(lines[number-1])
         assert cap, lines[number]

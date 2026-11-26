@@ -11,15 +11,17 @@ SERVER_WAIT=900
 
 # Wait until the card is free: a process that just ended (a relaunch's predecessor, a stopped server, a finished stage)
 # gives its memory back within seconds. Usage: wait_card_free <who is waiting, for the failure message>.
-# The limit, CARD_FREE_SECONDS, is in ops/pod_pins.env, where the driver also counts it.
+# The limit, CARD_FREE_SECONDS, is in ops/pod_pins.env, where the driver also counts it: the whole wait, each query's own
+# limit (NVIDIA_SMI_SECONDS) included, ends within it.
+card_used_mib() { timeout "$NVIDIA_SMI_SECONDS" nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1; }
 wait_card_free() {
-  local used=unread
-  for _ in $(seq $((CARD_FREE_SECONDS / 2))); do
-    used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1) || fail NVIDIA_SMI_FAILED
-    ((used < 1024)) && return 0
+  local used end=$((SECONDS + CARD_FREE_SECONDS))
+  used=$(card_used_mib) || fail NVIDIA_SMI_FAILED
+  while ((used >= 1024 && SECONDS + 2 + NVIDIA_SMI_SECONDS <= end)); do
     sleep 2
+    used=$(card_used_mib) || fail NVIDIA_SMI_FAILED
   done
-  fail "CARD_NOT_FREED: $used MiB still in use after $CARD_FREE_SECONDS s; waiting: $1"
+  ((used < 1024)) || fail "CARD_NOT_FREED: $used MiB still in use after $CARD_FREE_SECONDS s; waiting: $1"
 }
 
 # Every Python environment a job makes is /workspace/<name>-venv. Usage: env_bin <name> <command>.
@@ -38,11 +40,12 @@ make_env() {
 # Run a command of an environment with that environment's bin first on PATH. vLLM's FlashInfer builds kernels with the
 # environment's ninja: the 5 Nov probes failed without it, and the 26 Nov gpt-oss-120b stage was written without it
 # (review round 25), because the prefix was copied at each launch instead of stated here.
-# Usage: in_env <name> [timeout <seconds>] <command> [args...]; the command must be the environment's own.
+# Usage: in_env <name> [timeout <seconds>] <command> [args...]; the command must be the environment's own. A timeout sends
+# TERM at <seconds> and KILL KILL_AFTER_SECONDS later (ops/pod_pins.env): a process stuck in a CUDA call ignores TERM.
 in_env() {
   local bin wrap=()
   bin=$(env_bin "$1" ''); shift
-  if [[ $1 == timeout ]]; then wrap=(timeout "$2"); shift 2; fi
+  if [[ $1 == timeout ]]; then wrap=(timeout --kill-after="$KILL_AFTER_SECONDS" "$2"); shift 2; fi
   [[ -x $bin$1 ]] || fail "NO_COMMAND: $1 is not in $bin"
   PATH="$bin:$PATH" ${wrap[@]+"${wrap[@]}"} "$bin$1" "${@:2}"  # the + form: bash 3.2 calls an empty array unbound
 }
@@ -113,7 +116,8 @@ wait_for_server() {
 stop_server() {
   local child
   for child in $(pgrep -P "$1"); do stop_server "$child"; done
-  kill -9 "$1"
+  # A parent can exit by itself once its child is killed; it is then already gone, which is what this wanted.
+  kill -9 "$1" || [[ ! -e /proc/$1 ]]
 }
 
 # A setting the library does not know is ignored with one warning line. That is a silent fallback: stop on it.

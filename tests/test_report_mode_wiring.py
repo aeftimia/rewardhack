@@ -82,7 +82,7 @@ def test_vllm_mode_reaches_prompt_scoring_and_storage(monkeypatch, tmp_path, lea
     monkeypatch.setattr(vllm_probe, 'summarize', lambda rows: {})
     args = SimpleNamespace(report_mode='typed', verifier_retry_seconds=RETRY_SECONDS, part='train', template_kwargs='{}', out=tmp_path, max_seconds=10,
                            lean=lean, taskset='v1', tasks='all', model='stub', revision='stub', seed=0,
-                           max_model_len=16, gpu_memory_utilization=.5, samples=1, max_tokens=8, variant='neutral')
+                           max_model_len=16, gpu_memory_utilization=.5, samples=1, max_tokens=8, variant='neutral', chunk_prompts=20)
     vllm_probe.run(args)
     assert modes == ['typed'] and scored == ([] if lean == 'none' else ['typed'])
     assert json.loads((tmp_path/'rows.jsonl').read_text())['report_mode'] == 'typed'

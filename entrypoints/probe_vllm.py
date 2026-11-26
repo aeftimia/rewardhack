@@ -17,6 +17,8 @@ def main():
     ap.add_argument('--revision', required=True)
     ap.add_argument('--variant', choices=sorted(VARIANTS), default='neutral')
     ap.add_argument('--samples', type=int, default=4)
+    ap.add_argument('--chunk-prompts', type=int, default=20,
+                    help='prompts sampled and saved together; a run stopped at --max-seconds keeps every finished chunk')
     ap.add_argument('--max-tokens', type=int, default=512)
     ap.add_argument('--max-model-len', type=int, default=4096)
     ap.add_argument('--gpu-memory-utilization', type=float, default=0.92)

@@ -31,6 +31,7 @@ def run(args):
     sampler.start()
     summary = {'status': 'running', 'report_mode': report_mode, 'argv': sys.argv[1:], 'purpose': 'exploration probe; inference only; no training',
                'lean': None if args.lean == 'none' else subprocess.check_output([args.lean, '--version'], text=True).strip()}
+    rows = []
     try:
         import vllm
         from vllm import LLM, SamplingParams
@@ -52,23 +53,28 @@ def run(args):
         summary['template_kwargs'] = template_kwargs
         summary['prompt_tokens'] = len(tokenizer(prompts[0])['input_ids'])
         params = SamplingParams(n=args.samples, temperature=TEMPERATURE, top_p=TOP_P, top_k=TOP_K, max_tokens=args.max_tokens, seed=args.seed)
-        t0 = time.perf_counter()
-        outputs = llm.generate(prompts, params)
-        t_gen = time.perf_counter()-t0
-        rows, generated, t_lean = [], 0, 0.0
+        # Sampled and saved --chunk-prompts prompts at a time: a run stopped at its deadline keeps every chunk that finished
+        # (summary['rows_written'] says how many rows), where one call over all prompts kept nothing (review round 26).
+        t_gen, generated, t_lean = 0.0, 0, 0.0
         with (args.out/'rows.jsonl').open('w') as sink:
-            for task, output in zip(tasks, outputs, strict=True):
-                for index, completion in enumerate(output.outputs):
-                    t0 = time.perf_counter()
-                    if args.lean == 'none':
-                        row = dict(task_id=task['id'], arm='baseline', raw=completion.text, scored=False, termination_schema='cutoff-v1', report_mode=report_mode)
-                    else:
-                        row = score(args.lean, task, completion.text, 'baseline', truncated=completion.finish_reason == 'length', retries=retries, report_mode=report_mode)
-                    t_lean += time.perf_counter()-t0
-                    row.update(tokens=len(completion.token_ids), truncated=completion.finish_reason == 'length', round=index)
-                    generated += len(completion.token_ids)
-                    rows.append(row)
-                    jsonl.write(sink, row)
+            for start in range(0, len(tasks), args.chunk_prompts):
+                chunk = slice(start, start + args.chunk_prompts)
+                t0 = time.perf_counter()
+                outputs = llm.generate(prompts[chunk], params)
+                t_gen += time.perf_counter()-t0
+                for task, output in zip(tasks[chunk], outputs, strict=True):
+                    for index, completion in enumerate(output.outputs):
+                        t0 = time.perf_counter()
+                        if args.lean == 'none':
+                            row = dict(task_id=task['id'], arm='baseline', raw=completion.text, scored=False, termination_schema='cutoff-v1', report_mode=report_mode)
+                        else:
+                            row = score(args.lean, task, completion.text, 'baseline', truncated=completion.finish_reason == 'length', retries=retries, report_mode=report_mode)
+                        t_lean += time.perf_counter()-t0
+                        row.update(tokens=len(completion.token_ids), truncated=completion.finish_reason == 'length', round=index)
+                        generated += len(completion.token_ids)
+                        rows.append(row)
+                        jsonl.write(sink, row)
+                sink.flush()
         summary.update(summarize(rows) if args.lean != 'none' else {'samples': len(rows), 'scored': False},
                        variant=args.variant, part=args.part, taskset=args.taskset, max_tokens=args.max_tokens, generation_seconds=t_gen, lean_seconds=t_lean,
                        generated_tokens=generated, tokens_per_second=generated/max(t_gen, 1e-9), mean_tokens=generated/max(len(rows), 1),
@@ -78,6 +84,6 @@ def run(args):
         raise
     finally:
         deadline.disarm()
-        summary.update(elapsed_seconds=time.perf_counter()-started, **sampler.summary())
+        summary.update(rows_written=len(rows), elapsed_seconds=time.perf_counter()-started, **sampler.summary())
         (args.out/'summary.json').write_text(json.dumps(summary, indent=1, ensure_ascii=False)+'\n')
         print(json.dumps(summary, indent=1, ensure_ascii=False), flush=True)

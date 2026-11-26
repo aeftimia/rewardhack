@@ -31,7 +31,7 @@ def test_no_pod_script_restates_a_pinned_value():
             if len(value) > 6:  # revisions, model names, versions; ports are checked through their names below
                 assert value not in text, f'{script.name} restates {name}={value}: source ops/pod_pins.env instead'
         assert not re.search(r'\b80(11|12)\b', text), f'{script.name} restates a port: use $ROLLOUT_PORT or $JUDGE_PORT'
-        # A version written into a script: install from requirements-vllm.txt, or name ops/pod_pins.env's PROBE_VLLM_VERSION.
+        # A version written into a script: install from requirements-vllm.txt.
         assert not re.search(r'vllm==[0-9]', text), f'{script.name} pins vLLM: install from requirements-vllm.txt'
 
 

@@ -22,7 +22,8 @@ fi
 source ops/pod_pins.env  # PART_ONE_RUNS: the Part 1 jobs and their runs
 if [[ -n ${SMOKE_PART_ONE+set} ]]; then PART_ONE=$SMOKE_PART_ONE; else PART_ONE=0; fi  # unset: the preflight run
 # No leading zeros: bash reads 08 as octal, and 00 would pass the string tests below as a Part 1 job of row 0, with no runs.
-[[ $PART_ONE =~ ^(0|[1-9][0-9]*)$ && -n ${PART_ONE_RUNS[$PART_ONE]+set} ]] || { echo "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to $((${#PART_ONE_RUNS[@]} - 1)))"; exit 2; }
+# At most three digits: a 20-digit number wraps to a negative index, which bash 4.3+ reads from the end of the table.
+[[ $PART_ONE =~ ^(0|[1-9][0-9]{0,2})$ && -n ${PART_ONE_RUNS[$PART_ONE]+set} ]] || { echo "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to $((${#PART_ONE_RUNS[@]} - 1)))"; exit 2; }
 read -ra PART_ONE_JOB <<< "${PART_ONE_RUNS[$PART_ONE]}"
 if [[ -n ${SMOKE_PROBE_LARGE+set} ]]; then PROBE_LARGE=$SMOKE_PROBE_LARGE; else PROBE_LARGE=0; fi  # unset: no gpt-oss-120b probe
 [[ $PROBE_LARGE == 0 || $PROBE_LARGE == 1 ]] || { echo 'SMOKE_PROBE_LARGE must be 0 or 1'; exit 2; }
@@ -58,10 +59,15 @@ if [[ $PART_ONE != 0 ]]; then
   # retries (4 x 60 s): 490 s, and the OpenAI client's waits between retries on top (review round 14).
   # cap: 1.5x estimated 540 s
   SCORING_TAIL_SECONDS=810
-  # The gpt-oss-120b probe after training: the wait for the card to be freed and its two stages' outer limits (all in
-  # ops/pod_pins.env). Its download and environment are prepared during the training, which takes longer than they do.
-  PROBE_LARGE_SECONDS=(0 $((2 * CARD_FREE_SECONDS + PROBE_LARGE_LOW_SECONDS + PROBE_LARGE_HIGH_SECONDS + 2 * PROBE_LARGE_EXIT_SECONDS)))  # indexed by SMOKE_PROBE_LARGE
-  RUNS_SECONDS=$((${#PART_ONE_JOB[@]} * (SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS) + ${PROBE_LARGE_SECONDS[$PROBE_LARGE]}))
+  # The gpt-oss-120b probe after training (ops/pod_pins.env): the part of its download's limit the training could not
+  # cover (all of it for the probe-only job), then for each stage a wait for a freed card and the stage's outer limit.
+  TRAINING_SECONDS=$((${#PART_ONE_JOB[@]} * (SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS)))
+  PROBE_LARGE_SECONDS=$((LARGE_DOWNLOAD_SECONDS > TRAINING_SECONDS ? LARGE_DOWNLOAD_SECONDS - TRAINING_SECONDS : 0))
+  for stage in "${PROBE_LARGE_STAGES[@]}"; do
+    read -r _ seconds _ <<< "$stage"
+    PROBE_LARGE_SECONDS=$((PROBE_LARGE_SECONDS + CARD_FREE_SECONDS + seconds + PROBE_LARGE_EXIT_SECONDS + KILL_AFTER_SECONDS))
+  done
+  RUNS_SECONDS=$((TRAINING_SECONDS + PROBE_LARGE * PROBE_LARGE_SECONDS))
   ((DEADLINE*60 >= PART1_SETUP_MINUTES*60 + RUNS_SECONDS)) || {
     echo "SMOKE_PART_ONE=$PART_ONE needs a deadline of at least $((PART1_SETUP_MINUTES + (RUNS_SECONDS+59)/60)) minutes: setup, ${#PART_ONE_JOB[@]} run(s) of SMOKE_TRAIN_SECONDS each with its scoring tail, and the gpt-oss-120b probe if set"; exit 2;
   }
@@ -117,11 +123,6 @@ while IFS='=' read -r name value; do
   fi
   SMOKE_ENV+="$name=$value "
 done < <(env | grep '^SMOKE_' || true)
-# The benchmark job needs the trained adapter, which is not in git and is copied by hand; the job would find it missing only on the pod.
-if [[ $REMOTE == ops/remote_runpod_genbench.sh ]]; then
-  [[ -s payload/adapter/adapter_model.safetensors && -s payload/adapter/adapter_config.json ]] || {
-    echo 'payload/adapter is missing or empty: copy the trained adapter there first (the command is at the top of ops/remote_runpod_genbench.sh)'; exit 2; }
-fi
 # With the judge served on the pod the smoke script has a second install and download, a 15 minute readiness wait and up to 30 minutes
 # of judge validation on top of its 170 minute budget.
 if [[ $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == pod && $DEADLINE -lt 240 ]]; then

@@ -493,10 +493,10 @@ NO_VARIATION, VERIFIER_UNDECIDED = 'no within-prompt reward variation', 'no deci
 # (Jeffreys prior) puts more than SATURATION_CONFIDENCE on the share of mixed groups being under SATURATION_FLOOR: at
 # most 1 mixed group in 80. On the 26 Nov 60-step pair it stops the baseline at step 48 (1 mixed group in its last 80)
 # and not λ=0 (6 to 13 in 80 throughout its second half). A wrong stop costs the rest of a saturated run's steps.
-SATURATED = 'reward variation credibly below 5% of groups'
 SATURATION_WINDOW = 80
 SATURATION_FLOOR = 0.05
 SATURATION_CONFIDENCE = 0.95
+SATURATED = f'reward variation credibly below {SATURATION_FLOOR:.0%} of groups'
 
 
 def saturated(groups, per_step):

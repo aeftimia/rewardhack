@@ -154,7 +154,7 @@ def test_vllm_finish_reason_reaches_scoring(args, monkeypatch):
     from rewardhack import vllm_probe
     args.__dict__.update(template_kwargs='{}', max_seconds=10, taskset='v1', tasks=None,
                          model='stub', revision='stub', max_model_len=10, gpu_memory_utilization=.5,
-                         samples=1, max_tokens=4, variant='neutral', part='train')
+                         samples=1, max_tokens=4, variant='neutral', part='train', chunk_prompts=1)
     tokenizer = SimpleNamespace(apply_chat_template=lambda *a, **kw: 'prompt')
     class Tokenizer:
         chat_template = ''  # no clock and no reasoning switch to settle
@@ -583,3 +583,45 @@ def test_a_run_that_never_varied_gets_the_no_variation_stop_not_saturation(args,
     summary = dict(rollouts={})
     hf_grpo.train(model, tokenizer, [TASK], args, summary)
     assert stops == [False, False, True] and summary['early_stop'] == outcomes.NO_VARIATION
+
+
+def test_a_probe_stopped_between_chunks_keeps_the_finished_ones(args, monkeypatch):
+    """One generate call over every prompt kept nothing when its deadline struck (review round 26): the gpt-oss-120b stages
+    are now sampled and saved a chunk of prompts at a time."""
+    from rewardhack import vllm_probe
+    args.__dict__.update(template_kwargs='{}', max_seconds=10, taskset='v1', tasks=None, model='stub', revision='stub',
+                         max_model_len=10, gpu_memory_utilization=.5, samples=2, max_tokens=4, variant='neutral', part='train',
+                         chunk_prompts=2, lean='none')
+
+    class Tokenizer:
+        chat_template = ''
+        def apply_chat_template(self, *a, **kw):
+            return 'prompt'
+        def __call__(self, text):
+            return dict(input_ids=[1])
+
+    calls = []
+    class LLM:
+        def __init__(self, **kwargs):
+            pass
+        def get_tokenizer(self):
+            return Tokenizer()
+        def generate(self, prompts, params):
+            calls.append(len(prompts))
+            if len(calls) == 2:
+                raise TimeoutError('deadline')
+            return [SimpleNamespace(outputs=[SimpleNamespace(text=RAW, token_ids=[2], finish_reason='stop')] * 2) for _ in prompts]
+    module = ModuleType('vllm')
+    module.__dict__.update(LLM=LLM, SamplingParams=lambda **kw: kw, __version__='stub')
+    monkeypatch.setitem(sys.modules, 'vllm', module)
+    monkeypatch.setattr(vllm_probe, 'GpuSampler', lambda: SimpleNamespace(start=lambda: None, summary=lambda: {}))
+    monkeypatch.setattr(vllm_probe, 'select_tasks', lambda *a: [dict(TASK, id=f't{i}') for i in range(3)])
+    monkeypatch.setattr(vllm_probe.deadline, 'arm', lambda *a: None)
+    monkeypatch.setattr(vllm_probe.deadline, 'disarm', lambda *a: None)
+    with pytest.raises(TimeoutError):
+        vllm_probe.run(args)
+    assert calls == [2, 1]
+    rows = [json.loads(line) for line in (args.out/'rows.jsonl').read_text().splitlines()]
+    assert [row['task_id'] for row in rows] == ['t0', 't0', 't1', 't1']
+    summary = json.loads((args.out/'summary.json').read_text())
+    assert summary['status'] == 'failed' and summary['rows_written'] == 4

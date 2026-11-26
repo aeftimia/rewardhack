@@ -45,12 +45,19 @@ trap cleanup EXIT
 # The Part 1 runs this job trains (ops/pod_pins.env); none for the preflight run. An index with no row stops here.
 [[ -n ${PART_ONE_RUNS[$SMOKE_PART_ONE]+set} ]] || fail "INVALID_PART_ONE: no Part 1 job $SMOKE_PART_ONE in ops/pod_pins.env"
 read -ra RUNS <<< "${PART_ONE_RUNS[$SMOKE_PART_ONE]}"
-# Results written: about 20 GB per Part 1 run with expert LoRA (adapters and checkpoints); 10 GB for the preflight runs.
+# Results written: 2x the measured 10 GB per Part 1 run with expert LoRA (adapters and checkpoints; 9.8 and 9.9 GB on 26
+# Nov); 10 GB for the preflight runs.
 OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
 # Room under /workspace for the environments, the uv cache and the weights; gpt-oss-120b adds about 65 GB and a third
-# environment, unless a launch on this pod already fetched it (a relaunch on a kept pod keeps /workspace).
+# environment, unless a launch on this pod already fetched all of it (a relaunch on a kept pod keeps /workspace). Every
+# shard its index names must be there: the snapshot folder appears with the first file of an interrupted download.
 LARGE_SNAPSHOT=$HF_HOME/hub/models--${GPT_OSS_120B/\//--}/snapshots/$GPT_OSS_120B_REV
-if [[ $SMOKE_PROBE_LARGE == 1 && ! -d $LARGE_SNAPSHOT ]]; then WORKSPACE_NEED_GB=120; else WORKSPACE_NEED_GB=40; fi
+large_fetched() {
+  [[ -f $LARGE_SNAPSHOT/model.safetensors.index.json ]] && python -c 'import json, os, sys
+d = sys.argv[1]; shards = set(json.load(open(os.path.join(d, "model.safetensors.index.json")))["weight_map"].values())
+sys.exit(0 if all(os.path.exists(os.path.join(d, s)) for s in shards) else 1)' "$LARGE_SNAPSHOT"
+}
+if [[ $SMOKE_PROBE_LARGE == 1 ]] && ! large_fetched; then WORKSPACE_NEED_GB=120; else WORKSPACE_NEED_GB=40; fi
 pod_self_test "$WORKSPACE_NEED_GB" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
 MODEL=$GPT_OSS_20B; REV=$GPT_OSS_20B_REV
 JUDGE=$POD_JUDGE; JUDGE_REV=$POD_JUDGE_REV
@@ -143,8 +150,8 @@ done
 # HF_HUB_DISABLE_XET: the 5 Nov download of this repository failed twice in the xet transfer ("File reconstruction error").
 if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   log "start download $GPT_OSS_120B (background)"
-  # cap: 1.5x estimated 25 min (about 65 GB; the 13 GB gpt-oss-20b took 3.5 to 5.1 min)
-  HF_HUB_DISABLE_XET=1 DOWNLOAD_WAIT=2700 fetch_model "$GPT_OSS_120B" "$GPT_OSS_120B_REV" &
+  # The limit and its basis are in ops/pod_pins.env (LARGE_DOWNLOAD_SECONDS), where the driver counts it.
+  HF_HUB_DISABLE_XET=1 DOWNLOAD_WAIT=$LARGE_DOWNLOAD_SECONDS fetch_model "$GPT_OSS_120B" "$GPT_OSS_120B_REV" &
   LARGE_DOWNLOAD_PID=$!
   grep '^numpy==' requirements-vllm.txt > /workspace/probe-override.txt || fail 'NO_NUMPY_PIN: requirements-vllm.txt pins no numpy to override with'
   INSTALL_WAIT=600 make_env probe -r requirements-vllm.txt -e . --override /workspace/probe-override.txt > ~/out/install-probe.log 2>&1 &  # cap: 1.5x estimated 300 s
@@ -217,7 +224,8 @@ GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
 # Prompt groups per optimizer step (owner, 26 Nov, notes section 72): one group of four had reward variation in 12 of 60
 # baseline steps. Each group is its own micro-batch, so memory is that of one group; vLLM samples all groups at once.
 PROMPTS=4
-if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
+# The probe-only job (no runs) has nothing to sample rollouts for: no rollout server, which would only be stopped again.
+if [[ $SMOKE_VLLM_ROLLOUTS == 1 && ${#RUNS[@]} -gt 0 ]]; then
   [[ $JUDGE_KIND == api && ${SMOKE_SKIP_PROBE:?} == 1 && ${SMOKE_SECOND_RUN:?} == 0 ]] || fail INVALID_ROLLOUT_PILOT
   log start rollout-install  # the wait for the background install started with the training one
   vllm_installed
@@ -244,7 +252,10 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   # relaunch. It installs beside the model download (cap in its own line above) and has had minutes since.
   log start probe-install
   wait "$PROBE_INSTALL_PID" || fail PROBE_INSTALL_FAILED
-  in_env probe python -c 'import vllm; from vllm import LLM, SamplingParams; import rewardhack.vllm_probe, rewardhack.hf_grpo; print("probe environment: vllm", vllm.__version__)' \
+  # Also the offline read the probe will do (its hub version differs from the one that downloads), on gpt-oss-20b's
+  # tokenizer, which is already here.
+  HF_HUB_OFFLINE=1 in_env probe python -c 'import sys, vllm; from vllm import LLM, SamplingParams; import rewardhack.vllm_probe, rewardhack.hf_grpo
+from transformers import AutoTokenizer; AutoTokenizer.from_pretrained(sys.argv[1], revision=sys.argv[2]); print("probe environment: vllm", vllm.__version__)' "$MODEL" "$REV" \
     >> ~/out/steps.log 2>&1 || fail PROBE_ENVIRONMENT_BROKEN
 fi
 # The batch shape of every training step in this script, so that no comparison below changes it by accident.
@@ -275,20 +286,25 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   # entrypoints/rescore.py (--lean none), so pod time goes to sampling only. It needs the whole card: the rollout server goes first.
   if [[ -n $ROLLOUT_PID ]]; then stop_server "$ROLLOUT_PID"; ROLLOUT_PID=; fi
   wait "$LARGE_DOWNLOAD_PID" || fail "DOWNLOAD_FAILED $GPT_OSS_120B"
-  # The stages are independent: a failed one (each writes its rows only once all its answers are in) is recorded and the
-  # next still runs; the job fails at the end if any did. The outer limit catches a process hung after its own deadline.
-  # Each starts on a freed card: the previous stage's engine releases its memory after the process exits.
-  # HF_HUB_OFFLINE: the weights are already here; on 5 Nov the engine's own fetch failed in the xet transfer.
+  # The stages (ops/pod_pins.env) are independent: a failed one is recorded and the next still runs; the job fails at the
+  # end if any did. Each writes its rows a chunk of prompts at a time, so one stopped at its limit keeps what finished.
+  # Each starts on a freed card; a failed stage's leftover engine processes are killed first, and a card that still does
+  # not come free fails that stage, not the job. Low effort is how the training runs sample; high effort is where the
+  # frontier models found their refutations. HF_HUB_OFFLINE: the weights are already here; on 5 Nov the engine's own
+  # fetch failed in the xet transfer.
   PROBE_FAILED=()
-  large() { local name=$1 seconds=$2; shift 2; wait_card_free "$name"; log "start $name"
-    if HF_HUB_OFFLINE=1 in_env probe timeout $((seconds + PROBE_LARGE_EXIT_SECONDS)) python entrypoints/probe_vllm.py \
-         --out ~/out/"$name" --lean none --model "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" --taskset hard --tasks false --max-seconds "$seconds" "$@" > ~/out/"$name".log 2>&1; then
+  for stage in "${PROBE_LARGE_STAGES[@]}"; do
+    read -r effort seconds samples tokens chunk <<< "$stage"
+    name=probe-120b-$effort
+    if pgrep -f "$(env_bin probe '')" > /dev/null; then pkill -9 -f "$(env_bin probe '')"; fi
+    if ! (wait_card_free "$name"); then PROBE_FAILED+=("$name"); continue; fi
+    log "start $name"
+    if HF_HUB_OFFLINE=1 in_env probe timeout $((seconds + PROBE_LARGE_EXIT_SECONDS)) python entrypoints/probe_vllm.py --out ~/out/"$name" --lean none \
+         --model "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" --taskset hard --tasks false --max-seconds "$seconds" --samples "$samples" \
+         --max-tokens "$tokens" --max-model-len $((tokens + 1024)) --chunk-prompts "$chunk" --template-kwargs "{\"reasoning_effort\": \"$effort\"}" > ~/out/"$name".log 2>&1; then
       log "end $name passed"
-    else log "end $name FAILED exit=$?"; PROBE_FAILED+=("$name"); fi; }
-  # Low effort, as the training runs sample: 320 answers. High effort, where the frontier models found their refutations:
-  # 80 answers of up to 8,192 tokens. Each stage's time limit, model load included, is in ops/pod_pins.env.
-  large probe-120b-low "$PROBE_LARGE_LOW_SECONDS" --samples 4 --max-tokens 2048 --max-model-len 3072 --template-kwargs '{"reasoning_effort": "low"}'
-  large probe-120b-high "$PROBE_LARGE_HIGH_SECONDS" --samples 1 --max-tokens 8192 --max-model-len 9216 --template-kwargs '{"reasoning_effort": "high"}'
+    else log "end $name FAILED exit=$?"; PROBE_FAILED+=("$name"); fi
+  done
   ((${#PROBE_FAILED[@]} == 0)) || fail "PROBE_LARGE_FAILED ${PROBE_FAILED[*]}"
 fi
 # ops/remote_job.sh records EXIT_CODE and DONE after this script exits.
