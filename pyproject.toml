@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rewardhack"
-version = "0.15.0"
+version = "0.16.0"
 description = "Verifiable buggy-grader environment (Lean 4) for studying learned grader exploitation, false success reporting and honest-exit rewards."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -24,8 +24,11 @@ train = ["torch==2.15.0", "trl==1.19.0", "peft==0.21.0", "transformers==5.17.0",
 mlx = ["mlx-lm"]
 # vLLM has incompatible Torch/NumPy constraints; install requirements-vllm.txt in a separate environment.
 # Lint tools run inside the test suite (tests/test_lint.py), the suite runs in parallel, and pre-commit runs the commit
-# gate (.pre-commit-config.yaml, which pins its own hooks). Pinned so every checkout behaves the same.
-dev = ["pytest>=8", "pytest-xdist==3.8.0", "ruff==0.17.5", "shellcheck-py==0.11.0.1", "pre-commit==4.7.0"]
+# gate (.pre-commit-config.yaml, which pins its own hooks). commit-gate here gives git's pre-push hook (`commit-gate
+# install-pre-push`) and brings pre-commit; its tag matches the `rev` in .pre-commit-config.yaml (tests/test_gates.py).
+# Pinned so every checkout behaves the same.
+dev = ["pytest>=8", "pytest-xdist==3.8.0", "ruff==0.17.5", "shellcheck-py==0.11.0.1",
+       "commit-gate @ git+https://github.com/aeftimia/commit-gate@v0.1.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

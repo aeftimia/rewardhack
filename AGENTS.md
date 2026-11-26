@@ -27,14 +27,12 @@ notice, the patch number for fixes that change none of that.
   override comments use the existing OpenAI judge configuration unless
   `NO_SILENT_FALLBACKS_JUDGE` explicitly selects another judge. The original
   checker and its Claude default remain unchanged.
-- The commit gate (pre-commit framework, `.pre-commit-config.yaml`: gitleaks,
-  check-added-large-files and the withheld-terms hooks) runs as git's `pre-commit`,
-  `commit-msg`, and `pre-push` hooks (the last through `ops/pre-push`, which first refuses
-  pushed refs that are not commits), so it already applies to Codex. What it reads,
-  the pushes it cannot see (ref names and tags pushed onto commits the destination remote
-  already has) and the pushes it refuses outright (a new history on the remote, among others) are
-  listed in CLAUDE.md's "Commit gate". Keep using the untracked `.claude/commit-gate-terms.txt` in the main
-  checkout; do not copy its contents into tracked files.
+- The commit gate is commit-gate (github.com/aeftimia/commit-gate), pinned in
+  `.pre-commit-config.yaml`; it runs as git's `pre-commit`, `commit-msg` and `pre-push`
+  hooks, so it already applies to Codex. Its README lists what it reads, what it refuses
+  and its gaps; fixes go to that repository, and this project only moves the pin. Keep
+  using the untracked `.claude/commit-gate-terms.txt` in the main checkout; do not copy its
+  contents into tracked files.
 - A hook refusal is a finding to resolve, not an obstacle to bypass. Missing
   dependencies or an unreadable patch must be reported and resolved.
 
