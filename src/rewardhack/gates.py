@@ -492,7 +492,7 @@ def gitleaks_problems(root, stage, *args):
     """The gitleaks hook at `stage`; gitleaks prints its own findings (redacted). Exit 1 is leaks or an error: either refuses."""
     problems = []
     for arguments, text in GITLEAKS_RUNS[stage](root, *args):
-        done = subprocess.run(['gitleaks', *arguments, *GITLEAKS], cwd=root, input=text, text=True)
+        done = subprocess.run(['gitleaks', *arguments, *GITLEAKS], cwd=root, input=text, text=True, check=False)  # the exit code is read below
         if done.returncode != 0:
             problems.append(f'gitleaks {arguments[0]} exited {done.returncode}: see its findings above')
     return problems

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SHELL_SCRIPTS = sorted([*(ROOT/'ops').glob('*.sh'), *(ROOT/'ops'/'githooks').iterdir()])
+SHELL_SCRIPTS = sorted((ROOT/'ops').glob('*.sh'))  # the commit hooks are pre-commit's now (.pre-commit-config.yaml)
 
 
 def run(command):
