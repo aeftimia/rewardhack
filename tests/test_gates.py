@@ -458,6 +458,27 @@ def test_odd_paths_submodules_and_tag_chains_are_read(gated, tmp_path):
     assert refused(attempt(gated, 'push', 'origin', 'outer'), 'the message of tag')
 
 
+def test_a_tag_on_a_tree_does_not_break_a_push_and_is_read_when_pushed(gated, tmp_path):
+    pushable(gated, tmp_path)
+    run(gated, 'push', '-q', 'origin', 'main')
+    run(gated, 'tag', '-a', 'tree', 'HEAD^{tree}', '-m', f'the {TERM} tree')
+    run(gated, 'commit', '-q', '--allow-empty', '-m', 'clean')
+    done = attempt(gated, 'push', '-q', 'origin', 'main')
+    assert done.returncode == 0, done.stderr
+    tree_tag = attempt(gated, 'rev-parse', 'tree').stdout.strip()
+    assert 'the message of tag' in ' '.join(gates.terms_problems(gated, 'pre-push', 'origin', [tree_tag], []))
+
+
+def test_pushes_the_hooks_cannot_read_are_refused(gated, tmp_path):
+    pushable(gated, tmp_path)
+    head = attempt(gated, 'rev-parse', 'HEAD').stdout.strip()
+    # pre-commit sets no PRE_COMMIT_TO_REF for a push that starts a new history there.
+    assert 'starts a new history' in gates.terms_problems(gated, 'pre-push', 'origin', [], [])[0]
+    assert 'white space' in gates.terms_problems(gated, 'pre-push', '/tmp/a remote.git', [head], [])[0]
+    run(gated, 'config', 'remote.origin/x.url', str(tmp_path / 'elsewhere.git'))  # `git remote add` refuses this; config does not
+    assert 'remotes named under it (origin/x)' in gates.terms_problems(gated, 'pre-push', 'origin', [head], [])[0]
+
+
 def test_paths_tag_messages_and_ref_names_are_read(gated, tmp_path):
     pushable(gated, tmp_path)
     run(gated, 'push', '-q', 'origin', 'main')
@@ -494,8 +515,12 @@ def test_gitleaks_reads_the_staged_changes_the_message_and_every_unpushed_commit
     assert gates.gitleaks_problems(repo, 'pre-commit') == []
     assert fake_gitleaks.read_text() == f'git --pre-commit --staged {flags}\n'
     message = repo / 'MSG'
-    message.write_text('fine\n# Please enter the commit message\n# ------------------------ >8 ------------------------\n-LEAK removed\n')
+    scissors = '# ------------------------ >8 ------------------------\n'
+    message.write_text(f'fine\n# Please enter the commit message\n{scissors}# Do not modify or remove the line above.\n'
+                       '# Everything below it will be ignored.\n-LEAK removed\n')
     assert gates.gitleaks_problems(repo, 'commit-msg', message) == []  # a secret being removed, in the `commit -v` diff, is not the message
+    message.write_text(f'fine\n{scissors}the key is LEAK\n')  # with -m or -F git keeps a scissors line and what follows
+    assert gates.gitleaks_problems(repo, 'commit-msg', message) == ['gitleaks stdin exited 1: see its findings above']
     message.write_text('the key is LEAK\n')
     assert gates.gitleaks_problems(repo, 'commit-msg', message) == ['gitleaks stdin exited 1: see its findings above']
     run(repo, 'commit', '-q', '--allow-empty', '-m', 'carries a LEAK in its message')

@@ -379,6 +379,7 @@ def command_problems(root, command, remote=False):
 
 MAX_KB = 15000  # check-added-large-files --maxkb in .pre-commit-config.yaml (tests/test_gates.py checks they agree)
 GITLINK = '160000'  # a submodule entry: a commit id, with no content of its own in this repository
+VERBOSE_WARNING = '\n# Do not modify or remove the line above.'  # what git writes after the scissors line in `commit -v`
 SCISSORS = re.compile(r'^\S ------------------------ >8 ------------------------$', re.M)  # `git commit -v`: what follows is the diff, not the message
 
 
@@ -448,18 +449,22 @@ def blob_problems(root, blobs, terms):
 
 
 def message_text(message_file):
-    """The message as git will record it, up to the `git commit -v` scissors line (after it comes the diff). Comment lines are kept."""
-    return SCISSORS.split(Path(message_file).read_text(), maxsplit=1)[0]
+    """The message as git will record it. Git cuts at the scissors line only for `git commit -v` in its editor, where the line is
+    followed by its own warning and the diff; with -m or -F a scissors line is kept, so it is read through. Comment lines are kept."""
+    text = Path(message_file).read_text()
+    parts = SCISSORS.split(text, maxsplit=1)
+    return parts[0] if len(parts) == 2 and parts[1].startswith(VERBOSE_WARNING) else text
 
 
 def unpushed(remote, pushed):
     """`git rev-list`/`git log` arguments for every commit a push to `remote` may publish: whatever the pushed commit, any local
     branch, tag or HEAD, or any remote's tracking branch (`git push origin mirror/feat:feat`) reaches that `remote`'s own tracking
     branches did not have when last fetched. pre-commit (4.7.0, `hook_impl._pre_push_ns`) reads git's list of pushed refs itself
-    and passes on only the first one's commit (`pushed`, from PRE_COMMIT_TO_REF; none when that push starts a new history), so
-    the refs around it are read too: more than one push adds, never less. A first push to a remote that has nothing (or to a URL)
-    reads all history and is refused on whatever old commits carry: push through a remote whose tracking branches have that
-    history, or ask the owner for a bypass. Not covered: a second pushed ref none of these reach (`git push origin a stash@{0}:x`)."""
+    and passes on only the first one's commit (`pushed`, from PRE_COMMIT_TO_REF), so the refs around it are read too: more than
+    one push adds, never less. When that push starts a new history on the remote (an empty remote, or a commit connected to
+    nothing it has), pre-commit passes no commit and `push_problems` refuses the push. A remote with nothing fetched (or a URL)
+    has no tracking branches, so all history is read. Not covered: a second pushed ref none of these reach
+    (`git push origin a stash@{0}:x`)."""
     return ['--branches', '--tags', 'HEAD', '--remotes', *pushed, '--not', f'--remotes={remote}']
 
 
@@ -468,12 +473,12 @@ def pushed_commits(root, remote, pushed):
 
 
 def tag_chain(root, sha):
-    """The tag objects from `sha` down to the first object that is not a tag (a tag may point at another tag)."""
+    """(the tag objects from `sha` down, the first object that is not a tag: a commit, tree or blob). A tag may point at another tag."""
     chain = []
     while git(root, 'cat-file', '-t', sha).strip() == 'tag':
         chain.append(sha)
         sha = git(root, 'cat-file', 'tag', sha).split('\n', 1)[0].removeprefix('object ')  # a tag object's first line names its target
-    return chain
+    return chain, sha
 
 
 def pushed_messages(root, remote, pushed):
@@ -483,9 +488,10 @@ def pushed_messages(root, remote, pushed):
     commits = pushed_commits(root, remote, pushed)
     messages = [(f'the message of commit {commit[:9]}', git(root, 'show', '-s', '--format=%B', commit)) for commit in commits]
     tag_refs = git(root, 'for-each-ref', 'refs/tags', '--format=%(objecttype) %(objectname)').split('\n')
-    annotated = [line.split(' ')[1] for line in tag_refs if line.startswith('tag ')]
-    on_pushed = [sha for sha in annotated if git(root, 'rev-parse', sha + '^{commit}').strip() in set(commits)]
-    tags = {tag for sha in on_pushed + pushed for tag in tag_chain(root, sha)}
+    chains = [tag_chain(root, line.split(' ')[1]) for line in tag_refs if line.startswith('tag ')]
+    # A tag on a tree or blob tags no commit, so it is read only when it is the pushed ref itself.
+    on_pushed = [chain for chain, target in chains if target in set(commits)]
+    tags = {tag for chain in on_pushed + [tag_chain(root, sha)[0] for sha in pushed] for tag in chain}
     # A tag object is its header lines, a blank line, then the message (with any signature).
     return messages + [(f'the message of tag {tag[:9]}', git(root, 'cat-file', 'tag', tag).split('\n\n', 1)[1]) for tag in sorted(tags)]
 
@@ -518,9 +524,28 @@ def pushed_terms(root, terms, remote, pushed, ref_names):
 TERMS_CHECKS = {'pre-commit': staged_terms, 'commit-msg': message_terms, 'pre-push': pushed_terms}
 
 
+def push_problems(root, remote, pushed, ref_names):
+    """Reasons a pre-push run cannot read what the push publishes, so refuses it (both hooks)."""
+    problems = []
+    if not pushed:  # pre-commit (4.7.0, hook_impl.py) sets no PRE_COMMIT_TO_REF when the first pushed ref's history is all new there
+        problems.append('this push starts a new history on the remote, which pre-commit does not show the hooks, so nothing in it can be '
+                        'read. Push into a remote that already has part of this history, or ask the owner for a bypass')
+    if re.search(r'\s', remote):  # gitleaks splits --log-opts on spaces (sources/git.go)
+        problems.append(f'the destination {remote!r} has white space in it; add it as a named remote and push to that')
+    nested = [name for name in git(root, 'remote').split() if name.startswith(remote + '/')]
+    if nested:  # --remotes=<remote> would also take those remotes' branches as already published
+        problems.append(f'remote {remote} has remotes named under it ({", ".join(nested)}), so what it has cannot be told apart; rename them')
+    return problems
+
+
+# Checks that refuse a stage before either hook reads anything.
+STAGE_PROBLEMS = {'pre-commit': lambda root: [], 'commit-msg': lambda root, message_file: [], 'pre-push': push_problems}
+
+
 def terms_problems(root, stage, *args):
     """The withheld-terms hook at `stage`. Raises, so refusing everything, when the terms file is missing."""
-    return TERMS_CHECKS[stage](root, withheld_terms(root), *args)
+    terms = withheld_terms(root)
+    return STAGE_PROBLEMS[stage](root, *args) or TERMS_CHECKS[stage](root, terms, *args)
 
 
 # Flags for every gitleaks run. The config is read from the checkout being committed in. Neither `gitleaks:allow` comments
@@ -543,7 +568,9 @@ def gitleaks_problems(root, stage, *args):
     ignore = Path(root)/'.gitleaksignore'
     if ignore.exists():
         return [f'{ignore} exists, and gitleaks would let what it lists through; remove it']
-    problems = []
+    problems = STAGE_PROBLEMS[stage](root, *args)
+    if problems:
+        return problems
     for arguments, text in GITLEAKS_RUNS[stage](root, *args):
         done = subprocess.run(['gitleaks', *arguments, *GITLEAKS], cwd=root, input=text, text=True, check=False)  # the exit code is read below
         if done.returncode != 0:
