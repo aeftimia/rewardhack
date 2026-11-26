@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import deadline, jsonl
 from .gpu import GpuSampler
-from .outcomes import accumulate, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, ScoringStopped, verifier_advice, completion_truncated, reward_groups, score, score_concurrently, stop_ids, summarize, tally, training_rewards, training_keep
+from .outcomes import accumulate, compare, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, RetryBudget, ScoringStopped, verifier_advice, completion_truncated, reward_groups, score, score_concurrently, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import split, stratified_limit, taskset_rows
@@ -501,7 +501,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in rows))
             summary['partial_batch_rows'] = len(rows)
             raise RuntimeError(f"the verifier left {sum(bool(r['verifier_inconclusive']) for r in undecided)} of {len(undecided)} answers undecided, "
-                               f"more than a 5% rate explains; longest undecided proof in this batch: {tally(rows)['inconclusive_longest_proof_chars']} characters")
+                               f"its undecided rate is credibly above 5%; longest undecided proof in this batch: {tally(rows)['inconclusive_longest_proof_chars']} characters")
         jsonl.write_rows(sink, rows)
         counts, grouped = account(rows, step)
         # Equal rewards give zero reward advantages; KL and optimizer momentum can still move weights.
@@ -758,11 +758,14 @@ def run(args):
         model = fit()
         # Stops between tasks if training ran into its reserve: a shorter after-evaluation is kept, a killed one loses its summary.
         summary['after'] = evaluate(model, tokenizer, evaluation, args, 'after', stop_at=hard_deadline-60, rollouts=rollouts, adapter_model=model)
+        after_rows = list(jsonl.read(args.out/'after-evaluation.jsonl'))
+        done = {row['task_id'] for row in after_rows}
+        matched = [row for row in jsonl.read(args.out/'before-evaluation.jsonl') if row['task_id'] in done]
         if summary['after']['incomplete']:
             # A shortened after-evaluation covers fewer tasks; beside the full before-evaluation its rates would compare different task sets.
-            done = {row['task_id'] for row in jsonl.read(args.out/'after-evaluation.jsonl')}
-            matched = [row for row in jsonl.read(args.out/'before-evaluation.jsonl') if row['task_id'] in done]
             summary['before_on_after_tasks'] = summarize(matched)
+        # Posterior of each rate's change over training, on the tasks both evaluations answered, clustered by task group.
+        summary['after_minus_before'] = compare(matched, after_rows)
         summary['status'] = 'completed'
     except BaseException as error:
         deadline.disarm()  # heard once; the summary below must be written

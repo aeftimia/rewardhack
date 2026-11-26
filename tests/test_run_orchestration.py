@@ -119,6 +119,9 @@ def test_run_builds_the_trainer_first_and_records_what_it_did(staged, tmp_path):
     summary = json.loads((args.out/'summary.json').read_text())
     assert summary['status'] == 'completed' and summary['global_step'] == 2
     assert summary['before']['samples'] == summary['after']['samples'] == 4 and not summary['after']['incomplete']
+    # The change over training is a posterior per outcome; the stub scores no exploit either time, so none moved.
+    change = summary['after_minus_before']
+    assert change['exploit']['mean'] == pytest.approx(0, abs=1e-2) and change['exploit']['low'] < 0 < change['exploit']['high']
     assert summary['trainer']['router_aux_loss_coef'] == 0.0 and summary['trainer']['lr_schedule'] == 'constant'
     assert summary['trainer']['arguments_in_effect']['max_grad_norm'] == 1.0 and summary['trainer']['arguments_in_effect']['seed'] == 3
     for name in ('before-evaluation.jsonl', 'after-evaluation.jsonl', 'training-rollouts.jsonl', 'steps.jsonl', 'training-log.json', 'step-seconds.json', 'tasks.json'):
@@ -152,7 +155,7 @@ def test_a_run_out_of_time_shortens_training_not_the_record(staged, tmp_path, mo
 
 def test_the_judge_failure_test_works_at_the_size_of_a_real_run():
     """`math.comb` times a float overflowed past about 1,030 readings, so one unreadable reply would have ended every long run."""
-    from rewardhack.outcomes import judge_failing, unlikely_at_the_limit
+    from rewardhack.outcomes import judge_failing, credibly_failing
     def readings(total, every):
         """`total` readings with one failure in each `every`, spread evenly as an unreliable judge's would be."""
         return [dict(judge_asked=True, judge_undecided=i % every == every-1) for i in range(total)]
@@ -161,8 +164,10 @@ def test_the_judge_failure_test_works_at_the_size_of_a_real_run():
     assert judge_failing(readings(5000, 10)) is True, 'a 10% judge was not stopped'
     # Rows the judge was never asked about are no evidence either way.
     assert judge_failing([dict(judge_undecided=True)]*50) is False
-    assert unlikely_at_the_limit(20, 1) is False and unlikely_at_the_limit(3, 3) is True and unlikely_at_the_limit(10, 6) is True
-    assert unlikely_at_the_limit(40, 0) is False
+    # Bayesian stop (Jeffreys prior, P(rate > 5%) > 0.999): the fewest failures that stop, at a few reading counts.
+    assert not credibly_failing(1, 20) and credibly_failing(3, 3) and credibly_failing(4, 10) and not credibly_failing(3, 10)
+    assert credibly_failing(5, 16) and not credibly_failing(4, 16) and credibly_failing(21, 200) and not credibly_failing(20, 200)
+    assert not credibly_failing(0, 40)
 
 
 def test_a_judge_that_starts_failing_late_is_still_stopped():

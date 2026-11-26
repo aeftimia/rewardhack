@@ -177,7 +177,7 @@ def validate_rows(spec, records):
             for value in row['effects'].values():
                 keys(value, ('mean', 'se'))
                 number(value['mean'], 'effect mean', -1, 1)
-                number(value['se'], 'within-seed evaluation se', 0, 2)
+                number(value['se'], 'within-seed evaluation se', 0)  # a t posterior over two groups is legitimately wide (pilot_evidence.group_effect)
             keys(row['quality'], ('valid', 'invalid_rate', 'reason'))
             if type(row['quality']['valid']) is not bool or not isinstance(row['quality']['reason'], str):
                 raise ValueError('invalid quality metadata')

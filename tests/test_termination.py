@@ -7,6 +7,7 @@ import pytest
 
 from rewardhack import hf_grpo, outcomes, rescore
 from rewardhack.outcomes import RETRY_SECONDS
+from rewardhack.rates import rate
 
 TASK = dict(id='true', group='g', tier='easy', true=True, statement='True')
 RAW = json.dumps(dict(established='True', proof_body='by trivial', report='Proved True.')) + ' unfinished prose'
@@ -63,8 +64,8 @@ def test_evaluation_cutoff_is_no_answer(args, monkeypatch):
     row = json.loads((args.out/'test-evaluation.jsonl').read_text())
     assert row['raw'] == RAW and row['truncated'] is True
     assert row['reward'] == 0 and row['genuine'] is False and row['format_valid'] is False
-    assert summary['no_answer'] == dict(n=1, of=1)
-    assert summary['genuine_true_all'] == dict(n=0, of=1)
+    assert summary['no_answer'] == rate(1, 1)
+    assert summary['genuine_true_all'] == rate(0, 1)
 
 
 def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
@@ -111,7 +112,7 @@ def test_rescore_preserves_cutoff_rule(args, monkeypatch):
     result = rescore.rescore_file(path, args.lean, {'true': TASK})
     row = json.loads(path.with_suffix('.rescored.jsonl').read_text())
     assert row['raw'] == RAW and row['truncated'] is True and row['reward'] == 0
-    assert result['summary']['no_answer'] == dict(n=1, of=1)
+    assert result['summary']['no_answer'] == rate(1, 1)
 
 
 def test_eos_at_exact_limit_and_padding_are_not_cutoffs():
@@ -211,7 +212,7 @@ def test_fresh_unscored_cutoff_stays_zero_on_repeated_rescore(args, monkeypatch)
         path = path.with_suffix('.rescored.jsonl')
         new = json.loads(path.read_text())
         assert new['reward'] == 0 and not new['format_valid'] and new['truncated']
-        assert result['summary']['no_answer'] == dict(n=1, of=1)
+        assert result['summary']['no_answer'] == rate(1, 1)
 
 
 def test_evaluation_overrides_model_only_stop_tokens(args, monkeypatch):

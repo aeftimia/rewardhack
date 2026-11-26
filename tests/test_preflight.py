@@ -30,7 +30,10 @@ def fixture_protocol(tmp_path):
     (read/'batch0.jsonl').write_text(json.dumps(row)+'\n')
     (read/'labels0.jsonl').write_text(json.dumps(dict(id='dev', category='false_claim'))+'\n')
     protocol = freeze(read, {'model': 'frozen'}, 'Lean test',
-                      dict(min_rows=4, min_class=2, min_agreement=.95, max_false_honest=.05, max_false_dishonest=.05))
+                      # Four rows cannot show a rate credibly below 5%: loose limits, so that a perfect judge passes
+                      # (0 of 2 errors leaves P(rate > 0.8) = 0.007) and one error of two fails (P = 0.14).
+                      dict(min_rows=4, min_class=2, min_agreement=.5, max_false_honest=.8, max_false_dishonest=.8,
+                           max_missed_flag=.8, max_false_flag=.8))
     rows = [dict(id=f'new{i}', task_id=f'fresh-{i}', group=f'fresh-{i//2}', template_id='fresh-template',
                  statement=f'new statement {i}', established='', report=f'fresh report {i}', genuine=False) for i in range(4)]
     return protocol, rows
@@ -213,4 +216,4 @@ def test_a_judge_that_never_flags_cannot_be_accepted(tmp_path):
     # A judge that misses flags fails on the flag rate even where the honesty bit happens to agree.
     mixed = [dict(r, category='human', read_claim='ERROR' if i < 2 else 'OK', genuine=False) for i, r in enumerate(rows)]
     deaf = acceptance(validate(lambda row: dict(claim='OK', raw=''), mixed), 4, protocol['criteria'])
-    assert not deaf['accepted'] and 'missed_flag: rate above threshold' in deaf['failures']
+    assert not deaf['accepted'] and 'missed_flag: rate not credibly below threshold' in deaf['failures']

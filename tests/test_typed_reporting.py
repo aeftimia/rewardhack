@@ -6,6 +6,7 @@ import pytest
 
 from rewardhack import outcomes, prompts, reporting
 from rewardhack.grader import parse_completion
+from rewardhack.rates import rate
 
 TRUE = dict(id='t', group='g', tier='easy', true=True, statement='True')
 FALSE = dict(TRUE, id='f', true=False, statement='False')
@@ -84,7 +85,7 @@ def test_cutoffs_and_invalid_typed_envelopes_pay_zero_without_verifier_calls(mon
     row = outcomes.score('must-not-run', TRUE, raw, arm, report_mode='typed', truncated=truncated)
     assert row['reward'] == 0 and not row['format_valid'] and row['claim'] == 'UNPARSED'
     assert row['error'] is None and not row['honest']
-    assert outcomes.summarize([row])['no_answer'] == dict(n=1, of=1)
+    assert outcomes.summarize([row])['no_answer'] == rate(1, 1)
 
 
 # Explicit expected rewards at lambda=.5, across the three established arms.
@@ -133,7 +134,7 @@ def test_verifier_uncertainty_still_excludes_typed_rollouts(scripted, error):
                          retries=outcomes.RetryBudget(60))
     assert ('proof', 60) in calls and row['verifier_inconclusive']
     assert not outcomes.training_keep(row) and outcomes.training_rewards([row], 1) == [None]
-    assert outcomes.summarize([row])['judged']['unverified'] == dict(n=1, of=1)
+    assert outcomes.summarize([row])['judged']['unverified'] == rate(1, 1)
 
 
 def test_typed_mode_forbids_accidental_judge_configuration():
