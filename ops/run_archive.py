@@ -51,6 +51,8 @@ FOLDER_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]*')
 RUN_ID = re.compile(r'\d{8}T\d{6}Z-[A-Za-z0-9][A-Za-z0-9._-]*-[0-9a-f]{8}')
 COMMIT = re.compile(r'[0-9a-f]{40}')
 CHECKPOINT = re.compile(r'[^/]+/trainer/checkpoint-\d+')  # where the trainer writes a resumable checkpoint
+# What every finished trainer checkpoint holds (PEFT adapter, HF Trainer state); trainer_state.json is written last.
+CHECKPOINT_FILES = ('adapter_model.safetensors', 'optimizer.pt', 'scheduler.pt', 'trainer_state.json')
 ENTRY_KEYS = {'run_id', 'uri', 'storage_class', 'commit', 'uploaded_at', 'sha256'}
 
 
@@ -133,6 +135,8 @@ def read_record(path):
 def launch_commit(folder, given):
     """The commit the run used: the driver's record of it, or, for runs that predate that record, the one the owner names."""
     recorded = (folder/COMMIT_FILE).read_text().strip() if (folder/COMMIT_FILE).exists() else None
+    if recorded is not None and not COMMIT.fullmatch(recorded):
+        raise SystemExit(f'{folder/COMMIT_FILE} does not hold a full commit: {recorded!r}')
     if recorded and given and recorded != given:
         raise SystemExit(f'--commit {given} differs from {folder/COMMIT_FILE}: {recorded}')
     commit = recorded or given
@@ -218,7 +222,12 @@ def resume(source, checkpoint):
     names = sorted(name for name in entry['sha256'] if name.startswith(checkpoint + '/'))
     if not names:
         raise SystemExit(f'no {checkpoint} in archive {entry["run_id"]}')
-    odd = [name for name in names if any(part in ('', '.', '..') for part in name.split('/'))]
+    # A checkpoint saved while its run was killed is archived as it was: refuse one without every file the trainer writes
+    # (HF writes trainer_state.json after the model, optimizer and scheduler, so all four mean the save finished; round 44).
+    missing = sorted(f'{checkpoint}/{part}' for part in CHECKPOINT_FILES if f'{checkpoint}/{part}' not in entry['sha256'])
+    if missing:
+        raise SystemExit(f'{checkpoint} in archive {entry["run_id"]} is not a finished save: it lacks {missing}')
+    odd = [name for name in names if any(part in ('', '.', '..') or re.search(r'\s', part) for part in name.split('/'))]
     if odd:
         raise SystemExit(f'the record of {entry["run_id"]} lists names this tool never writes: {odd[:3]}')
     # A presigned URL dies with the SSO session that signed it, whatever its own expiry (review round 41).

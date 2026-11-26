@@ -100,7 +100,8 @@ def run(tmp_path):
     for folder in ('train-a/adapter-step8', 'train-a/adapter', 'train-a/trainer/checkpoint-60'):
         (run/folder).mkdir(parents=True)
         (run/folder/'weights.bin').write_bytes(b'\x01' * 1000)
-    (run/'train-a'/'trainer'/'checkpoint-60'/'optimizer.pt').write_bytes(b'\x03' * 1000)
+    for part in ('optimizer.pt', 'adapter_model.safetensors', 'scheduler.pt', 'trainer_state.json'):
+        (run/'train-a'/'trainer'/'checkpoint-60'/part).write_bytes(b'\x03' * 1000)
     (run/'train-a'/'steps.jsonl').write_text('{"step": 1}\n')
     (run/'known_hosts').write_text('pod key\n')
     (run/'launch-commit.txt').write_text(COMMIT + '\n')
@@ -138,6 +139,12 @@ def test_uploads_never_share_a_prefix(tmp_path, run):
     ids = [e['run_id'] for e in records(run)] + [records(other)[0]['run_id']]
     assert len(set(ids)) == 3
     assert (stored(tmp_path, records(run)[0])/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
+
+
+def test_an_empty_commit_record_is_refused(tmp_path, run):
+    (run/'launch-commit.txt').write_text('')
+    code, output = archive(tmp_path, 'upload', run, '--commit', 'b' * 40)
+    assert code != 0 and 'does not hold a full commit' in output
 
 
 def test_the_commit_is_required(tmp_path, run):
@@ -184,9 +191,12 @@ def test_resume_by_run_id_or_record_presigns_only_the_chosen_checkpoint(tmp_path
         code, output = archive(tmp_path, 'resume', source, 'train-a/trainer/checkpoint-60')
         assert code == 0, output
         lines = output.strip().splitlines()
-        assert [line.split()[1] for line in lines[:-1]] == ['train-a/trainer/checkpoint-60/optimizer.pt',
-                                                           'train-a/trainer/checkpoint-60/weights.bin']
-        assert lines[-1] == 'END 2' and all(f"{entry['run_id']}/" in line.split()[2] for line in lines[:-1])
+        assert [line.split()[1] for line in lines[:-1]] == [f'train-a/trainer/checkpoint-60/{part}' for part in (
+            'adapter_model.safetensors', 'optimizer.pt', 'scheduler.pt', 'trainer_state.json', 'weights.bin')]
+        assert lines[-1] == 'END 5' and all(f"{entry['run_id']}/" in line.split()[2] for line in lines[:-1])
+    # Round 44: checkpoint-56 lacks the files of a finished save (its run was killed mid-save, say).
+    code, output = archive(tmp_path, 'resume', entry['run_id'], 'train-a/trainer/checkpoint-56')
+    assert code != 0 and 'not a finished save' in output
     for refused in ('train-a/adapter-step8', 'train-a/trainer', 'train-a/trainer/checkpoint-7'):
         assert archive(tmp_path, 'resume', entry['run_id'], refused)[0] != 0, refused
     assert archive(tmp_path, 'resume', '20261126T000000Z-nothing-0123abcd', 'train-a/trainer/checkpoint-60')[0] != 0
