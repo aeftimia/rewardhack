@@ -218,7 +218,15 @@ trap finish EXIT
 # cap: 2.5x estimated 10 s (one ssh try that answers: connect, key exchange, `true`)
 SSH_TRY_SECONDS=25
 try_ssh() { timeout "$SSH_TRY_SECONDS" "${SSH[@]}" "root@$HOST" true; }
-for _ in $(seq $((SSH_UP_SECONDS / (SSH_TRY_SECONDS + 15) - 1))); do try_ssh 2>> "$RESULTS/ssh-wait.log" && break; sleep 15; done
+# Bounded by time, not by a count of tries: a booting pod usually refuses at once, so a count gave up after a third of
+# the wait (review round 33). The last try starts early enough that it, a pause and the final try end within the wait;
+# the count only keeps a stubbed `sleep` (the tests) from spinning.
+SSH_END=$((SECONDS + SSH_UP_SECONDS - 2 * SSH_TRY_SECONDS - 15))
+for _ in $(seq $((SSH_UP_SECONDS / 15))); do
+  ((SECONDS < SSH_END)) || break
+  try_ssh 2>> "$RESULTS/ssh-wait.log" && break
+  sleep 15
+done
 try_ssh || { echo "ssh failed: the pod did not accept SSH within $SSH_UP_SECONDS s"; exit 1; }
 # Before anything else on a billing pod: a provisional removal timer, so an interrupted copy or a sleeping laptop is bounded.
 # The job's own timer replaces it when the job starts.

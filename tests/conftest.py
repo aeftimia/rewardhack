@@ -21,6 +21,7 @@ def driver_script(tmp_path):
 import fcntl
 import os
 import time
+import uuid
 
 import pytest
 
@@ -31,6 +32,29 @@ WORKER_GB = 1.0  # measured peak 0.85 GB per worker (4 workers: 3.3 GB in all, 2
 MEMORY_SHARE = 0.5  # of installed memory, so the rest of the machine keeps working while the suite runs
 SUITE_LOCK = Path.home()/'.cache'/'rewardhack-pytest.lock'  # one per user, shared by every checkout and worktree
 SUITE_LOCK_WAIT_SECONDS = 1200  # cap: 2x measured 145 s per suite, for up to three queued runs ahead plus slack
+
+
+def pytest_addoption(parser):
+    parser.addoption('--repeat-each', type=int, default=1, metavar='N',
+                     help='run every selected test N times, as separate items the workers share: a test that fails only '
+                          'sometimes, or only under load, shows how often in one suite run instead of several runs at once')
+
+
+def pytest_generate_tests(metafunc):
+    """--repeat-each: each test gains a `repeat_index` parameter (pytest drops repeated node ids, so naming a test N times
+    runs it once). Used to find and confirm fixes for timing flakes (26 Nov, the removal-timer test). pytest-repeat does
+    the same (`--count`) but had no commit since April 2025, so these few lines stand in for it (CODE.md: maintained libraries)."""
+    count = metafunc.config.getoption('repeat_each')
+    if count > 1:
+        metafunc.fixturenames.append('repeat_index')
+        metafunc.parametrize('repeat_index', range(count))
+
+
+@pytest.fixture
+def pod_id():
+    """A fake pod id no other test or repeat shares: the runner stops every timer of its pod id, by design. Ids made from
+    `tmp_path.name` collided, since pytest cuts that name to 30 characters and every xdist worker numbers from 0."""
+    return lambda label: f'{label}-{uuid.uuid4().hex}'
 
 
 def pytest_xdist_auto_num_workers(config):

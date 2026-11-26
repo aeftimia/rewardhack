@@ -57,3 +57,23 @@ def test_a_download_that_used_its_whole_limit_is_not_retried(tmp_path):
     code, steps = fetch(tmp_path, f'echo attempt >> {count}\nsleep 30\n', 5)
     assert code != 0 and len(count.read_text().splitlines()) == 1
     assert steps == ['download org/model used its whole limit of 5 s (see ' + str(tmp_path) + '/out/download-model.log)']
+
+
+def test_a_timer_that_dies_after_a_slow_start_is_not_taken_for_a_running_one(tmp_path, pod_id):
+    """The 26 Nov flake: `arm` took a timer for running if its process was alive one second after starting. Under the full
+    suite's load the stub that fails at once was still starting then, and the job started with no timer. A timer that
+    lives 1.5 s and never runs the removal loop must be refused however long it takes to start (review round 33)."""
+    bin_dir = tmp_path/'bin'
+    bin_dir.mkdir()
+    stubs = {'timeout': 'shift 3\nexec "$@"\n', 'setsid': 'exec "$@"\n', 'runpodctl': 'exit 0\n', 'nohup': '/bin/sleep 1.5\nexit 1\n'}
+    for name, body in stubs.items():
+        (bin_dir/name).write_text('#!/bin/bash\n' + body)
+        (bin_dir/name).chmod(0o755)
+    ran = tmp_path/'ran'
+    job = tmp_path/'job.sh'
+    job.write_text(f'touch {ran}\n')
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", REMOTE_JOB_OUT=str(tmp_path/'out'), REMOTE_JOB_PIDS=str(tmp_path/'pids'),
+               RUNPOD_POD_ID=pod_id('podslow'), RUNPOD_API_KEY='k', REQUIRE_AUTOSTOP='1')
+    result = subprocess.run(['bash', 'ops/remote_job.sh', str(job), '10'], cwd=ROOT, env=env, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 3 and 'did not start' in result.stdout, result.stdout + result.stderr
+    assert not ran.exists(), 'the job started with no working timer'

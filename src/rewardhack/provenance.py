@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 from . import jsonl, reporting
-from .outcomes import ARMS
+from .outcomes import ARMS, COMPARED
 from .prompts import VARIANTS
 from .tasks import PARTS, SELECTIONS
 
@@ -39,6 +39,14 @@ FIELDS = ('schema', 'model', 'revision', 'arm', 'penalty', 'stage', 'report_mode
 HISTORICAL_DEFAULTS = {'tasks': 'all', 'part': 'train'}
 
 
+# The flags this loader reads from a summary's argv, and those of the entrypoints' options that are the start of one of
+# them: written in full, `--tasks` is not an abbreviation of `--taskset` (review round 33). tests/test_provenance.py
+# recomputes the second from entrypoints/ and src/.
+READ_FLAGS = ('model', 'revision', 'taskset', 'tasks', 'part', 'variant', 'prompt-variant', 'report-mode', 'arm', 'penalty',
+              'adapter', 'out')
+WHOLE_OPTIONS = {'--tasks'}
+
+
 def views(stem):
     """A stream's row files in order of preference: the rescored view over the raw one."""
     return (f'{stem}.rescored.jsonl', f'{stem}.jsonl')
@@ -49,9 +57,11 @@ def views(stem):
 VIEWS = {'training': views('training-rollouts'), 'before': views('before-evaluation'), 'after': views('after-evaluation'),
          'probe': views('probe-evaluation'),
          'untrained': ('rows.ok.rescored.jsonl', 'rows.rescored.jsonl', 'rows.ok.jsonl', 'rows.jsonl')}
-# The outcomes the prior is fitted to, as each row records them.
-OUTCOMES = {'genuine': lambda row: bool(row['genuine']), 'refutation': lambda row: bool(row['verified_refutation']),
-            'exploit': lambda row: bool(row['exploit'])}
+# The outcomes the prior is fitted to, each over the rows its rate is about, as every comparison in this project counts
+# them (outcomes.COMPARED): exploits among the rows the verifier decided, genuine proofs among true statements, verified
+# refutations among false ones. One denominator for all would make a tasks=all run's refutation rate half a tasks=false
+# probe's for the same behaviour (review round 33).
+OUTCOMES = COMPARED
 
 
 def preferred(run_dir, names):
@@ -93,7 +103,7 @@ def flag(argv, name):
     found = None
     for index, word in enumerate(argv):
         given = word.split('=', 1)[0]
-        if len(given) > 2 and given != f'--{name}' and f'--{name}'.startswith(given):
+        if len(given) > 2 and given != f'--{name}' and f'--{name}'.startswith(given) and given not in WHOLE_OPTIONS:
             raise ValueError(f'its argv abbreviates --{name} as {given}, which argparse may have read as it or as another option')
         if word == f'--{name}':
             if index + 1 == len(argv):
@@ -201,7 +211,10 @@ def count_file(path, stage):
         raise ValueError(f'its rows were written in a run folder named {wrote!r}, not here: a copy is not counted again')
     if provenance['stage'] != stage:
         raise ValueError(f"its rows say stage {provenance['stage']!r}, its name says {stage!r}")
-    found = dict(answers=len(rows), **{outcome: sum(read(row) for row in rows) for outcome, read in OUTCOMES.items()})
+    found = dict(answers=len(rows))
+    for outcome, (subset, test) in OUTCOMES.items():
+        chosen = subset(rows)
+        found.update({outcome: sum(bool(test(row)) for row in chosen), f'{outcome}_of': len(chosen)})
     if STAGES[stage]['steps']:
         lines = [line for line in jsonl.read(path.parent/'steps.jsonl') if 'copied_from' not in line and line['step'] not in left_out]
         found.update(groups=sum(line['mixed_groups'] + line['zero_advantage_groups'] for line in lines),
@@ -212,8 +225,8 @@ def count_file(path, stage):
 def cells(root):
     """Counts per run and stage of every row file under `root`, and every other .jsonl file there with why it was not
     counted (`refused`). A run is its folder's path under `root` (`run`): a folder name alone is shared by runs of
-    different jobs. Each entry has the run's provenance (FIELDS but the schema and the folder's name), answers and each of
-    OUTCOMES; training entries also count prompt groups and the mixed ones (reward variation) from the run's steps.jsonl.
+    different jobs. Each entry has the run's provenance (FIELDS but the schema and the folder's name), answers, and each of
+    OUTCOMES with the number of rows it is counted over (`<outcome>_of`); training entries also count prompt groups and the mixed ones (reward variation) from the run's steps.jsonl.
     Rows copied from another run, and rows of a batch that was cut short, are counted where they belong: in the original
     run, and in no step. Runs are never pooled here: they differ in length and batch shape, so the fit treats each as its
     own unit inside its (model, arm, λ) cell."""

@@ -12,7 +12,7 @@ TRAINED = dict(model='openai/gpt-oss-20b', revision='abc', arm='report_correct',
 
 
 def row(**outcome):
-    return dict(dict(genuine=False, verified_refutation=None, exploit=False), **outcome)
+    return dict(dict(true=False, genuine=False, verified_refutation=None, exploit=False), **outcome)
 
 
 def test_a_trained_row_needs_its_arm_and_an_untrained_one_has_none():
@@ -33,7 +33,8 @@ def test_stamped_runs_are_counted_per_run_with_their_groups(tmp_path):
     run = tmp_path/'train-lambda05'
     run.mkdir()
     meta = provenance.meta(**TRAINED)
-    rows = [row(genuine=True), row(verified_refutation='verified'), row(exploit=True), row(exploit=True)]
+    rows = [row(true=True, genuine=True), row(verified_refutation='verified'), row(true=True, exploit=True), row(exploit=True),
+            row(true=True, exploit=False, verifier_inconclusive=True)]  # undecided: not among the exploit rate's rows
     rows += [dict(row(exploit=True), partial_batch=True), dict(row(exploit=True), copied_from='elsewhere')]  # counted elsewhere
     rows = [dict(each, step=1) for each in rows] + [dict(row(verified_refutation='verified'), step=2)]  # step 2: never trained on
     (run/'training-rollouts.jsonl').write_text(jsonl.dumps(provenance.stamp(rows, meta)))
@@ -42,7 +43,10 @@ def test_stamped_runs_are_counted_per_run_with_their_groups(tmp_path):
     (run/'summary.json').write_text(json.dumps(dict(status='failed', untrained_step=2)))
     [entry], refused = provenance.cells(tmp_path)
     assert refused == []
-    assert (entry['answers'], entry['genuine'], entry['refutation'], entry['exploit']) == (4, 1, 1, 2)
+    assert entry['answers'] == 5
+    assert (entry['genuine_true'], entry['genuine_true_of']) == (1, 3)  # over true statements
+    assert (entry['verified_refutation_false'], entry['verified_refutation_false_of']) == (1, 2)  # over false ones
+    assert (entry['exploit'], entry['exploit_of']) == (2, 4)  # over rows the verifier decided
     assert (entry['groups'], entry['mixed_groups']) == (4, 1)
     assert (entry['model'], entry['arm'], entry['penalty'], entry['run']) == ('openai/gpt-oss-20b', 'report_correct', 0.5, 'train-lambda05')
 
@@ -117,7 +121,7 @@ def test_one_view_per_stage_is_read_and_every_other_jsonl_is_listed(tmp_path):
     write(tmp_path/'mlx'/'rollouts.jsonl', [row()])
     write(tmp_path/'raw'/'rows.jsonl', [dict(task_id='x', raw='', scored=False, meta=meta)])
     [entry], refused = provenance.cells(tmp_path)
-    assert (entry['run'], entry['answers'], entry['refutation'], entry['tasks'], entry['part']) == ('api/probe-120b-low', 1, 1, 'false', 'train')
+    assert (entry['run'], entry['answers'], entry['verified_refutation_false'], entry['tasks'], entry['part']) == ('api/probe-120b-low', 1, 1, 'false', 'train')
     why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
     assert why.keys() == {'api/probe-120b-low/rows.rescored.jsonl', 'api/probe-120b-low/rows.jsonl', 'mlx/rollouts.jsonl', 'raw/rows.jsonl'}
     assert 'rows.ok.rescored.jsonl is the preferred view' in why['api/probe-120b-low/rows.jsonl']
@@ -174,3 +178,17 @@ def test_flags_read_as_argparse_reads_them_and_a_copied_run_is_not_counted_twice
     why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
     assert "named 'child'" in why['job/rows.rescored.jsonl'] and "named 'probe-120b-low'" in why['stamped/elsewhere/rows.rescored.jsonl']
     assert 'ends with --part' in why['bare/rows.rescored.jsonl']
+
+
+def test_the_flags_read_and_the_whole_options_among_them_are_stated_from_the_code():
+    import re
+    root = Path(__file__).resolve().parents[1]
+    source = (root/'src/rewardhack/provenance.py').read_text()
+    read = set(re.findall(r"stated\(summary, '[a-z_]+', '([a-z-]+)'\)|flag\(summary\['argv'\], '([a-z-]+)'\)", source))
+    assert {name for pair in read for name in pair if name} == set(provenance.READ_FLAGS)
+    options = {option for path in [*root.glob('entrypoints/*.py'), *root.glob('src/rewardhack/*.py')]
+               for option in re.findall(r"add_argument\('(--[a-z0-9-]+)'", path.read_text())}
+    prefixes = {option for option in options for name in provenance.READ_FLAGS if option != f'--{name}' and f'--{name}'.startswith(option)}
+    assert prefixes == provenance.WHOLE_OPTIONS
+    assert provenance.flag(['--tasks', 'false', '--taskset', 'hard'], 'taskset') == 'hard'
+    assert provenance.flag(['--tasks', 'false'], 'taskset') is None

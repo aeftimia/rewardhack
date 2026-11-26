@@ -108,9 +108,9 @@ def test_remote_runner_propagates_failure(tmp_path):
     assert (tmp_path/'out'/'DONE').exists()
 
 
-def test_remote_runner_arms_pod_removal_or_refuses_to_start(tmp_path):
+def test_remote_runner_arms_pod_removal_or_refuses_to_start(tmp_path, pod_id):
     """On a RunPod pod the billing time cap is the pod removing itself; without it the job must not start."""
-    pod, other = f'pod1-{tmp_path.name}', f'pod2-{tmp_path.name}'  # this test's own: parallel tests cannot touch its timers
+    pod, other = pod_id('pod1'), pod_id('pod2')  # this test's own: parallel tests cannot touch its timers
     import os, time
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()

@@ -22,6 +22,13 @@ remove_after() {  # detached, so it outlives this script, the SSH session and a 
   # never been seen for a refusal: the loop ends when the pod, and this process with it, is gone.
   nohup setsid bash -c "sleep $1; while true; do runpodctl remove pod '$POD_ID'; sleep 30; done" >> "$OUT/autostop.log" 2>&1 < /dev/null &
 }
+# Whether process $1 is running this pod's removal loop itself: anchored at the start, since nohup and setsid carry the
+# loop's text in their own arguments until they exec into it. Captured first: a pipe into `grep -q` could end pgrep early.
+timer_runs() {
+  local running
+  running=$(pgrep -f "^bash -c sleep [0-9]+; while true; do runpodctl remove pod '$POD_ID'")  # empty when none run; pgrep's status 1 for that is the answer here
+  [[ $'\n'$running$'\n' == *$'\n'"$1"$'\n'* ]]
+}
 arm() {  # $1: seconds until removal. The new timer is proven alive first; only then are the earlier ones stopped.
   local earlier new pid
   # The bracket keeps the pattern from matching any command line that merely quotes it (a shell running this check); the timer's own
@@ -30,8 +37,15 @@ arm() {  # $1: seconds until removal. The new timer is proven alive first; only 
   earlier=$(pgrep -f "[r]unpodctl remove pod '$POD_ID'")  # empty when none are running; pgrep's status 1 for that is not an error here
   remove_after "$1"
   new=$!
-  sleep 1
-  kill -0 "$new" || { echo 'NO_AUTOSTOP: the removal timer did not start; earlier timers were left running' | tee -a "$OUT/autostop.log"; exit 3; }
+  # Proven by what its process runs, not by its being alive at one instant: nohup and setsid exec into the timer's loop in
+  # the same process, so its command line becomes the loop's. A one-off `kill -0` after a second passed a timer that was
+  # still starting on a loaded machine and failed afterwards (the 26 Nov flaky test, review round 33).
+  # cap: 5x estimated 1 s (nohup, setsid and bash exec'ing into the loop; slower when the machine is busy)
+  for _ in $(seq 50); do
+    if timer_runs "$new" || ! kill -0 "$new"; then break; fi
+    sleep 0.1
+  done
+  timer_runs "$new" || { echo 'NO_AUTOSTOP: the removal timer did not start; earlier timers were left running' | tee -a "$OUT/autostop.log"; exit 3; }
   for pid in $earlier; do
     if kill -0 "$pid"; then kill "$pid"; fi
   done

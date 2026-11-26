@@ -167,14 +167,14 @@ def stubs(tmp_path, **bodies):
     return str(bin_dir)+':'+os.environ['PATH']
 
 
-def test_a_provisional_timer_can_be_armed_before_the_repo_is_on_the_pod(tmp_path):
+def test_a_provisional_timer_can_be_armed_before_the_repo_is_on_the_pod(tmp_path, pod_id):
     """The driver sends the runner over the connection with --arm-only: a cap for the minutes before the job starts."""
     calls = tmp_path/'calls'
     path = stubs(tmp_path, runpodctl=f'echo "$@" >> {calls}\n[[ $3 != bad ]]\n')
     def arm(pod, out):
         env = dict(os.environ, PATH=path, REMOTE_JOB_OUT=str(tmp_path/out), RUNPOD_POD_ID=pod, RUNPOD_API_KEY='k')
         return subprocess.run(['bash', '-s', '--', '--arm-only', '77'], stdin=open('ops/remote_job.sh'), env=env, capture_output=True, text=True)
-    pod = f'pod9-{tmp_path.name}'  # this test's own: parallel tests cannot touch its timers
+    pod = pod_id('pod9')  # this test's own: parallel tests cannot touch its timers
     try:
         assert arm(pod, 'a').returncode == 0
         assert f'armed: pod {pod} is removed at most 77s from now' in (tmp_path/'a'/'autostop.log').read_text()
