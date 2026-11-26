@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from conftest import TIMEOUT_STUB
+from conftest import TIMEOUT_STUB, driver_script
 from rewardhack import probe_rules
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -89,3 +89,22 @@ def test_the_driver_refuses_at_once_without_a_timeout_command(tmp_path):
     done = subprocess.run(['/bin/bash', 'ops/drive_runpod.sh', 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', 'results/x', '60'],
                           cwd=ROOT, env=dict(PATH=str(bin_dir), HOME=str(tmp_path)), capture_output=True, text=True, timeout=30)
     assert done.returncode == 2 and 'needs a timeout command' in done.stdout, done.stdout + done.stderr
+
+
+def test_a_wait_that_connected_makes_no_further_unretried_try(tmp_path):
+    """Round 37: after the wait loop connected, one more connection was made with no retry, and its failure gave up a pod
+    with no removal timer. Here the pod answers at once; the arm call is made to fail so the driver stops there."""
+    calls = tmp_path/'calls'
+    bin_dir = tmp_path/'bin'
+    bin_dir.mkdir()
+    stubs = {'ssh': f'echo "$*" >> {calls}\n[[ "$*" != *--arm-only* ]]\n', 'rsync': 'exit 1\n', 'sleep': 'exit 0\n', 'timeout': TIMEOUT_STUB}
+    for name, body in stubs.items():
+        (bin_dir/name).write_text('#!/bin/bash\n' + body)
+        (bin_dir/name).chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none')
+    done = subprocess.run(['bash', driver_script(tmp_path), 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'results'), '240'],
+                          env=env, capture_output=True, text=True, timeout=120)
+    assert 'could not arm' in done.stdout, done.stdout + done.stderr
+    sent = calls.read_text().splitlines()
+    before_arm = sent[:next(index for index, line in enumerate(sent) if '--arm-only' in line)]
+    assert len(before_arm) == 1 and before_arm[0].endswith(' true'), sent

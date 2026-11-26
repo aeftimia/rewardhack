@@ -184,7 +184,8 @@ def test_the_flags_read_and_the_whole_options_among_them_are_stated_from_the_cod
     import re
     root = Path(__file__).resolve().parents[1]
     source = (root/'src/rewardhack/provenance.py').read_text()
-    read = set(re.findall(r"stated\(summary, '[a-z_]+', '([a-z-]+)'\)|flag\(summary\['argv'\], '([a-z-]+)'\)", source))
+    # Every read of a flag, whatever expression gives the summary or its argv.
+    read = set(re.findall(r"stated\([^,()]+(?:\([^()]*\))?, '[a-z_]+', '([a-z-]+)'\)|flag\([^,]+, '([a-z-]+)'\)", source))
     assert {name for pair in read for name in pair if name} == set(provenance.READ_FLAGS)
     options = {option for path in [*root.glob('entrypoints/*.py'), *root.glob('src/rewardhack/*.py')]
                for option in re.findall(r"add_argument\('(--[a-z0-9-]+)'", path.read_text())}
@@ -246,3 +247,10 @@ def test_follow_on_turns_and_failed_requests_are_refused_with_their_reason(tmp_p
     why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
     assert table == [] and 'follow-on rows' in why['follow/rows.rescored.jsonl']
     assert 'failed requests' in why['errors/rows.jsonl']
+
+
+def test_a_broken_link_is_listed_not_a_crash(tmp_path):
+    (tmp_path/'run').mkdir()
+    (tmp_path/'run'/'rows.jsonl').symlink_to(tmp_path/'missing.jsonl')
+    table, [(path, why)] = provenance.cells(tmp_path)
+    assert table == [] and path.endswith('run/rows.jsonl') and 'cannot be opened' in why

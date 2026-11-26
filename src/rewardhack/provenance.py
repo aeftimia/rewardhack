@@ -43,7 +43,7 @@ HISTORICAL_DEFAULTS = {'tasks': 'all', 'part': 'train'}
 # them: written in full, `--tasks` is not an abbreviation of `--taskset` (review round 33). tests/test_provenance.py
 # recomputes the second from entrypoints/ and src/.
 READ_FLAGS = ('model', 'revision', 'taskset', 'tasks', 'part', 'variant', 'prompt-variant', 'report-mode', 'arm', 'penalty',
-              'adapter', 'out')
+              'adapter', 'out', 'resume-from')
 WHOLE_OPTIONS = {'--tasks'}
 
 
@@ -306,6 +306,8 @@ def cells(root):
 def unread(path):
     """Why `cells` does not read `path`."""
     for names in VIEWS.values():
+        if path.name in names and preferred(path.parent, names) is None:  # listed by rglob, unreadable (a broken link)
+            return 'not read: it cannot be opened'
         if path.name in names:
             return f'not read: {preferred(path.parent, names).name} is the preferred view of the same rows'
     return 'not read: not a row file of any stage (provenance.VIEWS)'
