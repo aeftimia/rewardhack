@@ -28,7 +28,9 @@ Runbook (attended target: about 2 h at the listed price, $2.69/h on 2026-11-24, 
 ```
 
 ```bash
-FORWARD_JUDGE_KEY=1 bash ops/drive_runpod.sh <pod ssh host> <pod ssh port> ops/remote_runpod_smoke.sh results/runpod-smoke-<date> 100
+# Settle the launch first: `entrypoints/gate.py ready` (CLAUDE.md, "Hooks") checks the deadline against the script's
+# `# deadline:` line and its basis, and prints the exact driver command to run.
+FORWARD_JUDGE_KEY=1 bash ops/drive_runpod.sh <pod ssh host> <pod ssh port> ops/remote_runpod_smoke.sh results/runpod-smoke-<date> <deadline from gate.py ready>
 ```
 
 Set `OPENAI_API_KEY` locally before invoking the driver. It checks the key-forwarding prerequisites before connecting.

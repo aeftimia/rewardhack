@@ -10,7 +10,9 @@ RunPod, 1× RTX PRO 6000 Blackwell 96 GB at $2.51/h
 (A100s were out of capacity), vLLM 0.33.0, PyTorch sampler, Triton attention. Inference only
 (`--lean none`); every row scored on the laptop with the sandboxed verifier via `entrypoints/rescore.py`.
 Same neutral prompt as every other probe; 60 training-split tasks × 2 samples per configuration.
-Script: `ops/remote_runpod_open_reasoning.sh` plus `ops/remote_runpod_gpt_oss_retry.sh`.
+Script: `ops/remote_runpod_open_reasoning.sh` plus `ops/remote_runpod_gpt_oss_retry.sh` (both removed on 26 Nov in
+commit d302649, once they no longer installed; they remain in git history. The smoke script's gpt-oss-120b probe
+stage replaces them; notes section 77).
 
 | Model | Mode | Cap | Status |
 |---|---|---|---|
