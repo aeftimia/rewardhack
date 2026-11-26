@@ -197,13 +197,17 @@ finish() {
   fi
   if ! on_pod 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
-  if [[ $KEEP == 1 || $CHECKPOINTS == 0 ]]; then
+  # A pod with no removal timer ran no job, so it holds nothing to keep: it is removed here whatever KEEP_POD says, and
+  # only a pod that cannot be reached is left to the console (review round 39: a failed arm call on a reachable pod was
+  # left running with a reminder and no bound on its billing).
+  if [[ $ARMED == 0 ]] && ! on_pod true; then
+    say "REMINDER: the pod never accepted SSH, so no removal timer was ever armed on it. Terminate it in the RunPod console now"; code=97
+  elif [[ $ARMED == 1 && ( $KEEP == 1 || $CHECKPOINTS == 0 ) ]]; then
     # Left running on purpose: say so only if a removal timer is really armed there. A pod that no longer answers has
     # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
     if ! on_pod true; then
-      if [[ $ARMED == 1 ]]; then say "the pod no longer answers (ssh error above): it has most likely removed itself on its timer. Confirm in the RunPod console"
-      else say "REMINDER: the pod never accepted SSH, so no removal timer was ever armed on it. Terminate it in the RunPod console now"; code=97; fi
+      say "the pod no longer answers (ssh error above): it has most likely removed itself on its timer. Confirm in the RunPod console"
     elif on_pod "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
     else say "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
   elif on_pod 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet

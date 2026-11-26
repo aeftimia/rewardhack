@@ -195,8 +195,9 @@ def trained_through(path):
 
     A step's rows and its steps.jsonl line are written once it is scored, before its update (hf_grpo), so a run that did
     not complete scored one step it never trained on. Its summary's `global_step` says which steps were trained (written
-    after training, however it ended); a run killed before that leaves its per-step `training-log.json` (logging_steps=1)
-    or nothing, and then is refused rather than counted as trained (review round 34)."""
+    after training, however it ended). A run killed from outside after that point (in its after-evaluation) has its
+    per-step `training-log.json` (logging_steps=1, written beside global_step); one killed during training has neither
+    and is refused rather than counted as trained (review rounds 34 and 39)."""
     summary = read_summary(path)
     if summary['status'] == 'completed':
         return None
@@ -228,7 +229,7 @@ def count_file(path, stage):
     if any('turn' in row and row['turn'] != 1 for row in rows):
         raise ValueError('it holds follow-on rows (turn 2: another statement without the evaluator), which meta does not record')
     if any('error' in row for row in rows):
-        raise ValueError('it holds failed requests: rows.ok.* is the view without them')
+        raise ValueError('it holds failed requests: rescoring (entrypoints/rescore.py) writes the rows without them')
     trained = trained_through(path) if STAGES[stage]['steps'] else None
     if trained is not None:
         rows = [row for row in rows if row['step'] <= trained]  # older rows without `step` are refused here

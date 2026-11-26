@@ -91,7 +91,7 @@ def test_the_driver_refuses_at_once_without_a_timeout_command(tmp_path):
     assert done.returncode == 2 and 'needs a timeout command' in done.stdout, done.stdout + done.stderr
 
 
-def test_a_wait_that_connected_makes_no_further_unretried_try(tmp_path):
+def test_a_wait_that_connected_makes_no_further_unretried_try_and_a_failed_arm_removes_the_pod(tmp_path):
     """Round 37: after the wait loop connected, one more connection was made with no retry, and its failure gave up a pod
     with no removal timer. Here the pod answers at once; the arm call is made to fail so the driver stops there."""
     calls = tmp_path/'calls'
@@ -108,3 +108,5 @@ def test_a_wait_that_connected_makes_no_further_unretried_try(tmp_path):
     sent = calls.read_text().splitlines()
     before_arm = sent[:next(index for index, line in enumerate(sent) if '--arm-only' in line)]
     assert len(before_arm) == 1 and before_arm[0].endswith(' true'), sent
+    # No timer was armed, so no job ran: the pod is removed, not left running with a reminder (review round 39).
+    assert any('--remove-now' in line for line in sent), sent
