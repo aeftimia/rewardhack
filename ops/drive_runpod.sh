@@ -63,7 +63,9 @@ if [[ $PART_ONE != 0 ]]; then
   # The gpt-oss-120b probe after training (ops/pod_pins.env): the part of its download's limit the training could not
   # cover (all of it for the probe-only job), then for each stage a wait for a freed card and the stage's outer limit.
   TRAINING_SECONDS=$((${#PART_ONE_JOB[@]} * (SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS)))
+  # Before the training, its environment's check (with the kill-after of its timeout).
   PROBE_LARGE_SECONDS=$((LARGE_DOWNLOAD_SECONDS > TRAINING_SECONDS ? LARGE_DOWNLOAD_SECONDS - TRAINING_SECONDS : 0))
+  PROBE_LARGE_SECONDS=$((PROBE_LARGE_SECONDS + PROBE_ENV_CHECK_SECONDS + KILL_AFTER_SECONDS))
   for stage in "${PROBE_LARGE_STAGES[@]}"; do
     read -r _ seconds _ <<< "$stage"
     PROBE_LARGE_SECONDS=$((PROBE_LARGE_SECONDS + CARD_FREE_SECONDS + seconds + PROBE_LARGE_EXIT_SECONDS + KILL_AFTER_SECONDS))

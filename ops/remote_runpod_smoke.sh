@@ -52,7 +52,8 @@ OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
 # 70 GB more (65 GB of weights and a third environment) less whatever of it an earlier launch on this pod already fetched
 # (a relaunch on a kept pod keeps /workspace, including a partial download).
 LARGE_CACHE=$HF_HOME/hub/models--${GPT_OSS_120B/\//--}
-if [[ -d $LARGE_CACHE ]]; then LARGE_HERE_GB=$(du -s -BG "$LARGE_CACHE" | tr -dc 0-9); else LARGE_HERE_GB=0; fi
+# The size field only: the path du prints after it has digits of its own (gpt-oss-120b), which `tr` alone kept (round 29).
+if [[ -d $LARGE_CACHE ]]; then LARGE_HERE_GB=$(du -s -BG "$LARGE_CACHE" | cut -f1 | tr -dc 0-9); else LARGE_HERE_GB=0; fi
 LARGE_NEED_GB=(0 $((LARGE_HERE_GB < 70 ? 70 - LARGE_HERE_GB : 0)))  # indexed by SMOKE_PROBE_LARGE
 WORKSPACE_NEED_GB=$((40 + ${LARGE_NEED_GB[$SMOKE_PROBE_LARGE]}))
 pod_self_test "$WORKSPACE_NEED_GB" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
@@ -215,7 +216,8 @@ step() { name=$1; shift; log "start $name"
   status=$("$PY" -c 'import json, sys; s = json.load(open(sys.argv[1])); print("steps", s["global_step"], "early stop", s["early_stop"] if "early_stop" in s else "none")' ~/out/"$name"/summary.json) \
     || fail "$name SUMMARY_UNREADABLE"
   log "end $name passed: $status"
-  smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log || fail NVIDIA_SMI_FAILED; }
+  # For the record only: a failed reading here is logged, and the next stage's own card check decides whether the card works.
+  smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log || log "nvidia-smi after $name failed or did not answer in $NVIDIA_SMI_SECONDS s"; }
 # Eight generations at 2,048 tokens ran out of memory on a 96 GB card (2026-11-24); four fit (2026-11-25). Every training step below uses this.
 GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
 # Prompt groups per optimizer step (owner, 26 Nov, notes section 72): one group of four had reward variation in 12 of 60
@@ -251,8 +253,8 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   wait "$PROBE_INSTALL_PID" || fail PROBE_INSTALL_FAILED
   # Also the offline read the probe will do (its hub version differs from the one that downloads), on gpt-oss-20b's
   # tokenizer, which is already here.
-  # cap: 1.5x estimated 200 s (importing vLLM and reading a tokenizer)
-  HF_HUB_OFFLINE=1 in_env probe timeout 300 python -c 'import sys, vllm; from vllm import LLM, SamplingParams; import rewardhack.vllm_probe, rewardhack.hf_grpo
+  # Its limit, PROBE_ENV_CHECK_SECONDS, is in ops/pod_pins.env, where the driver counts it.
+  HF_HUB_OFFLINE=1 in_env probe timeout "$PROBE_ENV_CHECK_SECONDS" python -c 'import sys, vllm; from vllm import LLM, SamplingParams; import rewardhack.vllm_probe, rewardhack.hf_grpo
 from transformers import AutoTokenizer; AutoTokenizer.from_pretrained(sys.argv[1], revision=sys.argv[2]); print("probe environment: vllm", vllm.__version__)' "$MODEL" "$REV" \
     >> ~/out/steps.log 2>&1 || fail PROBE_ENVIRONMENT_BROKEN
 fi
@@ -296,9 +298,9 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   for stage in "${PROBE_LARGE_STAGES[@]}"; do
     read -r effort seconds samples tokens chunk <<< "$stage"
     name=probe-120b-$effort
-    # Whatever still holds the card (vLLM renames its engine process, so a match on the environment's path misses it);
-    # the rollout server is stopped above, so only a previous stage's leftovers can be there.
-    for pid in $(smi --query-compute-apps=pid --format=csv,noheader); do kill -9 "$pid" || [[ ! -e /proc/$pid ]]; done
+    # A stage that overran is ended by its timeout, which sends TERM and then KILL to its whole process group, vLLM's
+    # renamed engine process included. Nothing else is killed here: inside a container nvidia-smi reports host process ids
+    # (round 29). A card that still does not come free fails this stage only.
     if ! (wait_card_free "$name"); then PROBE_FAILED+=("$name"); continue; fi
     log "start $name"
     if HF_HUB_OFFLINE=1 in_env probe timeout $((seconds + PROBE_LARGE_EXIT_SECONDS)) python entrypoints/probe_vllm.py --out ~/out/"$name" --lean none \
