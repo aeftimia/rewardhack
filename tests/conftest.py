@@ -38,6 +38,9 @@ def pytest_addoption(parser):
     parser.addoption('--repeat-each', type=int, default=1, metavar='N',
                      help='run every selected test N times, as separate items the workers share: a test that fails only '
                           'sometimes, or only under load, shows how often in one suite run instead of several runs at once')
+    parser.addoption('--repeat-match', action='append', default=[], metavar='TEXT',
+                     help='with --repeat-each, repeat only the tests whose id contains TEXT (may be given several times); '
+                          'the rest run once, so one run is the whole suite plus the repeats, all on the same workers')
 
 
 def pytest_generate_tests(metafunc):
@@ -45,7 +48,8 @@ def pytest_generate_tests(metafunc):
     runs it once). Used to find and confirm fixes for timing flakes (26 Nov, the removal-timer test). pytest-repeat does
     the same (`--count`) but had no commit since April 2025, so these few lines stand in for it (CODE.md: maintained libraries)."""
     count = metafunc.config.getoption('repeat_each')
-    if count > 1:
+    match = metafunc.config.getoption('repeat_match')
+    if count > 1 and (not match or any(text in metafunc.definition.nodeid for text in match)):
         metafunc.fixturenames.append('repeat_index')
         metafunc.parametrize('repeat_index', range(count))
 

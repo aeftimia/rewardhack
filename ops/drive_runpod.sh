@@ -227,10 +227,12 @@ for _ in $(seq $((SSH_UP_SECONDS / 15))); do
   try_ssh 2>> "$RESULTS/ssh-wait.log" && break
   sleep 15
 done
-try_ssh || { echo "ssh failed: the pod did not accept SSH within $SSH_UP_SECONDS s"; exit 1; }
+try_ssh || { echo "ssh failed: the pod did not accept SSH within $SSH_UP_SECONDS s (each refusal is in $RESULTS/ssh-wait.log: a key that needs a passphrase fails here too)"; exit 1; }
 # Before anything else on a billing pod: a provisional removal timer, so an interrupted copy or a sleeping laptop is bounded.
 # The job's own timer replaces it when the job starts.
-"${SSH[@]}" "root@$HOST" 'bash -s -- --arm-only 900' < ops/remote_job.sh || { echo 'could not arm a provisional removal timer on the pod'; exit 1; }
+# Bounded as a whole (ARM_SECONDS, ops/pod_pins.env, counted by the gate): it asks the RunPod API whether the pod can
+# remove itself, and a stalled API would otherwise hold the driver here with no timer armed (review round 34).
+timeout "$ARM_SECONDS" "${SSH[@]}" "root@$HOST" 'bash -s -- --arm-only 900' < ops/remote_job.sh || { echo 'could not arm a provisional removal timer on the pod'; exit 1; }
 ARMED=1  # from here a removal timer runs on the pod, so a pod that stops answering has most likely removed itself
 # results/ stays behind except the model-read labels, which judge validation on the pod needs (7 MB).
 rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"

@@ -185,16 +185,37 @@ def upgraded(provenance, path, stage):
     return provenance
 
 
+def finished(path):
+    """The rows of a file, less a last line a killed writer left unterminated (jsonl.read_finished)."""
+    return jsonl.read_finished(Path(path).read_bytes(), path)[0]
+
+
+def trained_through(path):
+    """The last step a training run finished its update for, or None when it finished every step it scored.
+
+    A step's rows and its steps.jsonl line are written once it is scored, before its update (hf_grpo), so a run that did
+    not complete scored one step it never trained on. Its summary's `global_step` says which steps were trained (written
+    after training, however it ended); a run killed before that leaves its per-step `training-log.json` (logging_steps=1)
+    or nothing, and then is refused rather than counted as trained (review round 34)."""
+    summary = read_summary(path)
+    if summary['status'] == 'completed':
+        return None
+    if 'global_step' in summary:
+        return summary['global_step']
+    log = path.parent/'training-log.json'
+    if not log.is_file():
+        raise ValueError(f"its run ended {summary['status']!r} without saying which steps were trained on "
+                         '(no global_step in its summary.json, no training-log.json)')
+    return max((entry['step'] for entry in json.loads(log.read_text()) if 'loss' in entry), default=0)
+
+
 def count_file(path, stage):
     """(provenance, counts) of one row file, or None when it has no row of its own to count. Raises when its provenance
     is unclear or a count cannot be read, so that a file refused part way adds nothing."""
-    rows = [row for row in jsonl.read(path) if 'copied_from' not in row and 'partial_batch' not in row]
-    left_out = set()  # training steps whose rows were scored but never trained on
-    if STAGES[stage]['steps']:
-        summary = read_summary(path)
-        if 'untrained_step' in summary:  # a failed run's step in progress (hf_grpo): its rows and steps line say nothing of training
-            left_out.add(summary['untrained_step'])
-            rows = [row for row in rows if row['step'] not in left_out]  # older rows without `step` are refused here
+    rows = [row for row in finished(path) if 'copied_from' not in row and 'partial_batch' not in row]
+    trained = trained_through(path) if STAGES[stage]['steps'] else None
+    if trained is not None:
+        rows = [row for row in rows if row['step'] <= trained]  # older rows without `step` are refused here
     if not rows:
         return None
     if any('scored' in row and row['scored'] is False for row in rows):
@@ -216,7 +237,7 @@ def count_file(path, stage):
         chosen = subset(rows)
         found.update({outcome: sum(bool(test(row)) for row in chosen), f'{outcome}_of': len(chosen)})
     if STAGES[stage]['steps']:
-        lines = [line for line in jsonl.read(path.parent/'steps.jsonl') if 'copied_from' not in line and line['step'] not in left_out]
+        lines = [line for line in finished(path.parent/'steps.jsonl') if 'copied_from' not in line and (trained is None or line['step'] <= trained)]
         found.update(groups=sum(line['mixed_groups'] + line['zero_advantage_groups'] for line in lines),
                      mixed_groups=sum(line['mixed_groups'] for line in lines))
     return provenance, found

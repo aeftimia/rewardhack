@@ -26,8 +26,8 @@ RECORD = Path('.tools') / 'launch-ready.json'
 LEDGER = Path('spending') / 'ledger.csv'
 # What the pod runs is the working tree under these paths (ops/drive_runpod.sh copies it), so they must match the tested commit.
 SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements.txt', 'requirements-vllm.txt')
-# A pod can bill outside the job's own deadline: while the driver waits for it to accept SSH (SSH_UP_SECONDS in
-# ops/pod_pins.env; then it arms the provisional timer), for that timer before the job starts, and after the deadline for
+# A pod can bill outside the job's own deadline: while the driver waits for it to accept SSH and then arms the provisional
+# timer (SSH_UP_SECONDS and ARM_SECONDS in ops/pod_pins.env), for that timer before the job starts, and after the deadline for
 # the runner's wait between TERM and KILL (KILL_AFTER_SECONDS there) and the grace before the pod removes itself.
 PROVISIONAL_MINUTES = 15
 PINS = Path('ops') / 'pod_pins.env'
@@ -114,7 +114,8 @@ def pod_pin(root, name):
 def overhead_minutes(root, settings):
     """The minutes a pod can bill beyond its job's deadline under these driver settings (see PROVISIONAL_MINUTES)."""
     after = pod_pin(root, 'KILL_AFTER_SECONDS') + grace_seconds(settings)
-    return math.ceil(pod_pin(root, 'SSH_UP_SECONDS') / 60) + PROVISIONAL_MINUTES + math.ceil(after / 60)
+    before = pod_pin(root, 'SSH_UP_SECONDS') + pod_pin(root, 'ARM_SECONDS')
+    return math.ceil(before / 60) + PROVISIONAL_MINUTES + math.ceil(after / 60)
 
 
 def grace_seconds(settings):

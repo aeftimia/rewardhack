@@ -40,7 +40,7 @@ def test_stamped_runs_are_counted_per_run_with_their_groups(tmp_path):
     (run/'training-rollouts.jsonl').write_text(jsonl.dumps(provenance.stamp(rows, meta)))
     (run/'steps.jsonl').write_text(jsonl.dumps([dict(step=1, mixed_groups=1, zero_advantage_groups=3, meta=meta),
                                                 dict(step=2, mixed_groups=1, zero_advantage_groups=0, meta=meta)]))
-    (run/'summary.json').write_text(json.dumps(dict(status='failed', untrained_step=2)))
+    (run/'summary.json').write_text(json.dumps(dict(status='failed', untrained_step=2, global_step=1)))
     [entry], refused = provenance.cells(tmp_path)
     assert refused == []
     assert entry['answers'] == 5
@@ -192,3 +192,25 @@ def test_the_flags_read_and_the_whole_options_among_them_are_stated_from_the_cod
     assert prefixes == provenance.WHOLE_OPTIONS
     assert provenance.flag(['--tasks', 'false', '--taskset', 'hard'], 'taskset') == 'hard'
     assert provenance.flag(['--tasks', 'false'], 'taskset') is None
+
+
+def test_a_run_that_did_not_complete_counts_only_the_steps_it_trained_on(tmp_path):
+    """A step is scored (rows and steps.jsonl line written) before its update, so an unfinished run's last step was never
+    trained on. A run killed from outside writes no final summary: its training-log.json says which steps were trained,
+    and without it the file is refused (review round 34)."""
+    meta = provenance.meta(**TRAINED)
+    for name, summary, log in (('killed-logged', dict(status='running'), [dict(loss=0.1, step=1), dict(loss=0.2, step=2)]),
+                               ('killed-silent', dict(status='running'), None),
+                               ('failed-old', dict(status='failed', global_step=1), None)):
+        run = tmp_path/name
+        rows = [dict(row(exploit=True), step=step) for step in (1, 2, 3)]
+        write(run/'training-rollouts.jsonl', provenance.stamp(rows, dict(meta, run=name)), **summary)
+        (run/'steps.jsonl').write_text(jsonl.dumps([dict(step=step, mixed_groups=1, zero_advantage_groups=0) for step in (1, 2, 3)])
+                                       + '{"step": 4, "mixed_')  # a line a kill cut short
+        if log is not None:
+            (run/'training-log.json').write_text(json.dumps(log + [dict(train_runtime=9.0, step=2)]))
+    table, refused = provenance.cells(tmp_path)
+    found = {entry['run']: (entry['answers'], entry['groups']) for entry in table}
+    assert found == {'killed-logged': (2, 2), 'failed-old': (1, 1)}
+    [(path, why)] = refused
+    assert 'killed-silent' in path and 'without saying which steps were trained on' in why

@@ -65,11 +65,13 @@ in_env() {
 # A failed attempt is retried once with what is left of DOWNLOAD_WAIT (review round 30: the 5 Nov gpt-oss-120b download
 # failed mid-transfer); hf keeps the files the first attempt finished. An attempt that used up the wait is not retried.
 fetch_model() {
-  local end=$((SECONDS + ${DOWNLOAD_WAIT:?the caller sets DOWNLOAD_WAIT})) out=~/out/download-"${1##*/}".log
+  local end=$((SECONDS + ${DOWNLOAD_WAIT:?the caller sets DOWNLOAD_WAIT})) out=~/out/download-"${1##*/}".log left
   if fetch_attempt "$1" "$2" "$DOWNLOAD_WAIT" > "$out" 2>&1; then return 0; fi
-  if ((end - SECONDS <= 0)); then log "download $1 used its whole limit of $DOWNLOAD_WAIT s (see $out)"; return 1; fi
-  log "retry download $1 after a failure (see $out): $((end - SECONDS)) s left of its limit"
-  fetch_attempt "$1" "$2" $((end - SECONDS)) >> "$out" 2>&1
+  # Read once: `timeout 0` means no limit at all, so a second that ticks between a check and the call must not reach it.
+  left=$((end - SECONDS))
+  if ((left < 1)); then log "download $1 used its whole limit of $DOWNLOAD_WAIT s (see $out)"; return 1; fi
+  log "retry download $1 after a failure (see $out): $left s left of its limit"
+  fetch_attempt "$1" "$2" "$left" >> "$out" 2>&1
 }
 fetch_attempt() { timeout "$3" "$HF" download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*'; }
 
