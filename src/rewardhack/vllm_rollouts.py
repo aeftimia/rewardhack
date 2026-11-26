@@ -17,6 +17,8 @@ import httpx
 
 from .sampling import TEMPERATURE, TOP_K, TOP_P
 
+SEED_STRIDE = 10**6
+
 
 def add_arguments(parser):
     parser.add_argument('--rollout-backend', choices=['transformers', 'vllm'], default='transformers')
@@ -173,8 +175,10 @@ class AdapterRollouts:
         began = time.monotonic()
         trainer.model.save_pretrained(self.path, safe_serialization=True)
         digest = hashlib.sha256((self.path/'adapter_model.safetensors').read_bytes()).hexdigest()
-        record = dict(step=trainer.state.global_step, adapter_sha256=digest,
-                      seed=self.args.seed + trainer.state.global_step * len(prompts), status='failed')
+        # `step` counts from 1, as the rollout rows and steps.jsonl do. Each run's seeds start SEED_STRIDE apart, so runs whose
+        # --seed differs by one do not share request seeds a slot apart (a run uses far fewer than SEED_STRIDE requests).
+        record = dict(step=trainer.state.global_step + 1, adapter_sha256=digest,
+                      seed=self.args.seed * SEED_STRIDE + trainer.state.global_step * len(prompts), status='failed')
         # No live activations exist between steps. Return cached blocks to CUDA
         # before waking the second process; its weights sleep during the update.
         if torch.cuda.is_available():

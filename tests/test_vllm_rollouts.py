@@ -195,7 +195,9 @@ def test_every_batch_reloads_current_adapter_and_sleeps(backend):
     assert all(row['status'] == 'completed' for row in records)
     assert records[0]['adapter_sha256'] != records[1]['adapter_sha256']
     assert 'reload_check' in records[0] and 'reload_check' not in records[1]
-    assert sorted(seeds) == [7, 8, 9, 10]
+    # Run seed 7 starts at 7 * SEED_STRIDE; step 0's two prompts take two seeds and step 1's the next two.
+    assert sorted(seeds) == [7_000_000, 7_000_001, 7_000_002, 7_000_003]
+    assert [row['step'] for row in records] == [1, 2]  # counted from 1, as the rollout rows and steps.jsonl are
 
 
 def test_each_training_process_registers_its_own_adapter_name(tmp_path, backend):

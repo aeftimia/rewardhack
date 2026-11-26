@@ -44,7 +44,7 @@ def tiny(kind):
     return model, tokenizer
 
 
-def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None, extra=None, rollouts=None, timeouts_stop=False, **overrides):
+def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None, extra=None, rollouts=None, timeouts_stop=False, summary=None, **overrides):
     """Run `hf_grpo.train` with `reward_of(position in batch, completion text, step)` in place of Lean and the judge.
 
     None from `reward_of` is a rollout the verifier could not decide. Returns the adapter's change, TRL's log,
@@ -76,7 +76,7 @@ def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None
                            save_every=99, stop_no_variation=99, train_deadline=time.monotonic()+3600,
                            rollout_backend='transformers', rollout_url='http://127.0.0.1:8011')
     vars(args).update(overrides)
-    summary = dict(rollouts={})
+    summary = dict(rollouts={}) if summary is None else summary  # a caller's dict outlives a run that raises
     fit = hf_grpo.prepare_training(model, tokenizer, TASKS, args, summary, rollouts=rollouts)
     start = {name: p.detach().clone() for name, p in model.named_parameters() if p.requires_grad}
     torch.manual_seed(31415)  # what the before-evaluation does between building the trainer and training

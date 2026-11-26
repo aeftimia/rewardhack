@@ -608,6 +608,9 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             # Whatever stopped training, the updates made so far were paid for. The deadline repeats every 30 s; it has
             # been heard, and must not cut this save short.
             deadline.disarm()
+            # The step in progress did not update the model. Its rows, its steps.jsonl line and its share of the rollout
+            # totals and reward groups are written once it is scored; readers of a failed run leave out this step.
+            summary['untrained_step'] = trainer.state.global_step + 1
             # The saves must not replace the error that stopped training as the run's recorded reason. A save fails on the
             # disk (OSError: full, unwritable) or the card (RuntimeError: a CUDA error left by out of memory); its error is
             # recorded in the summary and attached to the original, which is what is raised.

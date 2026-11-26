@@ -216,8 +216,10 @@ def test_a_run_that_fails_keeps_a_resumable_checkpoint_of_its_last_step(tmp_path
         if step == 3 and i == 1:  # mid-batch: the first rollout of step 3 is scored and saved as a partial row
             raise RuntimeError('scoring failed')
         return REWARD(i, raw, step)
+    summary = dict(rollouts={})
     with pytest.raises(RuntimeError, match='scoring failed'):
-        train(tmp_path, monkeypatch, failing, steps=4, save_every=5)
+        train(tmp_path, monkeypatch, failing, steps=4, save_every=5, summary=summary)
+    assert summary['untrained_step'] == 3 and summary['global_step'] == 2  # the step whose rows did not update the model
     failed = SimpleNamespace(out=tmp_path/'run0')
     assert [row.get('partial_batch') for row in lines(failed, 'training-rollouts.jsonl')][-1] is True
     assert (checkpoint(failed, 2)/'optimizer.pt').is_file() and not checkpoint(failed, 3).exists()
