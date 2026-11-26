@@ -13,7 +13,7 @@ repos:
         args: [--maxkb=15000, --enforce-all]
         stages: [pre-commit]
   - repo: https://github.com/aeftimia/commit-gate
-    rev: v0.1.0
+    rev: 18344fa91b278fac9182607235e3f773a83d468b  # v0.1.1 (a commit SHA, so a moved tag cannot change what runs)
     hooks:
       - id: withheld-terms  # the terms file: .claude/commit-gate-terms.txt in the main checkout, untracked (the default)
       - id: withheld-terms-message
