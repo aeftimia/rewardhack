@@ -23,9 +23,11 @@ fi
 if [[ -n ${SMOKE_PART_ONE+set} && $SMOKE_PART_ONE == 1 ]]; then
   # The Part 1 pair is the whole job: no probe, no funded-arm runs after it, and its length and time limit stated, not
   # taken from the preflight defaults (12 steps, 60 minutes). ${X+set} tests whether the launch set X (bash 3.2 has no -v).
-  [[ -n ${SMOKE_SKIP_PROBE+set} && $SMOKE_SKIP_PROBE == 1 && -n ${SMOKE_SECOND_RUN+set} && $SMOKE_SECOND_RUN == 0
+  # vLLM samples the rollouts and evaluations: without it the pair would run on the trainer's own sampler, many times
+  # slower, and record a run on the wrong backend (review round 16).
+  [[ -n ${SMOKE_SKIP_PROBE+set} && $SMOKE_SKIP_PROBE == 1 && -n ${SMOKE_SECOND_RUN+set} && $SMOKE_SECOND_RUN == 0 && $SMOKE_VLLM_ROLLOUTS == 1
      && -z ${SMOKE_MEMORY_LIMIT+set} && -n ${SMOKE_STEPS+set} && -n ${SMOKE_TRAIN_SECONDS+set} && -n ${SMOKE_FINAL_EVAL_SECONDS+set} ]] || {
-    echo 'SMOKE_PART_ONE=1 needs SMOKE_SKIP_PROBE=1, SMOKE_SECOND_RUN=0, no SMOKE_MEMORY_LIMIT, and SMOKE_STEPS, SMOKE_TRAIN_SECONDS and SMOKE_FINAL_EVAL_SECONDS set'; exit 2;
+    echo 'SMOKE_PART_ONE=1 needs SMOKE_SKIP_PROBE=1, SMOKE_SECOND_RUN=0, SMOKE_VLLM_ROLLOUTS=1, no SMOKE_MEMORY_LIMIT, and SMOKE_STEPS, SMOKE_TRAIN_SECONDS and SMOKE_FINAL_EVAL_SECONDS set'; exit 2;
   }
   # The setup allowance below is the API judge's; a judge served on the pod adds its download, start and validation.
   [[ -z ${JUDGE_KIND+set} || $JUDGE_KIND == api ]] || { echo 'SMOKE_PART_ONE=1 is sized for JUDGE_KIND=api'; exit 2; }

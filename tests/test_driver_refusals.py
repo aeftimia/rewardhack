@@ -49,21 +49,24 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', **settings):
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', KEEP_POD='1', AUTOSTOP_GRACE_SECONDS='1801'), 'at most 1800'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='1800'), 'at most 600'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', KEEP_POD='yes'), 'KEEP_POD must be 0 or 1'),
+    # Part 1 runs on vLLM rollouts and evaluations; without them it would silently use the trainer's sampler (round 16).
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
+                                        SMOKE_STEPS='60', SMOKE_TRAIN_SECONDS='6000', SMOKE_FINAL_EVAL_SECONDS='600'), 'SMOKE_VLLM_ROLLOUTS=1'),
     # The vLLM server's context is sized to SMOKE_TOKEN_LIMIT; a memory step's longer answers could never be sampled (round 7).
     ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', LEAN_ISOLATION='none', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1',
                                         SMOKE_SECOND_RUN='0', SMOKE_MEMORY_LIMIT='4096'), 'not with SMOKE_VLLM_ROLLOUTS=1'),
     # The after-evaluation's reserve must be stated, and must leave room in each run's limit (review round 2, 26 Nov).
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_TRAIN_SECONDS='6000'), 'SMOKE_FINAL_EVAL_SECONDS set'),
-    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_TRAIN_SECONDS='6000', SMOKE_FINAL_EVAL_SECONDS='6000', JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key'), 'below SMOKE_TRAIN_SECONDS'),
-    # clean_env sets JUDGE_KIND=pod: Part 1's setup allowance is the API judge's.
-    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
-                                        SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='6000'), 'is sized for JUDGE_KIND=api'),
-    ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
+    # clean_env sets JUDGE_KIND=pod: Part 1 runs on vLLM rollouts, which need the API judge.
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
+                                        SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='6000'), 'vLLM pilot needs API judge'),
+    ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='90m'), 'as whole numbers'),
     # Two runs of 110 minutes, each with a 13.5-minute scoring tail, after 30 minutes of setup need 277 minutes; the driver is given 240.
-    ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
+    ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='6600'), 'needs a deadline of at least 277 minutes'),
 ])
 def test_the_driver_refuses_before_it_reaches_for_the_pod(tmp_path, remote, settings, said):
@@ -91,7 +94,7 @@ def test_a_complete_part_one_launch_passes_every_check(tmp_path):
     launch for the wrong reason. The planned settings must reach the pod."""
     code, output, reached = drive(tmp_path, JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key',
                                   LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
-                                  SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='5400', SMOKE_TOKEN_LIMIT='2048')  # 30 + 2 x (90 + 13.5) = 237 of 240 minutes
+                                  SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='5400', SMOKE_TOKEN_LIMIT='2048', SMOKE_VLLM_ROLLOUTS='1')  # 30 + 2 x (90 + 13.5) = 237 of 240 minutes
     assert code != 2 and 'invalid' not in output and 'does not read' not in output and reached
 
 
