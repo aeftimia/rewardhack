@@ -114,6 +114,15 @@ class Meter:
         self.rates = dict(input=nonnegative_finite(usd_per_m_input, 'input token price'),
                           output=nonnegative_finite(usd_per_m_output, 'output token price'))
         self.totals = dict(input=0, output=0, reasoning=0, usd=0.0, requests=0, errors=0, uncounted=dict(input=0, output=0, reasoning=0))
+        # Replies are counted from concurrent scoring threads: whoever changes or reads `totals` holds this (judge.py).
+        import threading
+        self.lock = threading.Lock()
+
+    def snapshot(self):
+        """A copy of the totals as they stand, consistent with each other: threads may still be counting replies."""
+        import copy
+        with self.lock:
+            return copy.deepcopy(self.totals)
 
     def add(self, usage):
         """Count one served reply and return its counters (`token_counts`)."""

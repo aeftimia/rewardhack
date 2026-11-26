@@ -42,9 +42,10 @@ if [[ -n ${SMOKE_PART_ONE+set} && $SMOKE_PART_ONE == 1 ]]; then
     echo 'SMOKE_PART_ONE=1 needs SMOKE_FINAL_EVAL_SECONDS below SMOKE_TRAIN_SECONDS'; exit 2;
   }
   # A run stopped at its own limit exits only once the answers already being scored finish (outcomes.score_concurrently):
-  # one row's worst case, a grader check, three verifier checks with retries and a judge request with its retries.
-  # cap: 1.5x estimated 470 s
-  SCORING_TAIL_SECONDS=720
+  # one row's worst case, a grader check (10 s), three verifier checks with retries (3 x 80 s) and a judge request with its
+  # retries (4 x 60 s): 490 s, and the OpenAI client's waits between retries on top (review round 14).
+  # cap: 1.5x estimated 540 s
+  SCORING_TAIL_SECONDS=810
   ((DEADLINE*60 >= PART1_SETUP_MINUTES*60 + 2*(SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS))) || {
     echo "SMOKE_PART_ONE=1 needs a deadline of at least $((PART1_SETUP_MINUTES + (2*(SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS)+59)/60)) minutes: setup and two runs of SMOKE_TRAIN_SECONDS, each with its scoring tail"; exit 2;
   }

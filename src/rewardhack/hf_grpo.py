@@ -774,7 +774,7 @@ def run(args):
             rollouts.close()
         gpu = sampler.summary()
         meter = None if args.judge_fn is None else args.judge_fn.meter
-        summary['judge_usage'] = meter.totals if meter else None
+        summary['judge_usage'] = meter.snapshot() if meter else None  # a copy: scoring threads may still be counting (review round 14)
         summary.update(elapsed_seconds=time.perf_counter()-started, peak_rss_gib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/2**(20 if sys.platform != 'darwin' else 30),
                        peak_gpu_memory_used_gib=None if gpu['gpu_sampler_error'] else gpu['gpu_peak_mib']/1024,
                        max_gpu_utilization=None if gpu['gpu_sampler_error'] else gpu['gpu_max_util'], gpu_sampler_error=gpu['gpu_sampler_error'])

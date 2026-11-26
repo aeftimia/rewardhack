@@ -163,11 +163,10 @@ def _api(model_id, base_url, key_env, usd_per_m_input, usd_per_m_output, extra, 
     extra_body = {'response_format': SCHEMA, **extra}
 
     meter.totals.update(truncated=0, unreadable=0, last_error=None)
-    # Rows are scored concurrently (outcomes.score_concurrently): the totals change under a lock, the request runs outside
-    # it. The cap is checked before each request, so up to the number of requests already in flight (at most a batch, about
-    # $0.0003 each at gpt-5.4-nano prices) can land after it is reached.
-    lock = threading.Lock()
-    meter.lock = lock
+    # Rows are scored concurrently (outcomes.score_concurrently): the totals change under the meter's lock, the request runs
+    # outside it. The cap is checked before each request, so up to the number of requests already in flight (at most a batch,
+    # about $0.0003 each at gpt-5.4-nano prices) can land after it is reached.
+    lock = meter.lock
 
     def ask(prompt):
         with lock:
