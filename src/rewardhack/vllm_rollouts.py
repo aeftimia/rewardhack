@@ -10,6 +10,7 @@ import json
 import math
 import time
 import uuid
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 
@@ -18,6 +19,19 @@ import httpx
 from .sampling import TEMPERATURE, TOP_K, TOP_P
 
 SEED_STRIDE = 10**6
+
+
+def pinned_vllm():
+    """The vLLM version this client is written against: the one pin, in requirements-vllm.txt at the repository root,
+    which the pod installs from (the package is installed editable from the checkout, so the file is always beside it)."""
+    pins = [line.split('==')[1].strip() for line in (Path(__file__).resolve().parents[2]/'requirements-vllm.txt').read_text().splitlines()
+            if line.startswith('vllm==')]
+    if len(pins) != 1:
+        raise ValueError(f'requirements-vllm.txt must pin vllm exactly once, found {pins}')
+    return pins[0]
+
+
+VLLM_VERSION = pinned_vllm()
 
 
 def add_arguments(parser):
@@ -65,8 +79,8 @@ class AdapterRollouts:
 
     def preflight(self):
         version = self.request('GET', '/version').json()['version']
-        if version != '0.34.0':
-            raise ValueError(f'expected vLLM 0.34.0, got {version}')
+        if version != VLLM_VERSION:
+            raise ValueError(f'expected vLLM {VLLM_VERSION} (requirements-vllm.txt), got {version}')
         models = self.request('GET', '/v1/models').json()['data']
         expected = f'{self.args.model}@{self.args.revision}'
         if expected not in [model['id'] for model in models]:

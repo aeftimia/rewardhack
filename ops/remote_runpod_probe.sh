@@ -12,7 +12,7 @@ REV=2123003760781134cfc31124aa6560a45b491fdf
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
 log start vllm-install
 # shellcheck disable=SC2015  # the failure branch is meant to run when either step fails
-python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm==0.33.0 -e . > ~/out/vllm-install.log 2>&1 \
+python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q -r requirements-vllm.txt -e . > ~/out/vllm-install.log 2>&1 \
   || { log VLLM_INSTALL_FAILED; touch ~/out/DONE; exit 1; }
 /workspace/vllm-venv/bin/python -c 'import vllm; print(vllm.__version__)' >> ~/out/steps.log
 log start download

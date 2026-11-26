@@ -14,7 +14,8 @@ SUMMARY_KEYS = {'model', 'report_mode', 'variant', 'samples', 'planned', 'reason
                 'reasoning', 'usd', 'requests', 'errors', 'uncounted', 'mean_output_tokens', 'elapsed_seconds', 'purpose', 'cost_cap_hit'}
 
 
-def probe(monkeypatch, tmp_path, reply, made=None, **changes):
+def probe(monkeypatch, tmp_path, reply, made=None, prices=(0.0, 0.0), **changes):
+    monkeypatch.setitem(model_io.PRICES, 'm', prices)  # the stand-in model's row in the one price table
     """Run the probe against `reply(number)` for the number-th request; returns the requests made (also kept in `made`)."""
     monkeypatch.setattr(openai_probe, 'select_tasks', lambda *a, **kw: [TASK])
     monkeypatch.setattr(openai_probe, 'taskset_rows', lambda *a: [TASK])
@@ -27,7 +28,7 @@ def probe(monkeypatch, tmp_path, reply, made=None, **changes):
             number = len(made)
         return reply(number)
     monkeypatch.setattr(openai_probe, 'call', call)
-    args = dict(report_mode='prose', max_usd=1, usd_per_m_input=0, usd_per_m_output=0, out=tmp_path, taskset='v1', tasks='all', limit=None,
+    args = dict(report_mode='prose', max_usd=1, base_url='https://api.openai.com/v1', out=tmp_path, taskset='v1', tasks='all', limit=None,
                 samples=10, concurrency=2, follow_on=False, variant='neutral', model='m', reasoning_effort=None, max_tokens=8)
     openai_probe.run(SimpleNamespace(**dict(args, **changes)))
     return made
@@ -39,7 +40,7 @@ def rows(tmp_path):
 
 def test_the_cost_cap_stops_new_requests(monkeypatch, tmp_path):
     dollar = dict(raw='{}', finish='stop', model='m', usage=dict(prompt_tokens=1_000_000, completion_tokens=0))  # $1 each at $1/M input
-    made = probe(monkeypatch, tmp_path, lambda number: dollar, max_usd=2, usd_per_m_input=1, usd_per_m_output=1)
+    made = probe(monkeypatch, tmp_path, lambda number: dollar, max_usd=2, prices=(1, 1))
     summary = json.loads((tmp_path/'summary.json').read_text())
     # The second reply is metered before its worker takes another job; only the other worker's request in flight may still finish.
     assert 2 <= len(made) <= 2 + 1 and summary['cost_cap_hit'] and summary['planned'] == 10
@@ -78,6 +79,6 @@ def test_an_error_stops_the_queued_jobs(monkeypatch, tmp_path):
     made = []
     with pytest.raises(model_io.UnmeteredReply):
         probe(monkeypatch, tmp_path, lambda number: dict(raw='{}', usage=None, finish='stop', model='m'), made,
-              samples=50, usd_per_m_input=0.2, usd_per_m_output=1.25)
+              samples=50, prices=(0.2, 1.25))
     # The first reply stops the run; only requests already started by the two workers may still be sent.
     assert 1 <= len(made) <= 1 + 1 and not (tmp_path/'summary.json').exists()

@@ -21,8 +21,9 @@ remove_after() {  # detached, so it outlives this script, the SSH session and a 
 arm() {  # $1: seconds until removal. The new timer is proven alive first; only then are the earlier ones stopped.
   local earlier new pid
   # The bracket keeps the pattern from matching any command line that merely quotes it (a shell running this check); the timer's own
-  # command line, `bash -c "sleep N; while true; do runpodctl remove pod ..."`, still matches.
-  earlier=$(pgrep -f '[r]unpodctl remove pod')  # empty when none are running; pgrep's status 1 for that is not an error here
+  # command line, `bash -c "sleep N; while true; do runpodctl remove pod ..."`, still matches. Only this pod's timers: a pod has
+  # no other, and tests that run in parallel on one machine (each with its own pod id) cannot stop each other's.
+  earlier=$(pgrep -f "[r]unpodctl remove pod '$POD_ID'")  # empty when none are running; pgrep's status 1 for that is not an error here
   remove_after "$1"
   new=$!
   sleep 1

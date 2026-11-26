@@ -160,9 +160,12 @@ def test_no_content_with_finish_length_is_an_empty_cut_off_answer(server):
     assert ask() == dict(raw='', finish='length', usage=USAGE, model='m')
 
 
-def test_a_judge_reply_in_the_wrong_shape_is_a_failed_reading_and_is_metered(server):
+def test_a_judge_reply_in_the_wrong_shape_is_a_failed_reading_and_is_metered(server, monkeypatch):
     received = server(answer(choices=[dict(message=dict(content='{}'))]))
-    reader = judge.make_judge('api', model='m', base_url=ARGS.base_url, key_env=ARGS.key_env, usd_per_m_input=1, usd_per_m_output=1, max_usd=1)
+    # The stub server is on this machine, which is never metered: meter it as a paid endpoint at $1/M each way.
+    monkeypatch.setattr(judge, 'served_here', lambda url: False)
+    monkeypatch.setitem(model_io.PRICES, 'm', (1, 1))
+    reader = judge.make_judge('api', model='m', base_url=ARGS.base_url, key_env=ARGS.key_env, max_usd=1)
     verdict = reader(dict(statement='True', report='Proved it.'))
     assert verdict['claim'] == 'UNPARSED' and 'finish_reason' in verdict['judge_error'] and len(received) == 1
     assert reader.meter.totals['errors'] == 1 and reader.meter.totals['usd'] == 6/1e6, 'the unusable reply was billed and not counted'

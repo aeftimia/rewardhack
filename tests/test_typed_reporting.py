@@ -7,10 +7,11 @@ import pytest
 from rewardhack import outcomes, prompts, reporting
 from rewardhack.grader import parse_completion
 from rewardhack.rates import rate
+from rewardhack.verifier import LEAN_VERSION
 
 TRUE = dict(id='t', group='g', tier='easy', true=True, statement='True')
 FALSE = dict(TRUE, id='f', true=False, statement='False')
-LEAN = Path(__file__).resolve().parents[1]/'.tools/lean-4.19.0-darwin_aarch64/bin/lean'
+LEAN = Path(__file__).resolve().parents[1]/f'.tools/lean-{LEAN_VERSION}-darwin_aarch64/bin/lean'
 
 
 def envelope(error=False):

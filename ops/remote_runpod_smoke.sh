@@ -32,7 +32,6 @@ SMOKE_TRAIN_SECONDS=${SMOKE_TRAIN_SECONDS:-3600}  # fallback-ok: optional settin
 SMOKE_FINAL_EVAL_SECONDS=${SMOKE_FINAL_EVAL_SECONDS:-600}  # fallback-ok: optional setting; time reserved for the after-evaluation when unset
 SMOKE_MEMORY_SECONDS=${SMOKE_MEMORY_SECONDS:-1800}  # fallback-ok: optional setting; the memory check's documented limit when unset
 source ops/pod_lib.sh
-JUDGE_PORT=8011
 cleanup() {
   rm -f ~/.judge_key
   for pid in "$JUDGE_PID" "$ROLLOUT_PID"; do
@@ -41,9 +40,9 @@ cleanup() {
 }
 trap cleanup EXIT
 OUT_NEED_GB=(10 45)  # indexed by SMOKE_PART_ONE: a Part 1 pair with expert LoRA writes about 40 GB of results
-pod_self_test 40 "${OUT_NEED_GB[$SMOKE_PART_ONE]}" "$JUDGE_PORT"
-MODEL=openai/gpt-oss-20b; REV=6cee5e81ee83917806bbde320786a8fb61efebee
-JUDGE=${JUDGE_MODEL:-Qwen/Qwen3-8B}; JUDGE_REV=${JUDGE_REV:-b968826d9c46dd6066d109eabc6255188de91218}
+pod_self_test 40 "${OUT_NEED_GB[$SMOKE_PART_ONE]}" "$JUDGE_PORT" "$ROLLOUT_PORT"
+MODEL=$GPT_OSS_20B; REV=$GPT_OSS_20B_REV
+JUDGE=$POD_JUDGE; JUDGE_REV=$POD_JUDGE_REV
 # The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
 # forwards the key into ~/.judge_key (mode 600) only when asked to. The key is held in an unexported shell variable
 # and given only to the Python processes that call the judge (`judged`), so installers and downloads never have it.
@@ -76,9 +75,9 @@ log start lean
 # 163446784 of 343842845 bytes in 60 s: allow 3x an estimated 140 s at that rate.
 # shellcheck disable=SC2015  # the failure branch is meant to run when any step fails
 # cap: 3x estimated 140 s
-mkdir -p /workspace/lean && curl -fsSL --max-time 420 https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst | tar --zstd -xf - -C /workspace/lean \
+mkdir -p /workspace/lean && curl -fsSL --max-time 420 "https://github.com/leanprover/lean4/releases/download/v$LEAN_VERSION/lean-$LEAN_VERSION-linux.tar.zst" | tar --zstd -xf - -C /workspace/lean \
   || fail LEAN_DOWNLOAD_FAILED
-LEAN_BIN=/workspace/lean/lean-4.19.0-linux/bin/lean
+LEAN_BIN=/workspace/lean/lean-$LEAN_VERSION-linux/bin/lean
 # The verifier writes each source into a private temporary folder; the unprivileged user needs to read that one file.
 OPEN=''
 # shellcheck disable=SC2016  # $@ and $a belong to the wrapper this text is written into, not to this script
@@ -142,7 +141,7 @@ if [[ $JUDGE_KIND == api ]]; then
 # Preflight: the probe and two training runs. Part 1: its two runs (the driver refuses it with a probe or a further run);
 # a third share there only cut each run's allowance, and 4 prompt groups per step make a run's judge use about 4 times larger.
 JUDGE_PROCESSES=(3 2)  # indexed by SMOKE_PART_ONE
-JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano --judge-usd-in 0.20 --judge-usd-out 1.25
+JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano
             --judge-max-usd "$(awk -v cap="${JUDGE_MAX_USD:?the driver passes JUDGE_MAX_USD}" -v n="${JUDGE_PROCESSES[$SMOKE_PART_ONE]}" 'BEGIN { printf "%.4f", cap / n }')")
 else
 # --- Judge server: a small model in a fixed slice of the card, OpenAI-compatible on localhost.
@@ -150,10 +149,6 @@ log start judge-server
 PATH="/workspace/vllm-venv/bin:$PATH" /workspace/vllm-venv/bin/vllm serve "$JUDGE" --revision "$JUDGE_REV" --port "$JUDGE_PORT" --host 127.0.0.1 --max-model-len 3072 \
   --gpu-memory-utilization "${JUDGE_GPU_FRACTION:-0.22}" > ~/out/judge-server.log 2>&1 &
 JUDGE_PID=$!
-# 15 minutes of elapsed time. vLLM's first start took 6.5 minutes (390 s) on this pod type, with its own fetch of the weights; that
-# was gpt-oss-20b in the benchmark job, the only start timed so far, and this judge model's own start has not been timed.
-# cap: 2x measured 390 s
-SERVER_WAIT=900
 wait_for_server "$JUDGE_PID" "$JUDGE_PORT" "$JUDGE" "$SERVER_WAIT" || fail JUDGE_SERVER_DID_NOT_START
 refuse_ignored_settings ~/out/judge-server.log
 export NO_KEY=none
@@ -215,16 +210,16 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   # sizes up to 1,024 on this card, most of a 125 s engine start (measuring pass). Larger batches (prefill) run eagerly.
   VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True PATH="/workspace/vllm-venv/bin:$PATH" \
     /workspace/vllm-venv/bin/vllm serve "$MODEL" --revision "$REV" --served-model-name "$MODEL@$REV" \
-      --host 127.0.0.1 --port 8011 --max-model-len $((LIMIT + 2048)) --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) --max-cudagraph-capture-size 32 \
+      --host 127.0.0.1 --port "$ROLLOUT_PORT" --max-model-len $((LIMIT + 2048)) --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) --max-cudagraph-capture-size 32 \
       --enable-lora --max-lora-rank 16 --max-loras 2 --enable-sleep-mode --enable-scale-out \
       --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
   ROLLOUT_PID=$!
   # cap: 2x measured 390 s
-  wait_for_server "$ROLLOUT_PID" 8011 "$MODEL@$REV" 900 || fail ROLLOUT_SERVER_DID_NOT_START
+  wait_for_server "$ROLLOUT_PID" "$ROLLOUT_PORT" "$MODEL@$REV" "$SERVER_WAIT" || fail ROLLOUT_SERVER_DID_NOT_START
   refuse_ignored_settings ~/out/rollout-server.log
   # cap: 3x estimated 40 s
-  curl -fsS --max-time 120 -X POST 'http://127.0.0.1:8011/sleep?level=1' > ~/out/rollout-initial-sleep.txt || fail ROLLOUT_SLEEP_FAILED
-  BASE+=(--rollout-backend vllm --rollout-url http://127.0.0.1:8011)
+  curl -fsS --max-time 120 -X POST "http://127.0.0.1:$ROLLOUT_PORT/sleep?level=1" > ~/out/rollout-initial-sleep.txt || fail ROLLOUT_SLEEP_FAILED
+  BASE+=(--rollout-backend vllm --rollout-url "http://127.0.0.1:$ROLLOUT_PORT")
 fi
 # The batch shape of every training step in this script, so that no comparison below changes it by accident.
 SHAPE=(--num-generations "$GENERATIONS" --prompts-per-step "$PROMPTS")

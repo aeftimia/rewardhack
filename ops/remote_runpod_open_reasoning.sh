@@ -7,9 +7,10 @@ export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMP
 mkdir -p ~/out /workspace/hf
 rm -f ~/out/DONE
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
+source ops/pod_pins.env
 log start vllm-install
 # shellcheck disable=SC2015  # the failure branch is meant to run when either step fails
-python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q vllm==0.33.0 -e . > ~/out/vllm-install.log 2>&1 \
+python -m venv /workspace/vllm-venv && /workspace/vllm-venv/bin/pip install -q -r requirements-vllm.txt -e . > ~/out/vllm-install.log 2>&1 \
   || { log VLLM_INSTALL_FAILED; touch ~/out/DONE; exit 1; }
 /workspace/vllm-venv/bin/python -c 'import vllm; print(vllm.__version__)' >> ~/out/steps.log
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
@@ -25,12 +26,12 @@ fetch "$M" "$R"
 step qwen32-nothink "$M" "$R" --max-tokens 1024 --max-model-len 2048 --max-seconds 900 --template-kwargs '{"enable_thinking": false}'
 step qwen32-think   "$M" "$R" --max-tokens 8192 --max-model-len 9216 --max-seconds 1800 --template-kwargs '{"enable_thinking": true}'
 
-M=openai/gpt-oss-20b; R=6cee5e81ee83917806bbde320786a8fb61efebee
+M=$GPT_OSS_20B; R=$GPT_OSS_20B_REV
 fetch "$M" "$R"
 step oss20-low  "$M" "$R" --max-tokens 2048 --max-model-len 3072 --max-seconds 900 --template-kwargs '{"reasoning_effort": "low"}'
 step oss20-high "$M" "$R" --max-tokens 8192 --max-model-len 9216 --max-seconds 1800 --template-kwargs '{"reasoning_effort": "high"}'
 
-M=openai/gpt-oss-120b; R=b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+M=$GPT_OSS_120B; R=$GPT_OSS_120B_REV
 fetch "$M" "$R"
 step oss120-low  "$M" "$R" --max-tokens 2048 --max-model-len 3072 --max-seconds 900 --template-kwargs '{"reasoning_effort": "low"}'
 step oss120-high "$M" "$R" --max-tokens 8192 --max-model-len 9216 --max-seconds 1800 --template-kwargs '{"reasoning_effort": "high"}'

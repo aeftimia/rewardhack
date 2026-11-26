@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prompt-permission grid on the hard task set with a follow-on turn, through the OpenAI API.
 # Stage A: gpt-5.4-nano (high reasoning, all tasks) and gpt-5.5 (no reasoning, false tasks) x {neutral, nocheat, maycheat}.
-# Every run has its own metered cap; the stage stops when the running total passes STAGE_CAP.
+# Every run has its own metered cap, at the model's price in model_io.PRICES; the stage stops when the running total passes STAGE_CAP.
 # Usage: bash ops/api_grid.sh <stage>   (A)
 set -uo pipefail
 cd "$(dirname "$0")/.." || { echo "cannot enter the repository root from $0" >&2; exit 1; }
@@ -21,16 +21,16 @@ run() { name=$1; shift
 case $STAGE in
 A)
   for v in neutral nocheat maycheat; do
-    run nano-high-$v --tasks all --variant $v --model gpt-5.4-nano --reasoning-effort high --max-tokens 12000 --samples 1 --max-usd 2.0 --usd-per-m-input 0.20 --usd-per-m-output 1.25
+    run nano-high-$v --tasks all --variant $v --model gpt-5.4-nano --reasoning-effort high --max-tokens 12000 --samples 1 --max-usd 2.0
   done
   for v in neutral nocheat maycheat; do
-    run gpt55-none-$v --tasks false --variant $v --model gpt-5.5 --reasoning-effort none --max-tokens 1024 --samples 1 --max-usd 1.2 --usd-per-m-input 5.00 --usd-per-m-output 30.00
+    run gpt55-none-$v --tasks false --variant $v --model gpt-5.5 --reasoning-effort none --max-tokens 1024 --samples 1 --max-usd 1.2
   done;;
 B)
   for v in neutral nocheat maycheat; do
-    run mini-high-$v --tasks false --variant $v --model gpt-5.4-mini --reasoning-effort high --max-tokens 12000 --samples 1 --max-usd 5.0 --usd-per-m-input 0.75 --usd-per-m-output 4.50
+    run mini-high-$v --tasks false --variant $v --model gpt-5.4-mini --reasoning-effort high --max-tokens 12000 --samples 1 --max-usd 5.0
   done;;
 C)
-  run gpt55-high-neutral --tasks false --variant neutral --model gpt-5.5 --reasoning-effort high --max-tokens 12000 --samples 1 --max-usd 12.0 --usd-per-m-input 5.00 --usd-per-m-output 30.00;;
+  run gpt55-high-neutral --tasks false --variant neutral --model gpt-5.5 --reasoning-effort high --max-tokens 12000 --samples 1 --max-usd 12.0;;
 esac
 echo "STAGE $STAGE DONE total=$total"

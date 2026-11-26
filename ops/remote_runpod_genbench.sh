@@ -20,11 +20,11 @@ mkdir -p ~/out /workspace/hf
 rm -f ~/out/DONE
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
 fail() { log "$1"; exit 1; }
-MODEL=openai/gpt-oss-20b; REV=6cee5e81ee83917806bbde320786a8fb61efebee
-PORT=8011
 ADAPTER=~/pilot-repo/payload/adapter
 gpu_used() { nvidia-smi --query-gpu=memory.used --format=csv,noheader; }
 source ops/pod_lib.sh
+MODEL=$GPT_OSS_20B; REV=$GPT_OSS_20B_REV
+PORT=$ROLLOUT_PORT
 pod_self_test 40 5 "$PORT"  # its results are timings and logs
 [[ -s $ADAPTER/adapter_model.safetensors && -s $ADAPTER/adapter_config.json ]] || fail 'NO_ADAPTER: copy the trained adapter to payload/adapter before driving'
 
@@ -41,9 +41,6 @@ log 'start vllm serve at 0.30 of the card'
   --gpu-memory-utilization 0.30 --enable-lora --max-lora-rank 16 --max-loras 2 > ~/out/vllm-serve.log 2>&1 &
 SERVER=$!
 trap 'if kill -0 "$SERVER"; then stop_server "$SERVER"; fi' EXIT
-# 15 minutes of elapsed time, 2.3x the 6.5 minutes (390 s) it took the one time it was timed: the server fetches the 13 GB of weights itself (268 s last time) and then compiles and warms up (about 90 s).
-# cap: 2x measured 390 s
-SERVER_WAIT=900
 wait_for_server "$SERVER" "$PORT" "$MODEL" "$SERVER_WAIT" || fail 'VLLM_NOT_READY'
 refuse_ignored_settings ~/out/vllm-serve.log
 log "vllm ready; card memory in use $(gpu_used)"
