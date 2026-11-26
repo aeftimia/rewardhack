@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# deadline: 170
+# deadline: 60
+# (The floor `gate.py ready` reads. Each kind of job has its own minimum, which the driver requires: 170 minutes for the
+# preflight run described below, 240 with the pod judge, and for a Part 1 job its model's setup plus its runs; notes section 78.)
 # Preflight smoke test for the funded training run (docs/preflight-plan.md, step 3). One RunPod pod with a
 # 80-96 GB card. First run on a pod: 2026-11-24 (results/runpod-smoke-20261124*). Its inner limits add up to about 150 minutes
 # (probe 55, first training run 60, second 35) plus setup, so drive it with a 170 minute deadline; when everything works it ends

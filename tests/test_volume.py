@@ -61,8 +61,11 @@ exec bash -c "$*"
     (source/'train-a'/'summary.json').write_text('{}')
     (source/'known_hosts').write_text('pod key\n')
     import os
-    result = subprocess.run(['bash', str(ops/'volume_upload.sh'), 'example.invalid', '22', str(source)],
-                            env=dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}"), capture_output=True, text=True)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
+    refused = subprocess.run(['bash', str(ops/'volume_upload.sh'), 'example.invalid', '22', str(source)], env=env, capture_output=True, text=True)
+    assert refused.returncode == 2 and 'before deploying the pod' in refused.stdout  # no manifest yet: nothing reaches the pod
+    assert subprocess.run(['bash', str(ops/'volume_upload.sh'), 'manifest', str(source)], env=env).returncode == 0
+    result = subprocess.run(['bash', str(ops/'volume_upload.sh'), 'example.invalid', '22', str(source)], env=env, capture_output=True, text=True)
     calls = (tmp_path/'pod-calls').read_text() if (tmp_path/'pod-calls').exists() else ''
     return result.returncode, result.stdout+result.stderr, calls, volume/'runs'/'runpod-part1-test'
 

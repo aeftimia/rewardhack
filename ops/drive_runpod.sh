@@ -39,6 +39,9 @@ if [[ -n ${SMOKE_VOLUME+set} ]]; then VOLUME=$SMOKE_VOLUME; else VOLUME=0; fi  #
 [[ $VOLUME == 0 || $VOLUME == 1 ]] || { echo 'SMOKE_VOLUME must be 0 or 1'; exit 2; }
 RUN_ID=${RESULTS%/}; RUN_ID=${RUN_ID##*/}
 [[ $VOLUME == 0 || $RUN_ID =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "SMOKE_VOLUME=1 names the run on the volume after the results folder, which must be letters, digits, '.', '_' or '-': $RUN_ID"; exit 2; }
+# The preflight run's own limits add up to about 150 minutes plus setup (ops/remote_runpod_smoke.sh's header); the script's
+# `# deadline:` line is the floor for every job, so this minimum is held here (notes section 78).
+[[ $REMOTE != ops/remote_runpod_smoke.sh || $PART_ONE != 0 || ! $DEADLINE =~ ^[0-9]+$ || $DEADLINE -ge 170 ]] || { echo 'the preflight run (SMOKE_PART_ONE unset or 0) needs a deadline of at least 170 minutes'; exit 2; }
 if [[ $PART_ONE != 0 ]]; then
   # A Part 1 job's runs are the whole training (the gpt-oss-120b probe may follow): no preflight probe, no funded-arm runs, and its length and time limit stated, not
   # taken from the preflight defaults (12 steps, 60 minutes). ${X+set} tests whether the launch set X (bash 3.2 has no -v).
@@ -184,6 +187,8 @@ finish() {
   # A pod that answered but never started the job (no volume mounted, a failed sync) holds nothing to copy: it is removed
   # at once, not left for its provisional timer. A pod that never answered still takes the path below that says so.
   NOTHING_TO_COPY=$((ARMED == 1 && STARTED == 0))
+  # Unless an earlier launch's out is still on the pod (a relaunch after a copy that failed): that one is copied as before.
+  if [[ $NOTHING_TO_COPY == 1 ]] && ! "${SSH[@]}" "root@$HOST" '[ ! -e out ] && [ ! -L out ]'; then NOTHING_TO_COPY=0; fi
   if [[ $NOTHING_TO_COPY == 1 ]]; then say 'the job never started on the pod: nothing to copy'; fi
   for attempt in 1 2 3; do
     [[ $NOTHING_TO_COPY == 0 ]] || break
