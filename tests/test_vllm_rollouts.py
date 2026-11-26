@@ -15,6 +15,7 @@ def backend(tmp_path):
     args = SimpleNamespace(out=tmp_path, rollout_url='http://127.0.0.1:8011', model='model', revision='revision',
                            mode='train', quant='none', rollout_backend='vllm', seed=7, max_completion_length=2)
     backend = AdapterRollouts(args, 1)
+    backend.max_model_len = 16  # what preflight reads from the server
     yield backend
     backend.close()
 
@@ -59,13 +60,14 @@ def test_invalid_rollouts_fail_instead_of_training(backend, damage):
         backend.completions([[8]], seed=7, max_tokens=2)
 
 
-@pytest.mark.parametrize('wrong', ['version', 'model', 'logprobs', 'mask', 'awake'])
+@pytest.mark.parametrize('wrong', ['version', 'model', 'logprobs', 'mask', 'context', 'awake'])
 def test_preflight_checks_server_contract(backend, wrong):
     responses = {
         '/version': {'version': 'wrong' if wrong == 'version' else '0.34.0'},
         '/v1/models': {'data': [{'id': 'wrong' if wrong == 'model' else 'model@revision'}]},
         '/server_info': {'vllm_config': {'model_config': {'logprobs_mode': 'raw_logprobs' if wrong == 'logprobs' else 'processed_logprobs',
-                                                       'return_sampling_mask': wrong == 'mask'}}},
+                                                       'return_sampling_mask': wrong == 'mask',
+                                                       'max_model_len': 2 if wrong == 'context' else 16}}},
         '/is_sleeping': {'is_sleeping': wrong != 'awake'},
     }
     connect(backend, lambda request: httpx.Response(200, json=responses[request.url.path]))
@@ -247,3 +249,10 @@ def test_reload_checks_expert_tensors_on_their_own(backend, monkeypatch):
     monkeypatch.setattr(backend, 'completions', served('layer.self_attn.q_proj.lora_B.weight'))
     with pytest.raises(RuntimeError, match='experts tensors'):
         backend.verify_reload([8])
+
+
+def test_a_request_longer_than_the_server_context_is_refused_before_it_is_sent(backend):
+    """A fixed 4,096-token server context refused every request once the answer limit was 4,096 (review round 6)."""
+    connect(backend, lambda request: pytest.fail('an over-long request reached the server'))
+    with pytest.raises(ValueError, match='exceed the vLLM context'):
+        backend.completions([[8]*15], seed=7, max_tokens=2)

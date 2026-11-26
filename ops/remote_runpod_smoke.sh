@@ -177,9 +177,11 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   python -m venv /workspace/vllm-venv && timeout 600 /workspace/vllm-venv/bin/pip install -q -r requirements-vllm.txt > ~/out/install-vllm.log 2>&1 || fail VLLM_INSTALL_FAILED
   /workspace/vllm-venv/bin/pip freeze > ~/out/pip-freeze-vllm.txt
   log start rollout-server
+  # The context holds the prompt (a few hundred tokens) and an answer of up to LIMIT: 2,048 tokens of room for the prompt.
+  # A fixed 4,096 refused every request once LIMIT was 4,096 (review round 6); the rollout client also checks each request.
   VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True PATH="/workspace/vllm-venv/bin:$PATH" \
     /workspace/vllm-venv/bin/vllm serve "$MODEL" --revision "$REV" --served-model-name "$MODEL@$REV" \
-      --host 127.0.0.1 --port 8011 --max-model-len 4096 --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) \
+      --host 127.0.0.1 --port 8011 --max-model-len $((LIMIT + 2048)) --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) \
       --enable-lora --max-lora-rank 16 --max-loras 2 --enable-sleep-mode --enable-scale-out \
       --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
   ROLLOUT_PID=$!

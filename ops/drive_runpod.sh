@@ -110,7 +110,11 @@ mkdir -p "$RESULTS"
 SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$RESULTS/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 # rsync never deletes here, so every resumable checkpoint an interim copy saw would stay on this machine (the trainer keeps
 # two on the pod; with expert LoRA each is about 3 GB). Interim copies leave them out; the final copy takes the ones left.
-pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" "$@" "root@$HOST:out/" "$RESULTS/"; }
+# The vLLM hand-over adapter (rewritten every step) and the reload-check adapter are scratch, about 1 GB each: never copied.
+pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" --exclude='adapter-rollout/' --exclude='adapter-sync-check/' "$@" "root@$HOST:out/" "$RESULTS/"; }
+# Sizes in the final copy, smallest first: the pod removes itself at most 10 minutes after the job ends.
+SMALL=(--exclude='adapter*/' --exclude='trainer/checkpoint-*/')  # logs, rows, summaries, evaluations
+ADAPTERS=(--exclude='trainer/checkpoint-*/')                      # and the saved adapters, about 1 GB each
 say() { echo "$*" >> "$RESULTS/driver.log"; echo "$*"; }
 # The results are only on the pod until this machine copies them, and the pod removes itself a grace period after the job ends:
 # a laptop that goes to sleep in between loses them. macOS: hold off idle sleep for as long as this script lives (closing the lid
@@ -129,12 +133,12 @@ finish() {
   # ended the cleanup before the copy and the removal. Every step below reports its own failure.
   set +e
   say "copying results"
-  # Everything but the resumable checkpoints first, then the checkpoints (several GB with expert LoRA): the pod removes
+  # The small files, then the adapters, then the resumable checkpoints (several GB with expert LoRA): the pod removes
   # itself at most 10 minutes after the job ends, and a slow copy must cost the checkpoints, never the results.
-  # The two are recorded apart, so that a failed checkpoint copy is not reported as lost results.
+  # Results and checkpoints are recorded apart, so that a failed checkpoint copy is not reported as lost results.
   COPIED=0 CHECKPOINTS=0
   for attempt in 1 2 3; do
-    if pull --exclude='trainer/checkpoint-*/'; then COPIED=1; break; fi
+    if pull "${SMALL[@]}" && pull "${ADAPTERS[@]}"; then COPIED=1; break; fi
     say "copy attempt $attempt failed"; sleep 10
   done
   if [[ $COPIED == 0 ]]; then say 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'
@@ -197,7 +201,7 @@ while ((SECONDS < END)); do
     echo "remote finished with exit=$code"
     exit "$code"
   fi
-  if ((SECONDS % 300 < 60)) && ! pull --exclude='trainer/checkpoint-*/'; then echo 'interim copy failed; will try again'; fi
+  if ((SECONDS % 300 < 60)) && ! pull "${ADAPTERS[@]}"; then echo 'interim copy failed; will try again'; fi
 done
 echo 'driver deadline reached; the remote timeout and the pod removal timer are armed'
 exit 1

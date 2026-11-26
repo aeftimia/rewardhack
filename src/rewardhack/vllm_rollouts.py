@@ -72,6 +72,9 @@ class AdapterRollouts:
         if expected not in [model['id'] for model in models]:
             raise ValueError(f'rollout server does not advertise the pinned model {expected}')
         config = self.request('GET', '/server_info?config_format=json').json()['vllm_config']['model_config']
+        self.max_model_len = config['max_model_len']
+        if self.max_model_len <= self.args.max_completion_length:
+            raise ValueError(f'vLLM context {self.max_model_len} leaves no room for a prompt beside {self.args.max_completion_length} answer tokens')
         # Sampling is untruncated (sampling.py), so the trainer's full-vocabulary log-probabilities are the sampler's own
         # and no per-token candidate set is needed; a server that sends one was started for some other setting.
         if config['logprobs_mode'] != 'processed_logprobs' or config['return_sampling_mask']:
@@ -88,6 +91,9 @@ class AdapterRollouts:
     def completions(self, prompts, *, seed, max_tokens):
         if not prompts:
             raise ValueError('rollout prompts must not be empty')
+        longest = max(map(len, prompts))
+        if longest + max_tokens > self.max_model_len:
+            raise ValueError(f'a {longest}-token prompt and {max_tokens} answer tokens exceed the vLLM context of {self.max_model_len}')
         def send(item):
             index, prompt = item
             params = dict(n=1, max_tokens=max_tokens, temperature=TEMPERATURE,
