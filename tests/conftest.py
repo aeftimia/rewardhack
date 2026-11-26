@@ -15,6 +15,11 @@ def driver_script(tmp_path):
     if not ops.exists():
         shutil.copytree(PROJECT/'ops', ops)
         (ops/'gate.sh').write_text('#!/usr/bin/env bash\nexit 0\n')
+        # The driver records the commit it launches (launch-commit.txt), so the copy is a repository of its own.
+        import subprocess
+        identity = ['-c', 'user.name=test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null']
+        for command in (['init', '-q'], ['add', '.'], ['commit', '-q', '-m', 'driver copy']):
+            subprocess.run(['git', *identity, *command], cwd=ops.parent, check=True, capture_output=True)
     return str(ops/'drive_runpod.sh')
 
 

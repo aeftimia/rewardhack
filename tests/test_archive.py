@@ -2,6 +2,7 @@
 and the driver's settings for the Qwen3-32B job."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -49,11 +50,21 @@ elif args[:2] == ['configure', 'export-credentials']:
     left = int(os.environ.get('FAKE_SESSION_SECONDS', '28800'))
     expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=left)
     print(json.dumps({'Version': 1, 'Expiration': expiry.isoformat().replace('+00:00', 'Z')}))
+elif args[:2] == ['s3api', 'get-object']:
+    source = path(opt('--bucket'), opt('--key'))
+    if not source.exists():
+        sys.exit('An error occurred (NoSuchKey) when calling the GetObject operation')
+    Path(args[-1]).write_bytes(source.read_bytes())
 elif args[:2] == ['s3', 'presign']:
+    if os.environ.get('FAKE_PRESIGN_FAIL') and args[2].endswith(os.environ['FAKE_PRESIGN_FAIL']):
+        sys.exit('presign failed')
     print(f'https://example.invalid/{args[2].removeprefix("s3://")}?expires={opt("--expires-in")}')
 else:
     sys.exit(f'unexpected aws call {args}')
 '''
+
+
+COMMIT = 'a' * 40
 
 
 def archive(tmp_path, *args, **env):
@@ -63,9 +74,24 @@ def archive(tmp_path, *args, **env):
         (bin_dir/'fake_aws.py').write_text(FAKE_AWS)
         (bin_dir/'aws').write_text(f'#!/bin/bash\nexec "{sys.executable}" "{bin_dir}/fake_aws.py" "$@"\n')
         (bin_dir/'aws').chmod(0o755)
+        (bin_dir/'python3').write_text(f'#!/bin/bash\nexec "{sys.executable}" "$@"\n')
+        (bin_dir/'python3').chmod(0o755)
+        # The stand-in's URLs name its bucket folder: this curl copies from there.
+        (bin_dir/'curl').write_text(f"""#!/bin/bash
+out=; url=; while [[ $# -gt 0 ]]; do case $1 in -o) out=$2; shift 2;; --max-time) shift 2;; -*) shift;; *) url=$1; shift;; esac; done
+src={tmp_path}/s3/${{url#https://example.invalid/}}; cp "${{src%%\\?*}}" "$out"
+""")
+        (bin_dir/'curl').chmod(0o755)
     result = subprocess.run([sys.executable, str(PROJECT/'ops'/'run_archive.py'), *map(str, args)], capture_output=True, text=True,
                             env=dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_S3=str(tmp_path/'s3'), **env))
     return result.returncode, result.stdout + result.stderr
+
+
+def fetch(tmp_path, destination, lines):
+    env = dict(os.environ, PATH=f"{tmp_path/'bin'}:{os.environ['PATH']}")
+    done = subprocess.run(['bash', str(PROJECT/'ops'/'fetch_checkpoint.sh'), str(destination)], input=lines, text=True,
+                          capture_output=True, env=env)
+    return done.returncode, done.stdout + done.stderr
 
 
 @pytest.fixture
@@ -74,133 +100,131 @@ def run(tmp_path):
     for folder in ('train-a/adapter-step8', 'train-a/adapter', 'train-a/trainer/checkpoint-60'):
         (run/folder).mkdir(parents=True)
         (run/folder/'weights.bin').write_bytes(b'\x01' * 1000)
+    (run/'train-a'/'trainer'/'checkpoint-60'/'optimizer.pt').write_bytes(b'\x03' * 1000)
     (run/'train-a'/'steps.jsonl').write_text('{"step": 1}\n')
     (run/'known_hosts').write_text('pod key\n')
+    (run/'launch-commit.txt').write_text(COMMIT + '\n')
     return run
 
 
-def archives(run):
-    return json.loads((run/'ARCHIVES.json').read_text())
+def records(run):
+    return json.loads((run/'archive.json').read_text())
 
 
 def stored(tmp_path, entry):
     return tmp_path/'s3'/entry['uri'].removeprefix('s3://')
 
 
-def test_an_upload_keeps_the_layout_under_its_own_id_and_records_every_hash(tmp_path, run):
+def test_an_upload_gets_its_own_run_id_and_a_committed_record(tmp_path, run):
     code, output = archive(tmp_path, 'upload', run)
     assert code == 0, output
-    [entry] = archives(run)
-    assert entry['uri'] == f"s3://rewardhack-run-archive/results/runpod-part1-test/{entry['id']}/"
-    assert sorted(entry['sha256']) == ['train-a/adapter-step8/weights.bin', 'train-a/adapter/weights.bin',
-                                       'train-a/steps.jsonl', 'train-a/trainer/checkpoint-60/weights.bin']
+    [entry] = records(run)
+    assert re.fullmatch(r'\d{8}T\d{6}Z-runpod-part1-test-[0-9a-f]{8}', entry['run_id'])
+    assert entry['uri'] == f"s3://rewardhack-run-archive/{entry['run_id']}/"
+    assert entry['storage_class'] == 'STANDARD_IA' and entry['commit'] == COMMIT
+    assert 'launch-commit.txt' in entry['sha256'] and 'known_hosts' not in entry['sha256']
     assert (stored(tmp_path, entry)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
-    assert not (stored(tmp_path, entry)/'known_hosts').exists()
-    assert all(p.exists() for p in (run/'train-a'/'adapter-step8', run/'train-a'/'trainer'/'checkpoint-60'))  # nothing deleted
+    assert json.loads((stored(tmp_path, entry)/'archive.json').read_text()) == entry
+    assert (run/'train-a'/'adapter-step8').exists()  # nothing deleted
 
 
-def test_a_later_upload_of_a_same_named_folder_never_touches_an_earlier_archive(tmp_path, run):
-    """Owner, 26 Nov: each upload is keyed by its own id."""
+def test_uploads_never_share_a_prefix(tmp_path, run):
     assert archive(tmp_path, 'upload', run)[0] == 0
-    first = archives(run)[0]
     other = tmp_path/'elsewhere'/run.name
     shutil.copytree(run, other)
-    (other/'ARCHIVES.json').unlink()
+    (other/'archive.json').unlink()
     (other/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x09' * 1000)
-    assert archive(tmp_path, 'upload', other)[0] == 0
-    assert archives(other)[0]['id'] != first['id']
-    assert (stored(tmp_path, first)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
-    assert archive(tmp_path, 'upload', run)[0] == 0 and len(archives(run)) == 2
+    assert archive(tmp_path, 'upload', other)[0] == 0 and archive(tmp_path, 'upload', run)[0] == 0
+    ids = [e['run_id'] for e in records(run)] + [records(other)[0]['run_id']]
+    assert len(set(ids)) == 3
+    assert (stored(tmp_path, records(run)[0])/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
+
+
+def test_the_commit_is_required(tmp_path, run):
+    (run/'launch-commit.txt').unlink()
+    code, output = archive(tmp_path, 'upload', run)
+    assert code != 0 and '--commit' in output and not (tmp_path/'s3').exists()
+    assert archive(tmp_path, 'upload', run, '--commit', 'b' * 40)[0] == 0 and records(run)[0]['commit'] == 'b' * 40
 
 
 def test_a_file_changing_while_it_is_read_is_refused_by_s3_and_nothing_is_recorded(tmp_path, run):
-    """S3 checks each body against the SHA-256 its request carries."""
     code, output = archive(tmp_path, 'upload', run, FAKE_S3_CHANGE_ON_PUT='checkpoint-60/weights.bin')
-    assert code != 0 and 'BadDigest' in output and 'not recorded' in output and not (run/'ARCHIVES.json').exists()
-
-
-def test_a_symbolic_link_in_the_run_is_refused(tmp_path, run):
-    (run/'link').symlink_to(run/'train-a'/'steps.jsonl')
-    code, output = archive(tmp_path, 'upload', run)
-    assert code != 0 and 'symbolic links' in output and not (run/'ARCHIVES.json').exists()
-
-
-def test_resume_presigns_only_the_chosen_checkpoint(tmp_path, run):
-    """Owner, 26 Nov: Standard-IA charges per GB read, so a resume pulls one checkpoint, never snapshots or other checkpoints."""
-    (run/'train-a'/'trainer'/'checkpoint-56').mkdir()
-    (run/'train-a'/'trainer'/'checkpoint-56'/'weights.bin').write_bytes(b'\x02' * 1000)
-    (run/'train-a'/'trainer'/'checkpoint-60'/'optimizer.pt').write_bytes(b'\x03' * 1000)
-    (run/'train-a'/'trainer'/'checkpoint-600').mkdir()  # a step that only shares the prefix
-    (run/'train-a'/'trainer'/'checkpoint-600'/'weights.bin').write_bytes(b'\x04')
-    code, output = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60')
-    assert code != 0 and 'upload it first' in output
-    assert archive(tmp_path, 'upload', run)[0] == 0
-    entry = archives(run)[-1]
-    code, output = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60')
-    assert code == 0, output
-    lines = output.strip().splitlines()
-    assert [line.split()[1] for line in lines] == ['train-a/trainer/checkpoint-60/optimizer.pt', 'train-a/trainer/checkpoint-60/weights.bin']
-    assert all(f"{entry['id']}/{line.split()[1]}?expires=3600" in line.split()[2] for line in lines)
-    assert all(line.split()[0] == entry['sha256'][line.split()[1]] for line in lines)
-    for refused in ('train-a/adapter-step8', 'train-a/trainer', 'train-a/trainer/checkpoint-60/weights.bin', 'train-a/trainer/checkpoint-7'):
-        code, output = archive(tmp_path, 'resume', run, refused)
-        assert code != 0, refused
+    assert code != 0 and 'BadDigest' in output and not (run/'archive.json').exists()
 
 
 def test_a_file_added_during_the_upload_stops_the_record(tmp_path, run):
-    """Round 40: a copy from a pod still running could add files the archive never got."""
     code, output = archive(tmp_path, 'upload', run, FAKE_ADD_FILE=str(run/'train-a'/'late.json'))
-    assert code != 0 and 'changed while it was archived' in output and not (run/'ARCHIVES.json').exists()
+    assert code != 0 and 'changed while it was archived' in output and not (run/'archive.json').exists()
 
 
-def test_a_corrupt_record_stops_an_upload_before_anything_is_sent(tmp_path, run):
-    (run/'ARCHIVES.json').write_text('[{"id": ')
+@pytest.mark.parametrize('odd', ['link', 'spaced name.txt'])
+def test_links_and_spaced_names_are_refused(tmp_path, run, odd):
+    if odd == 'link':
+        (run/odd).symlink_to(run/'train-a'/'steps.jsonl')
+    else:
+        (run/odd).write_text('x')
     code, output = archive(tmp_path, 'upload', run)
-    assert code != 0 and 'not valid JSON' in output and not (tmp_path/'s3').exists()
+    assert code != 0 and not (run/'archive.json').exists()
 
 
-def test_resume_refuses_a_record_pointing_elsewhere(tmp_path, run):
+def test_a_bad_record_stops_an_upload_before_anything_is_sent(tmp_path, run):
+    (run/'archive.json').write_text('{}')
+    code, output = archive(tmp_path, 'upload', run)
+    assert code != 0 and 'not a list of archives' in output and not (tmp_path/'s3').exists()
+
+
+def test_resume_by_run_id_or_record_presigns_only_the_chosen_checkpoint(tmp_path, run):
+    """Owner, 26 Nov: Standard-IA charges per GB read, so a resume pulls one checkpoint, never snapshots or other checkpoints."""
+    for step in ('56', '600'):
+        (run/'train-a'/'trainer'/f'checkpoint-{step}').mkdir()
+        (run/'train-a'/'trainer'/f'checkpoint-{step}'/'weights.bin').write_bytes(b'\x02')
     assert archive(tmp_path, 'upload', run)[0] == 0
-    entries = archives(run)
-    entries[-1]['uri'] = 's3://rewardhack-run-archive/results/another-run/20261126T000000Z-0123abcd/'
-    (run/'ARCHIVES.json').write_text(json.dumps(entries))
-    code, output = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60')
-    assert code != 0 and 'not an archive of this folder' in output
+    entry = records(run)[-1]
+    for source in (entry['run_id'], run/'archive.json'):
+        code, output = archive(tmp_path, 'resume', source, 'train-a/trainer/checkpoint-60')
+        assert code == 0, output
+        lines = output.strip().splitlines()
+        assert [line.split()[1] for line in lines[:-1]] == ['train-a/trainer/checkpoint-60/optimizer.pt',
+                                                           'train-a/trainer/checkpoint-60/weights.bin']
+        assert lines[-1] == 'END 2' and all(f"{entry['run_id']}/" in line.split()[2] for line in lines[:-1])
+    for refused in ('train-a/adapter-step8', 'train-a/trainer', 'train-a/trainer/checkpoint-7'):
+        assert archive(tmp_path, 'resume', entry['run_id'], refused)[0] != 0, refused
+    assert archive(tmp_path, 'resume', '20261126T000000Z-nothing-0123abcd', 'train-a/trainer/checkpoint-60')[0] != 0
 
 
-def test_resume_refuses_when_the_session_ends_before_the_urls(tmp_path, run):
-    """Round 41: a presigned URL stops working when the SSO session that signed it ends."""
+def test_resume_prints_nothing_when_one_url_fails(tmp_path, run):
+    """Round 42: all lines or none, so a cut-short list never reaches a pod."""
     assert archive(tmp_path, 'upload', run)[0] == 0
-    code, output = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60', FAKE_SESSION_SECONDS='600')
-    assert code != 0 and 'aws sso login' in output and 'https://' not in output
+    code, output = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60', FAKE_PRESIGN_FAIL='weights.bin')
+    assert code != 0 and 'https://' not in output
 
 
-def test_the_pod_fetches_one_checkpoint_and_checks_every_hash(tmp_path, run):
-    """ops/fetch_checkpoint.sh on the resume lines: files land only when their SHA-256 matches the archive's."""
+def test_resume_refuses_when_the_role_credentials_end_before_the_urls(tmp_path, run):
     assert archive(tmp_path, 'upload', run)[0] == 0
-    code, lines = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60')
+    code, output = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60', FAKE_SESSION_SECONDS='600')
+    assert code != 0 and 'aws sso logout' in output and 'https://' not in output
+
+
+def test_the_pod_fetches_the_whole_checkpoint_and_checks_every_hash(tmp_path, run):
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    code, lines = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60')
     assert code == 0
-    entry = archives(run)[-1]
-    # The stand-in's URLs point at its bucket folder: a curl stand-in copies from there.
-    bin_dir = tmp_path/'bin'
-    (bin_dir/'curl').write_text(f"""#!/bin/bash
-out=; url=; while [[ $# -gt 0 ]]; do case $1 in -o) out=$2; shift 2;; --max-time) shift 2;; -*) shift;; *) url=$1; shift;; esac; done
-src={tmp_path}/s3/${{url#https://example.invalid/}}; cp "${{src%%\\?*}}" "$out"
-""")
-    (bin_dir/'curl').chmod(0o755)
-    (bin_dir/'python3').write_text(f'#!/bin/bash\nexec "{sys.executable}" "$@"\n')
-    (bin_dir/'python3').chmod(0o755)
-    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
-    fetched = subprocess.run(['bash', str(PROJECT/'ops'/'fetch_checkpoint.sh'), str(tmp_path/'pod')], input=lines, text=True,
-                             capture_output=True, env=env)
-    assert fetched.returncode == 0, fetched.stdout + fetched.stderr
+    code, output = fetch(tmp_path, tmp_path/'pod', lines)
+    assert code == 0, output
     assert (tmp_path/'pod'/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
     assert not (tmp_path/'pod'/'train-a'/'adapter-step8').exists()
-    (stored(tmp_path, entry)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x00')
-    fetched = subprocess.run(['bash', str(PROJECT/'ops'/'fetch_checkpoint.sh'), str(tmp_path/'pod2')], input=lines, text=True,
-                             capture_output=True, env=env)
-    assert fetched.returncode == 1 and 'SHA-256 differs' in fetched.stdout
-    assert not (tmp_path/'pod2'/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').exists()
+    # Fetched again into the same place: refused, so two fetches never mix.
+    assert fetch(tmp_path, tmp_path/'pod', lines)[0] == 2
+    # A cut-short list, and a list with a file of another checkpoint, are refused before any download.
+    body = lines.strip().splitlines()
+    assert fetch(tmp_path, tmp_path/'pod2', '\n'.join(body[:1]) + '\n')[0] == 2
+    other = body[0].replace('checkpoint-60', 'checkpoint-56')
+    assert fetch(tmp_path, tmp_path/'pod3', '\n'.join([body[0], other, 'END 2']) + '\n')[0] == 2
+    # A stored file with other bytes is never kept.
+    (stored(tmp_path, records(run)[-1])/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x00')
+    code, output = fetch(tmp_path, tmp_path/'pod4', lines)
+    assert code == 1 and 'SHA-256 differs' in output
+    assert not (tmp_path/'pod4'/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').exists()
 
 
 API = dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none',

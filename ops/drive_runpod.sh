@@ -144,6 +144,8 @@ if [[ ${DRIVE_CHECK_ONLY:-0} == 1 ]]; then echo 'check passed'; exit 0; fi
 # marked used here. No host is exempt: tests run a copy of ops/ whose gate.sh is a stub (tests/conftest.py).
 bash ops/gate.sh launch --remote "$REMOTE" --deadline "$DEADLINE" || { echo 'not started: the launch check above refused it, before any pod was contacted' >&2; exit 2; }
 mkdir -p "$RESULTS"
+# The commit the pod runs (the launch record requires it clean), kept with the results: the run archive records it (notes 78).
+git rev-parse HEAD > "$RESULTS/launch-commit.txt"
 SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$RESULTS/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 # rsync never deletes here, so every resumable checkpoint an interim copy saw would stay on this machine (the trainer keeps
 # two on the pod; with expert LoRA each is about 3 GB). Interim copies leave them out; the final copy takes the ones left.
