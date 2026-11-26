@@ -236,3 +236,13 @@ def test_a_resumed_run_is_refused_and_a_copy_is_refused_as_a_copy_before_anythin
     why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
     assert table == [] and 'resumed another from a checkpoint' in why['train-lambda05/after-evaluation.jsonl']
     assert "named 'child'" in why['job/rows.jsonl']  # not "rescore them": rescoring a copy would not help
+
+
+def test_follow_on_turns_and_failed_requests_are_refused_with_their_reason(tmp_path):
+    meta = provenance.meta(**dict(UNTRAINED, run='follow'))
+    write(tmp_path/'follow'/'rows.rescored.jsonl', provenance.stamp([dict(row(), turn=1), dict(row(), turn=2)], meta))
+    write(tmp_path/'errors'/'rows.jsonl', [dict(task_id='x', error='timeout', scored=False)], argv=[])
+    table, refused = provenance.cells(tmp_path)
+    why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
+    assert table == [] and 'follow-on rows' in why['follow/rows.rescored.jsonl']
+    assert 'failed requests' in why['errors/rows.jsonl']

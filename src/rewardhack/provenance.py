@@ -221,6 +221,14 @@ def count_file(path, stage):
     # abandoned after that checkpoint (review round 36).
     if STAGES[stage]['trained'] and stated(read_summary(path), 'resumed_from', 'resume-from') is not None:
         raise ValueError('its run resumed another from a checkpoint, which its rows do not record')
+    if not rows:
+        return None
+    # An API probe's --follow-on rows (turn 2) are another false statement, from either split, asked without the
+    # evaluator: a condition meta does not record, so their file is not counted with its first turns (review round 37).
+    if any('turn' in row and row['turn'] != 1 for row in rows):
+        raise ValueError('it holds follow-on rows (turn 2: another statement without the evaluator), which meta does not record')
+    if any('error' in row for row in rows):
+        raise ValueError('it holds failed requests: rows.ok.* is the view without them')
     trained = trained_through(path) if STAGES[stage]['steps'] else None
     if trained is not None:
         rows = [row for row in rows if row['step'] <= trained]  # older rows without `step` are refused here

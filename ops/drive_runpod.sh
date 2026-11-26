@@ -12,6 +12,10 @@ cd "$(dirname "$0")/.."
 HOST=$1 PORT=$2 REMOTE=$3 RESULTS=$4 DEADLINE=$5
 # Every call that could hold a billing pod is bounded with it (try_ssh, the arm call, on_pod): without it each would fail
 # as "not found" and the pod would be given up on with no timer, so it is checked before anything, check-only included.
+# The driver reads nothing from its terminal: every command's stdin is /dev/null unless it is given one. Under
+# `timeout` ssh runs in a background process group, and one that read the terminal (a key pressed while the driver runs
+# in it, or a driver started with `&`) was stopped and its call failed or hung (review rounds 36 and 37).
+exec < /dev/null
 command -v timeout > /dev/null || { echo 'the driver needs a timeout command on this machine (macOS 27 has /usr/bin/timeout; else coreutils)'; exit 2; }
 SMOKE_VLLM_ROLLOUTS=${SMOKE_VLLM_ROLLOUTS:-0}
 [[ $SMOKE_VLLM_ROLLOUTS == 0 || $SMOKE_VLLM_ROLLOUTS == 1 ]] || { echo 'SMOKE_VLLM_ROLLOUTS must be 0 or 1'; exit 2; }
@@ -191,22 +195,22 @@ finish() {
     done
     if [[ $CHECKPOINTS == 0 ]]; then say 'the results are copied but the resumable checkpoints are not: the pod is not removed from here, so they can still be fetched until its own timer removes it'; fi
   fi
-  if ! on_pod 'rm -f ~/.judge_key' < /dev/null; then say 'could not reach the pod to delete the judge key file'; fi
+  if ! on_pod 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
   if [[ $KEEP == 1 || $CHECKPOINTS == 0 ]]; then
     # Left running on purpose: say so only if a removal timer is really armed there. A pod that no longer answers has
     # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
-    if ! on_pod true < /dev/null; then
+    if ! on_pod true; then
       if [[ $ARMED == 1 ]]; then say "the pod no longer answers (ssh error above): it has most likely removed itself on its timer. Confirm in the RunPod console"
       else say "REMINDER: the pod never accepted SSH, so no removal timer was ever armed on it. Terminate it in the RunPod console now"; code=97; fi
-    elif on_pod "pgrep -f '[r]unpodctl remove pod' > /dev/null" < /dev/null; then say "pod left running; a removal timer is running on it (out/autostop.log)"
+    elif on_pod "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
     else say "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
   elif on_pod 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
     # Accepted is not gone: the pod is gone when it stops answering.
     GONE=0
     for _ in $(seq 12); do
-      if ! on_pod true < /dev/null 2>> "$RESULTS/ssh-removal.log"; then GONE=1; break; fi  # a refused connection is what is waited for; its message is kept there
+      if ! on_pod true 2>> "$RESULTS/ssh-removal.log"; then GONE=1; break; fi  # a refused connection is what is waited for; its message is kept there
       sleep 5
     done
     if [[ $GONE == 1 ]]; then say "pod removed: it no longer answers"
@@ -224,20 +228,18 @@ trap finish EXIT
 # The refusals while the pod boots are kept in ssh-wait.log; the last try shows its own (review rounds 31 and 32).
 # cap: 2.5x estimated 10 s (one ssh try that answers: connect, key exchange, `true`)
 SSH_TRY_SECONDS=25
-# stdin from /dev/null: under `timeout` ssh runs in a background process group, and one that reads the terminal (a key
-# pressed while the driver runs in it) is stopped and reported as failed (review round 36). Likewise every on_pod call
-# that sends nothing.
-try_ssh() { timeout "$SSH_TRY_SECONDS" "${SSH[@]}" "root@$HOST" true < /dev/null; }
+try_ssh() { timeout "$SSH_TRY_SECONDS" "${SSH[@]}" "root@$HOST" true; }
 # Bounded by time, not by a count of tries: a booting pod usually refuses at once, so a count gave up after a third of
 # the wait (review round 33). The last try starts early enough that it, a pause and the final try end within the wait;
 # the count only keeps a stubbed `sleep` (the tests) from spinning.
 SSH_END=$((SECONDS + SSH_UP_SECONDS - 2 * SSH_TRY_SECONDS - 15))
+SSH_UP=0  # a try that connects ends the wait; only a wait that never connected makes the final try (review round 37)
 for _ in $(seq $((SSH_UP_SECONDS / 15))); do
   ((SECONDS < SSH_END)) || break
-  try_ssh 2>> "$RESULTS/ssh-wait.log" && break
+  if try_ssh 2>> "$RESULTS/ssh-wait.log"; then SSH_UP=1; break; fi
   sleep 15
 done
-try_ssh || { echo "ssh failed: the pod did not accept SSH within $SSH_UP_SECONDS s (each refusal is in $RESULTS/ssh-wait.log: a key that needs a passphrase fails here too)"; exit 1; }
+((SSH_UP)) || try_ssh || { echo "ssh failed: the pod did not accept SSH within $SSH_UP_SECONDS s (each refusal is in $RESULTS/ssh-wait.log: a key that needs a passphrase fails here too)"; exit 1; }
 # Before anything else on a billing pod: a provisional removal timer, so an interrupted copy or a sleeping laptop is bounded.
 # The job's own timer replaces it when the job starts.
 # Bounded as a whole (ARM_SECONDS, ops/pod_pins.env, counted by the gate): it asks the RunPod API whether the pod can
