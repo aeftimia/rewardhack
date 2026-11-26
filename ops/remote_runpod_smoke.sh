@@ -110,30 +110,22 @@ UV=/workspace/uv-venv/bin/uv
 # uv's cache of unpacked wheels (two torch and CUDA sets) stays off the disk ~/out is checked for (review round 12).
 export UV_CACHE_DIR=/workspace/uv-cache
 VLLM_INSTALL_PID=
-# --clear: since uv 0.10, `uv venv` refuses an existing environment, which a relaunch on a kept pod has (review round 12).
 if [[ $JUDGE_KIND == pod || $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
-  ( $UV venv -q --clear --python "$(command -v python)" /workspace/vllm-venv \
-      && timeout 600 $UV pip install -q --python /workspace/vllm-venv/bin/python -r requirements-vllm.txt ) > ~/out/install-vllm.log 2>&1 &  # cap: 2x measured 222 s
+  INSTALL_WAIT=600 make_env vllm -r requirements-vllm.txt > ~/out/install-vllm.log 2>&1 &  # cap: 2x measured 222 s
   VLLM_INSTALL_PID=$!
 fi
 # Where the vLLM environment is needed: wait for its background install, its own failure code if it failed.
-vllm_installed() {
-  wait "$VLLM_INSTALL_PID" || fail VLLM_INSTALL_FAILED
-  $UV pip freeze --python /workspace/vllm-venv/bin/python > ~/out/pip-freeze-vllm.txt || fail VLLM_FREEZE_FAILED
-}
-# shellcheck disable=SC2015  # the failure branch is meant to run when either step fails
-$UV venv -q --clear --python "$(command -v python)" /workspace/train-venv \
-  && timeout 300 $UV pip install -q --python /workspace/train-venv/bin/python torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED  # cap: 2x measured 81 s
+vllm_installed() { wait "$VLLM_INSTALL_PID" || fail VLLM_INSTALL_FAILED; }
+INSTALL_WAIT=300 make_env train torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED  # cap: 2x measured 81 s
 # The `hf` command comes with huggingface_hub itself; the `[cli]` extra asked for until 25 Nov does not exist, and pip stepped back through versions looking for it.
-HF=/workspace/train-venv/bin/hf
+HF=$(env_bin train hf)
 [[ -x $HF ]] || fail 'NO_HF_COMMAND: huggingface_hub did not install its hf command'
-$UV pip freeze --python /workspace/train-venv/bin/python > ~/out/pip-freeze-train.txt || fail TRAIN_FREEZE_FAILED
 if [[ $JUDGE_KIND == pod ]]; then vllm_installed; fi
-PY=/workspace/train-venv/bin/python
+PY=$(env_bin train python)
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
 # The verifier checks run beside the model download (owner, 26 Nov); they are joined, with their own failure code, before
 # anything uses Lean's verdicts.
-$PY entrypoints/run.py controls --out ~/out/controls --lean ~/lean-safe > ~/out/controls.log 2>&1 &
+"$PY" entrypoints/run.py controls --out ~/out/controls --lean ~/lean-safe > ~/out/controls.log 2>&1 &
 CONTROLS_PID=$!
 
 # --- Downloads (both ungated; no Hugging Face token on this pod).
@@ -141,8 +133,8 @@ PAIRS=("$MODEL $REV"); [[ $JUDGE_KIND == pod ]] && PAIRS+=("$JUDGE $JUDGE_REV")
 for pair in "${PAIRS[@]}"; do
   # shellcheck disable=SC2086  # split on purpose: "repo revision" becomes $1 and $2
   set -- $pair
-  # cap: 2x measured 5.1 min
-  log "start download $1"; timeout 660 $HF download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-"${1##*/}".log 2>&1 || fail "DOWNLOAD_FAILED $1"
+  log "start download $1"
+  DOWNLOAD_WAIT=660 fetch_model "$1" "$2" || fail "DOWNLOAD_FAILED $1"  # cap: 2x measured 5.1 min
 done
 # gpt-oss-120b for the probe after training (SMOKE_PROBE_LARGE=1), fetched and given its own environment while the training
 # runs: the in-process vLLM probe needs vLLM and this project in one environment. vLLM's numba needs numpy below 2.5 and
@@ -152,10 +144,10 @@ done
 if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   log "start download $GPT_OSS_120B (background)"
   # cap: 1.5x estimated 25 min (about 65 GB; the 13 GB gpt-oss-20b took 3.5 to 5.1 min)
-  HF_HUB_DISABLE_XET=1 timeout 2700 $HF download "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-gpt-oss-120b.log 2>&1 &
+  HF_HUB_DISABLE_XET=1 DOWNLOAD_WAIT=2700 fetch_model "$GPT_OSS_120B" "$GPT_OSS_120B_REV" &
   LARGE_DOWNLOAD_PID=$!
-  ( $UV venv -q --clear --python "$(command -v python)" /workspace/probe-venv && grep '^numpy==' requirements-vllm.txt > /workspace/probe-override.txt \
-      && timeout 600 $UV pip install -q --python /workspace/probe-venv/bin/python -r requirements-vllm.txt -e . --override /workspace/probe-override.txt ) > ~/out/install-probe.log 2>&1 &  # cap: 1.5x estimated 300 s
+  grep '^numpy==' requirements-vllm.txt > /workspace/probe-override.txt || fail 'NO_NUMPY_PIN: requirements-vllm.txt pins no numpy to override with'
+  INSTALL_WAIT=600 make_env probe -r requirements-vllm.txt -e . --override /workspace/probe-override.txt > ~/out/install-probe.log 2>&1 &  # cap: 1.5x estimated 300 s
   PROBE_INSTALL_PID=$!
 fi
 wait "$CONTROLS_PID" || fail VERIFIER_CONTROLS_FAILED
@@ -172,7 +164,7 @@ JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano
 else
 # --- Judge server: a small model in a fixed slice of the card, OpenAI-compatible on localhost.
 log start judge-server
-PATH="/workspace/vllm-venv/bin:$PATH" /workspace/vllm-venv/bin/vllm serve "$JUDGE" --revision "$JUDGE_REV" --port "$JUDGE_PORT" --host 127.0.0.1 --max-model-len 3072 \
+in_env vllm vllm serve "$JUDGE" --revision "$JUDGE_REV" --port "$JUDGE_PORT" --host 127.0.0.1 --max-model-len 3072 \
   --gpu-memory-utilization "${JUDGE_GPU_FRACTION:-0.22}" > ~/out/judge-server.log 2>&1 &
 JUDGE_PID=$!
 wait_for_server "$JUDGE_PID" "$JUDGE_PORT" "$JUDGE" "$SERVER_WAIT" || fail JUDGE_SERVER_DID_NOT_START
@@ -183,7 +175,7 @@ JUDGE_ARGS=(--judge api --judge-model "$JUDGE" --judge-url "http://127.0.0.1:$JU
 # Question 1. 60 rows of each reading category; minutes at vLLM speed, and it gates the reward below.
 log start judge-validation
 # cap: 1.5x estimated 20 min (360 readings; about 1.6 s each measured on the laptop, so under 10 min at vLLM speed)
-timeout 1800 $PY entrypoints/validate_judge.py --out ~/out/judge-validation --per-category 60 --lean ~/lean-safe --require-acceptance "${JUDGE_ARGS[@]}" > ~/out/judge-validation.log 2>&1 || fail JUDGE_VALIDATION_FAILED
+timeout 1800 "$PY" entrypoints/validate_judge.py --out ~/out/judge-validation --per-category 60 --lean ~/lean-safe --require-acceptance "${JUDGE_ARGS[@]}" > ~/out/judge-validation.log 2>&1 || fail JUDGE_VALIDATION_FAILED
 log "end judge-validation passed"
 fi
 
@@ -203,20 +195,20 @@ if [[ ${SMOKE_SKIP_PROBE:-0} == 1 ]]; then
   log "probe skipped (run earlier); training with --max-completion-length $LIMIT"
 else
 log start probe
-judged $PY entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" "${FUNDED[@]}" --train-limit "$SMOKE_PROBE_TASKS" --max-seconds "$SMOKE_PROBE_SECONDS" > ~/out/probe.log 2>&1 || fail PROBE_FAILED
+judged "$PY" entrypoints/run.py probe --out ~/out/probe "${BASE[@]}" "${FUNDED[@]}" --train-limit "$SMOKE_PROBE_TASKS" --max-seconds "$SMOKE_PROBE_SECONDS" > ~/out/probe.log 2>&1 || fail PROBE_FAILED
 # The two owner's rules below are read from the probe's summary, not from its log text: a reworded log line must not switch a rule off.
 # More than 5% of answers cut off at the token limit: the limit goes up before anything else changes.
 # More than 5% of answers the verifier could not decide: look at the verifier before paying for training.
 # A rule the probe could not evaluate (no rows to judge it by) is None there and stops the job here: it is not a "no".
-PROBE=$($PY -m rewardhack.probe_rules ~/out/probe/summary.json) || fail PROBE_SUMMARY_UNREADABLE
+PROBE=$("$PY" -m rewardhack.probe_rules ~/out/probe/summary.json) || fail PROBE_SUMMARY_UNREADABLE
 read -r LIMIT CHECK_VERIFIER PROBE_LINE <<< "$PROBE"
 log "probe: $PROBE_LINE; training with --max-completion-length $LIMIT"
 if [[ $CHECK_VERIFIER == 1 ]]; then fail PROBE_VERIFIER_UNDECIDED; fi
 fi
 step() { name=$1; shift; log "start $name"
-  judged $PY entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
+  judged "$PY" entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
   # A run stopped early (deadline, no variation) still exits 0: say so where the job's progress is read.
-  status=$($PY -c 'import json, sys; s = json.load(open(sys.argv[1])); print("steps", s["global_step"], "early stop", s["early_stop"] if "early_stop" in s else "none")' ~/out/"$name"/summary.json) \
+  status=$("$PY" -c 'import json, sys; s = json.load(open(sys.argv[1])); print("steps", s["global_step"], "early stop", s["early_stop"] if "early_stop" in s else "none")' ~/out/"$name"/summary.json) \
     || fail "$name SUMMARY_UNREADABLE"
   log "end $name passed: $status"
   nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
@@ -234,8 +226,8 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   # A fixed 4,096 refused every request once LIMIT was 4,096 (review round 6); the rollout client also checks each request.
   # CUDA graphs are captured for decode batches of up to 32 tokens (16 sequences use at most 16): the default captured 166
   # sizes up to 1,024 on this card, most of a 125 s engine start (measuring pass). Larger batches (prefill) run eagerly.
-  VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True PATH="/workspace/vllm-venv/bin:$PATH" \
-    /workspace/vllm-venv/bin/vllm serve "$MODEL" --revision "$REV" --served-model-name "$MODEL@$REV" \
+  VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True \
+    in_env vllm vllm serve "$MODEL" --revision "$REV" --served-model-name "$MODEL@$REV" \
       --host 127.0.0.1 --port "$ROLLOUT_PORT" --max-model-len $((LIMIT + 2048)) --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) --max-cudagraph-capture-size 32 \
       --enable-lora --max-lora-rank 16 --max-loras 2 --enable-sleep-mode --enable-scale-out \
       --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
@@ -252,8 +244,7 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   # relaunch. It installs beside the model download (cap in its own line above) and has had minutes since.
   log start probe-install
   wait "$PROBE_INSTALL_PID" || fail PROBE_INSTALL_FAILED
-  $UV pip freeze --python /workspace/probe-venv/bin/python > ~/out/pip-freeze-probe.txt || fail PROBE_FREEZE_FAILED
-  /workspace/probe-venv/bin/python -c 'import vllm; from vllm import LLM, SamplingParams; import rewardhack.vllm_probe, rewardhack.hf_grpo; print("probe environment: vllm", vllm.__version__)' \
+  in_env probe python -c 'import vllm; from vllm import LLM, SamplingParams; import rewardhack.vllm_probe, rewardhack.hf_grpo; print("probe environment: vllm", vllm.__version__)' \
     >> ~/out/steps.log 2>&1 || fail PROBE_ENVIRONMENT_BROKEN
 fi
 # The batch shape of every training step in this script, so that no comparison below changes it by accident.
@@ -283,22 +274,14 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   # false statements of the training split, the neutral prompt, inference only: rows are scored on the laptop with
   # entrypoints/rescore.py (--lean none), so pod time goes to sampling only. It needs the whole card: the rollout server goes first.
   if [[ -n $ROLLOUT_PID ]]; then stop_server "$ROLLOUT_PID"; ROLLOUT_PID=; fi
-  # The same threshold as the self-test's check for a busy card (pod_lib.sh); the wait's limit is in ops/pod_pins.env.
-  free_card() { local used=unread
-    for _ in $(seq $((CARD_FREE_SECONDS / 2))); do
-      used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1) || fail NVIDIA_SMI_FAILED
-      ((used < 1024)) && return 0; sleep 2
-    done
-    fail "CARD_NOT_FREED: $used MiB still in use after ${CARD_FREE_SECONDS} s, before the gpt-oss-120b probe"; }
   wait "$LARGE_DOWNLOAD_PID" || fail "DOWNLOAD_FAILED $GPT_OSS_120B"
   # The stages are independent: a failed one (each writes its rows only once all its answers are in) is recorded and the
   # next still runs; the job fails at the end if any did. The outer limit catches a process hung after its own deadline.
   # Each starts on a freed card: the previous stage's engine releases its memory after the process exits.
-  # PATH: FlashInfer builds its kernels with the environment's ninja (the 5 Nov probes failed without it). HF_HUB_OFFLINE:
-  # the weights are already here; on 5 Nov the engine's own fetch failed in the xet transfer.
+  # HF_HUB_OFFLINE: the weights are already here; on 5 Nov the engine's own fetch failed in the xet transfer.
   PROBE_FAILED=()
-  large() { local name=$1 seconds=$2; shift 2; free_card; log "start $name"
-    if HF_HUB_OFFLINE=1 PATH="/workspace/probe-venv/bin:$PATH" timeout $((seconds + PROBE_LARGE_EXIT_SECONDS)) /workspace/probe-venv/bin/python entrypoints/probe_vllm.py \
+  large() { local name=$1 seconds=$2; shift 2; wait_card_free "$name"; log "start $name"
+    if HF_HUB_OFFLINE=1 in_env probe timeout $((seconds + PROBE_LARGE_EXIT_SECONDS)) python entrypoints/probe_vllm.py \
          --out ~/out/"$name" --lean none --model "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" --taskset hard --tasks false --max-seconds "$seconds" "$@" > ~/out/"$name".log 2>&1; then
       log "end $name passed"
     else log "end $name FAILED exit=$?"; PROBE_FAILED+=("$name"); fi; }

@@ -9,10 +9,56 @@ source ops/pod_pins.env  # models, revisions, versions and ports: stated once th
 # cap: 2x measured 390 s
 SERVER_WAIT=900
 
+# Wait until the card is free: a process that just ended (a relaunch's predecessor, a stopped server, a finished stage)
+# gives its memory back within seconds. Usage: wait_card_free <who is waiting, for the failure message>.
+# The limit, CARD_FREE_SECONDS, is in ops/pod_pins.env, where the driver also counts it.
+wait_card_free() {
+  local used=unread
+  for _ in $(seq $((CARD_FREE_SECONDS / 2))); do
+    used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1) || fail NVIDIA_SMI_FAILED
+    ((used < 1024)) && return 0
+    sleep 2
+  done
+  fail "CARD_NOT_FREED: $used MiB still in use after $CARD_FREE_SECONDS s; waiting: $1"
+}
+
+# Every Python environment a job makes is /workspace/<name>-venv. Usage: env_bin <name> <command>.
+env_bin() { echo "/workspace/$1-venv/bin/$2"; }
+
+# Create (or, on a relaunch, recreate: `uv venv` refuses an existing one without --clear) an environment, install into
+# it and record what was installed in ~/out/pip-freeze-<name>.txt. Usage: INSTALL_WAIT=<s> make_env <name> <uv pip args>,
+# with the wait's basis in a cap comment beside the call. Needs UV and UV_CACHE_DIR from the caller.
+make_env() {
+  local name=$1; shift
+  "$UV" venv -q --clear --python "$(command -v python)" "/workspace/$name-venv" \
+    && timeout "${INSTALL_WAIT:?the caller sets INSTALL_WAIT}" "$UV" pip install -q --python "$(env_bin "$name" python)" "$@" \
+    && "$UV" pip freeze --python "$(env_bin "$name" python)" > ~/out/pip-freeze-"$name".txt
+}
+
+# Run a command of an environment with that environment's bin first on PATH. vLLM's FlashInfer builds kernels with the
+# environment's ninja: the 5 Nov probes failed without it, and the 26 Nov gpt-oss-120b stage was written without it
+# (review round 25), because the prefix was copied at each launch instead of stated here.
+# Usage: in_env <name> [timeout <seconds>] <command> [args...]; the command must be the environment's own.
+in_env() {
+  local bin wrap=()
+  bin=$(env_bin "$1" ''); shift
+  if [[ $1 == timeout ]]; then wrap=(timeout "$2"); shift 2; fi
+  [[ -x $bin$1 ]] || fail "NO_COMMAND: $1 is not in $bin"
+  PATH="$bin:$PATH" ${wrap[@]+"${wrap[@]}"} "$bin$1" "${@:2}"  # the + form: bash 3.2 calls an empty array unbound
+}
+
+# Fetch a model's weights at a pinned revision into HF_HOME, without the copies vLLM and transformers do not read.
+# Usage: DOWNLOAD_WAIT=<s> fetch_model <repo> <revision>, with a cap comment beside the call; the log is
+# ~/out/download-<repo name>.log. Needs HF (an `hf` command) from the caller.
+fetch_model() {
+  timeout "${DOWNLOAD_WAIT:?the caller sets DOWNLOAD_WAIT}" "$HF" download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' \
+    > ~/out/download-"${1##*/}".log 2>&1
+}
+
 # Seconds-long checks of what the job assumes about the machine, before any install or download is paid for.
 # Usage: pod_self_test <free GB needed under /workspace> <free GB needed for ~/out> <port that must be free>...
 pod_self_test() {
-  local need_gb=$1 out_need_gb=$2 tool port free_gb out_free_gb used_mib
+  local need_gb=$1 out_need_gb=$2 tool port free_gb out_free_gb
   shift 2
   for tool in runpodctl timeout setsid pkill pgrep curl tar zstd nvidia-smi python; do
     command -v "$tool" > /dev/null || fail "SELF_TEST: $tool is not on this pod"
@@ -26,12 +72,7 @@ pod_self_test() {
       || fail "SELF_TEST: port $port is already in use"
   done
   # A process killed a moment ago (a relaunch) can take some seconds to give the card back.
-  for _ in $(seq 30); do
-    used_mib=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
-    [[ $used_mib -ge 1024 ]] || break
-    sleep 1
-  done
-  [[ $used_mib -lt 1024 ]] || fail "SELF_TEST: the card still has ${used_mib} MiB in use after 30 s (an earlier job's process?)"
+  wait_card_free 'SELF_TEST (an earlier job'"'"'s process?)'
   free_gb=$(df --output=avail -BG /workspace | tail -1 | tr -dc 0-9)
   [[ $free_gb -ge $need_gb ]] || fail "SELF_TEST: /workspace has ${free_gb} GB free, the job needs $need_gb"
   # Results go to ~/out, on the container disk, and a relaunch keeps the earlier run beside it (out.prev.*). With expert
@@ -66,9 +107,12 @@ wait_for_server() {
   return 1
 }
 
-# vLLM ignores SIGTERM while it is fetching weights, and its engine is a child process that holds the card's memory.
+# vLLM ignores SIGTERM while it is fetching weights, and its engine is a child process that holds the card's memory. A
+# server started through in_env is a grandchild of the job (the backgrounded function's shell is its parent), so the
+# whole tree under the given process goes, deepest first.
 stop_server() {
-  if ! pkill -9 -P "$1"; then log "server $1 had no child processes to stop"; fi
+  local child
+  for child in $(pgrep -P "$1"); do stop_server "$child"; done
   kill -9 "$1"
 }
 
