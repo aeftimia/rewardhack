@@ -325,3 +325,40 @@ def test_readiness_needs_our_process_and_our_model(tmp_path):
         server.kill()
         sleeper.kill()
 
+
+
+def board_scalars(folder):
+    """Every scalar the TensorBoard event files under `folder` hold, as {tag: [(step, value), ...]} in step order."""
+    from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+    accumulator = EventAccumulator(str(folder), size_guidance={'scalars': 0})
+    accumulator.Reload()
+    return {tag: [(e.step, e.value) for e in accumulator.Scalars(tag)] for tag in accumulator.Tags()['scalars']}
+
+
+def test_training_metrics_reach_a_local_tensorboard_log_with_no_network(tmp_path, monkeypatch):
+    """The backend that replaced report_to='none' must work offline, as a pod run must not depend on any service."""
+    import socket
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(f'training opened a network connection: {args}')
+    monkeypatch.setattr(socket.socket, 'connect', refuse)
+    monkeypatch.setattr(socket, 'create_connection', refuse)
+    run = train(tmp_path, monkeypatch, REWARDS['changes every step'], steps=3)
+    assert run.summary['trainer']['arguments_in_effect']['report_to'] == ['tensorboard']
+    assert not (run.out/'trainer'/'runs').exists(), 'events went to the callback default, not the fixed folder'
+    scalars = board_scalars(run.out/'tensorboard')
+    # The same numbers as training-log.json, one point per optimizer step.
+    rewards = scalars['train/rewards/reward_fn/mean']
+    assert [step for step, _ in rewards] == [1, 2, 3]
+    assert [value for _, value in rewards] == pytest.approx([row['rewards/reward_fn/mean'] for row in run.log], rel=1e-5)
+
+
+def test_a_failed_run_keeps_its_tensorboard_log(tmp_path, monkeypatch):
+    def reward(i, raw, step):
+        if step == 3:
+            raise RuntimeError('judge spend cap reached')
+        return float(i == 0)
+    with pytest.raises(RuntimeError, match='spend cap'):
+        train(tmp_path, monkeypatch, reward, steps=5)
+    out = next(tmp_path.iterdir())
+    assert [step for step, _ in board_scalars(out/'tensorboard')['train/loss']] == [1, 2]

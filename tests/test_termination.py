@@ -78,6 +78,7 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
             assert kwargs['args']['loss_type'] == 'dapo'
             self.model, self.reward = model, reward_funcs
             self.state = SimpleNamespace(global_step=0, log_history=[])
+            self.callback_handler = SimpleNamespace(callbacks=[SimpleNamespace()])  # the TensorBoard callback report_to adds
             self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
             self.router_aux_loss_coef, self.aux_loss_enabled, self.generation_config = 0.0, False, SimpleNamespace(to_dict=dict)
         def train(self, resume_from_checkpoint):
@@ -91,7 +92,7 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
     for name, attrs in {
         'datasets': dict(Dataset=SimpleNamespace(from_list=lambda rows: rows)),
         'peft': dict(LoraConfig=lambda **kw: kw),
-        'transformers': dict(TrainerCallback=object, set_seed=lambda seed: None),
+        'transformers': dict(TrainerCallback=object, set_seed=lambda seed: None), 'transformers.integrations': dict(TensorBoardCallback=SimpleNamespace),
         'trl': dict(GRPOTrainer=Trainer, GRPOConfig=lambda **kw: kw),
     }.items():
         module = ModuleType(name)
@@ -400,6 +401,7 @@ def trl_stub(monkeypatch, drive):
         def __init__(self, model, reward_funcs, callbacks, **kwargs):
             self.model, self.reward, self.callbacks = model, reward_funcs, callbacks
             self.state = SimpleNamespace(global_step=0, log_history=[])
+            self.callback_handler = SimpleNamespace(callbacks=[SimpleNamespace()])  # the TensorBoard callback report_to adds
             self.args = SimpleNamespace(lr_scheduler_type='constant', to_dict=dict)  # what the real trainer reports back, recorded in the summary
             self.router_aux_loss_coef, self.aux_loss_enabled, self.generation_config = 0.0, False, SimpleNamespace(to_dict=dict)
         def train(self, resume_from_checkpoint):
@@ -408,7 +410,7 @@ def trl_stub(monkeypatch, drive):
         def save_model(self, path):
             pass
     for name, attrs in {'datasets': dict(Dataset=SimpleNamespace(from_list=lambda rows: rows)), 'peft': dict(LoraConfig=lambda **kw: kw),
-                        'transformers': dict(TrainerCallback=object, set_seed=lambda seed: None), 'trl': dict(GRPOTrainer=Trainer, GRPOConfig=lambda **kw: kw)}.items():
+                        'transformers': dict(TrainerCallback=object, set_seed=lambda seed: None), 'transformers.integrations': dict(TensorBoardCallback=SimpleNamespace), 'trl': dict(GRPOTrainer=Trainer, GRPOConfig=lambda **kw: kw)}.items():
         module = ModuleType(name)
         module.__dict__.update(attrs)
         monkeypatch.setitem(sys.modules, name, module)
