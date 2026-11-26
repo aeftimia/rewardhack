@@ -12,7 +12,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import jsonl
-from .model_io import Meter, call, token_counts
+from .judge import served_here
+from .model_io import Meter, call, price, token_counts
 from .budget import nonnegative_finite
 
 REQUEST_SECONDS = 600  # per attempt: a long reasoning answer from a hosted model, with nothing rented waiting on it
@@ -39,7 +40,7 @@ def error_row(task, index, result, turn, conversation, report_mode='prose'):
 def run(args):
     args.max_usd = nonnegative_finite(args.max_usd, 'API spend cap')
     report_mode = args.report_mode
-    meter = Meter(args.usd_per_m_input, args.usd_per_m_output)
+    meter = Meter(0.0, 0.0) if served_here(args.base_url) else Meter(*price(args.model))  # prices: model_io.PRICES
     args.out.mkdir(parents=True, exist_ok=True)
     tasks = select_tasks(args.taskset, args.tasks, limit=args.limit)
     false_pool = [t for t in taskset_rows(args.taskset) if not t['true']]

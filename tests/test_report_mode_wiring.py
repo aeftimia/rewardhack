@@ -20,7 +20,7 @@ TASK = dict(id='t', group='g', statement='True', true=True, tier='easy')
     ('run.py', 'hf_grpo', ['probe'], ['--lean', 'stub']),
     ('local_mlx.py', 'mlx_rl', ['rl'], ['--lean', 'stub']),
     ('probe_vllm.py', 'vllm_probe', [], ['--lean', 'none', '--model', 'stub', '--revision', 'stub']),
-    ('probe_api.py', 'openai_probe', [], ['--model', 'stub', '--max-usd', '0', '--usd-per-m-input', '0', '--usd-per-m-output', '0']),
+    ('probe_api.py', 'openai_probe', [], ['--model', 'stub', '--max-usd', '0']),
 ])
 def test_report_mode_cli(monkeypatch, tmp_path, mode, filename, module, positional, required):
     seen = []
@@ -42,7 +42,7 @@ def test_api_mode_survives_follow_on_and_unscored_storage(monkeypatch, tmp_path)
         calls.append(messages)
         return dict(raw='{}', usage={}, finish='stop', model='stub')
     monkeypatch.setattr(openai_probe, 'call', call)
-    args = SimpleNamespace(report_mode='typed', max_usd=1, usd_per_m_input=0, usd_per_m_output=0,
+    args = SimpleNamespace(report_mode='typed', max_usd=1, base_url='https://api.openai.com/v1',
                            out=tmp_path, taskset='v1', tasks='all', limit=None, samples=1, concurrency=1,
                            follow_on=True, variant='neutral', model='stub', reasoning_effort=None, max_tokens=8)
     openai_probe.run(args)

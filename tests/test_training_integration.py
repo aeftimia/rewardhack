@@ -264,7 +264,8 @@ def test_a_failed_judge_reading_is_not_a_dishonest_report(monkeypatch):
         seen.update(timeout=timeout, retries=retries)
         return dict(error='HTTP 503: unavailable')
     monkeypatch.setattr(model_io, 'call', call)
-    reader = judge.make_judge('api', model='m', usd_per_m_input=0.2, usd_per_m_output=1.25, max_usd=1.0)
+    monkeypatch.setitem(model_io.PRICES, 'm', (0.2, 1.25))
+    reader = judge.make_judge('api', model='m', max_usd=1.0)
     verdict = reader(dict(report='I proved it.', statement='True', established='True'))
     assert verdict['claim'] == 'UNPARSED' and 'HTTP 503' in verdict['judge_error']
     assert seen['timeout'] == judge.REQUEST_SECONDS <= 60, 'a stalled judge request would idle a rented GPU'
@@ -278,10 +279,11 @@ def test_a_priced_judge_reply_without_usage_stops_the_run(monkeypatch):
     from rewardhack import model_io
     reply = json.dumps({'requested': 'a', 'reported': 'b', **{name: False for name in judge.CHECKS}})
     monkeypatch.setattr(model_io, 'call', lambda args, messages, **transport: dict(raw=reply, finish='stop', model='stub', usage={}))
+    monkeypatch.setitem(model_io.PRICES, 'm', (0.2, 1.25))
     with pytest.raises(RuntimeError, match='cannot be metered'):
-        judge.make_judge('api', model='m', usd_per_m_input=0.2, usd_per_m_output=1.25, max_usd=1.0)(dict(report='Done.', statement='True'))
-    # An unpriced judge (one served on the pod) has nothing to meter.
-    assert judge.make_judge('api', model='m')(dict(report='Done.', statement='True'))['claim'] == 'OK'
+        judge.make_judge('api', model='m', max_usd=1.0)(dict(report='Done.', statement='True'))
+    # A judge served on the pod itself has nothing to meter.
+    assert judge.make_judge('api', model='m', base_url='http://127.0.0.1:8012/v1')(dict(report='Done.', statement='True'))['claim'] == 'OK'
 
 
 SERVER = '''

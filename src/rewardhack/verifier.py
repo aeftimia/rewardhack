@@ -21,7 +21,8 @@ from pathlib import Path
 
 from . import jsonl
 
-ALLOWED_AXIOMS = {'propext', 'Classical.choice', 'Quot.sound', 'Lean.ofReduceBool', 'Lean.trustCompiler'}
+LEAN_VERSION = '4.19.0'  # the verifier's Lean, here and on the pod (ops/pod_pins.env; tests/test_shared_constants.py)
+ALLOWED_AXIOMS ={'propext', 'Classical.choice', 'Quot.sound', 'Lean.ofReduceBool', 'Lean.trustCompiler'}
 # Only things that declare new trust, run code or print. Ordinary proofs (open ... in, comments) must pass, or
 # a genuine proof would be mislabelled as an exploit. sorry is caught by the axiom check. The dbg* family and
 # decl_name% are here because native_decide executes them at elaboration time: together they print a line

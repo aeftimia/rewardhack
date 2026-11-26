@@ -45,14 +45,15 @@ def test_a_priced_meter_counts_and_prices_what_it_is_sent():
 
 def test_a_priced_judge_needs_its_input_counter_too(monkeypatch):
     monkeypatch.setattr(model_io, 'call', lambda *a, **kw: dict(raw=CHECKLIST, finish='stop', model='m', usage={'completion_tokens': 10}))
+    monkeypatch.setitem(model_io.PRICES, 'm', (0.2, 1.25))
     with pytest.raises(RuntimeError, match='prompt_tokens'):
-        judge.make_judge('api', model='m', usd_per_m_input=0.2, usd_per_m_output=1.25, max_usd=1.0)(ROW)
+        judge.make_judge('api', model='m', max_usd=1.0)(ROW)
     local = judge.make_judge('api', model='m', base_url='http://127.0.0.1:8011/v1')  # a judge on the pod: no price, nothing to refuse
     assert local(ROW)['claim'] == 'OK' and local.meter.totals['input'] is None and local.meter.totals['output'] == 10
 
 
 def probe_args(tmp_path, **changes):
-    values = dict(report_mode='prose', max_usd=1, usd_per_m_input=0, usd_per_m_output=0, out=tmp_path, taskset='v1', tasks='all', limit=None,
+    values = dict(report_mode='prose', max_usd=1, base_url='https://api.openai.com/v1', out=tmp_path, taskset='v1', tasks='all', limit=None,
                   samples=1, concurrency=1, follow_on=False, variant='neutral', model='m', reasoning_effort=None, max_tokens=8)
     return SimpleNamespace(**dict(values, **changes))
 
@@ -66,8 +67,9 @@ def stub_probe(monkeypatch, result):
 
 def test_a_priced_probe_stops_when_a_reply_has_no_usage(monkeypatch, tmp_path):
     stub_probe(monkeypatch, dict(raw='{}', usage=None, finish='stop', model='m'))
+    monkeypatch.setitem(model_io.PRICES, 'm', (0.2, 1.25))
     with pytest.raises(model_io.UnmeteredReply):
-        openai_probe.run(probe_args(tmp_path, usd_per_m_input=0.2, usd_per_m_output=1.25))
+        openai_probe.run(probe_args(tmp_path))
     assert not (tmp_path/'summary.json').exists(), 'a summary recording $0 was written for a priced run that could not be metered'
 
 
@@ -87,9 +89,9 @@ def test_an_unpriced_probe_stores_unknown_token_counts_as_none(monkeypatch, tmp_
 def test_a_judge_anywhere_but_this_machine_needs_cap_and_prices(url):
     ap = argparse.ArgumentParser()
     paid = dict(arm='report_correct', judge='api', dry_run=False, judge_url=url)
-    judge.check_reward_args(ap, argparse.Namespace(report_mode='prose', **paid, judge_max_usd=1.0, judge_usd_in=0.2, judge_usd_out=1.25))
-    for unbounded in (dict(judge_max_usd=None, judge_usd_in=0.2, judge_usd_out=1.25), dict(judge_max_usd=1.0, judge_usd_in=0.0, judge_usd_out=1.25),
-                      dict(judge_max_usd=1.0, judge_usd_in=0.2, judge_usd_out=0.0)):
+    judge.check_reward_args(ap, argparse.Namespace(report_mode='prose', **paid, judge_max_usd=1.0, judge_model='gpt-5.4-nano'))
+    # No cap, or a model with no row in model_io.PRICES (a cap that could never be reached), is refused.
+    for unbounded in (dict(judge_max_usd=None, judge_model='gpt-5.4-nano'), dict(judge_max_usd=1.0, judge_model='unlisted')):
         with pytest.raises(SystemExit):
             judge.check_reward_args(ap, argparse.Namespace(report_mode='prose', **paid, **unbounded))
 
@@ -97,7 +99,7 @@ def test_a_judge_anywhere_but_this_machine_needs_cap_and_prices(url):
 @pytest.mark.parametrize('url', ['http://127.0.0.1:8011/v1', 'http://localhost:8011/v1/', 'http://[::1]:8011/v1'])
 def test_a_judge_on_this_machine_needs_neither(url):
     judge.check_reward_args(argparse.ArgumentParser(), argparse.Namespace(report_mode='prose', arm='report_correct', judge='api', dry_run=False, judge_url=url,
-                                                                          judge_max_usd=None, judge_usd_in=0.0, judge_usd_out=0.0))
+                                                                          judge_max_usd=None, judge_model='unlisted'))
 
 
 # --- C: what the transport asks for again: tests/test_model_io.py

@@ -29,3 +29,13 @@ def test_a_limit_without_a_sufficient_basis_is_found(text, said):
 def test_a_basis_on_the_line_above_or_at_the_multiples_passes():
     assert gates.unsized_limits('# cap: 2x measured 750 s\ntimeout 1500 python bench.py\n'
                                 'READY_WAIT=600  # cap: 1.5x estimated 390 s\nMAX_TRIES=3\n') == []
+
+
+def test_the_multiples_are_stated_only_in_gates():
+    """One source for the cap multiples (owner, 26 Nov): a copy in the instructions went stale once and a reviewer held a
+    correct cap to the old rule. CLAUDE.md (and AGENTS.md, which defers to it) point to gates.MULTIPLES instead."""
+    import re
+    for name in ('CLAUDE.md', 'AGENTS.md'):
+        text = (ROOT/name).read_text()
+        assert not re.search(r'\d+(?:\.\d+)?x\s+(?:the\s+)?(?:an?\s+)?(?:its\s+)?(?:longest\s+)?(measured|estimate)', text), name
+    assert 'gates.MULTIPLES' in (ROOT/'CLAUDE.md').read_text()
