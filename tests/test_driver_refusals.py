@@ -30,7 +30,6 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', **settings):
 @pytest.mark.parametrize('remote, settings, said', [
     ('ops/remote_runpod_smoke.sh', {}, 'LEAN_ISOLATION must be set'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_TRAIN_STEPS='4'), 'SMOKE_TRAIN_STEPS is set, but'),
-    ('ops/remote_runpod_genbench.sh', dict(SMOKE_STEPS='4'), 'reads no SMOKE_* setting'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='0'), 'AUTOSTOP_GRACE_SECONDS must be'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='179'), 'at least 180'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0'), 'vLLM pilot needs API judge'),

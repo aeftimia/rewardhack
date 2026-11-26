@@ -193,7 +193,7 @@ def test_no_host_skips_the_launch_check(project):
 @pytest.mark.parametrize('command', [
     "ssh -p 22 root@1.2.3.4 'nohup bash pilot-repo/ops/remote_runpod_smoke.sh > out/log 2>&1 &'",
     "ssh root@1.2.3.4 'bash pilot-repo/ops/remote_job.sh pilot-repo/ops/remote_runpod_smoke.sh 3600'",
-    'ssh -o ConnectTimeout=10 root@1.2.3.4 bash pilot-repo/ops/remote_runpod_genbench.sh',
+    'ssh -o ConnectTimeout=10 root@1.2.3.4 bash pilot-repo/ops/remote_runpod_any.sh',  # any remote_*.sh, not only the smoke script
     "ssh root@1.2.3.4 bash -s <<'EOF'\ncd pilot-repo\nbash ops/remote_runpod_smoke.sh\nEOF",
     "bash -c \"ssh root@1.2.3.4 'bash pilot-repo/ops/remote_runpod_smoke.sh'\"",
     'runpodctl create pod --gpuType "RTX PRO 6000"',

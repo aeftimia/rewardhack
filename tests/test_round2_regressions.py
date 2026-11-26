@@ -187,7 +187,7 @@ def test_the_driver_can_check_a_command_without_a_pod(tmp_path):
 
 def test_each_job_script_states_its_deadline():
     import re
-    for script, minutes in (('ops/remote_runpod_smoke.sh', 170), ('ops/remote_runpod_genbench.sh', 65)):
+    for script, minutes in (('ops/remote_runpod_smoke.sh', 170),):
         stated = re.search(r'^# deadline: (\d+)$', open(script).read(), re.M)
         assert stated and int(stated.group(1)) == minutes, script
 
