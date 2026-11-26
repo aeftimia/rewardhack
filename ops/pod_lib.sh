@@ -19,7 +19,8 @@ smi() { timeout "$NVIDIA_SMI_SECONDS" nvidia-smi "$@"; }
 # the log (the callers fail on it), not a free card.
 card_used_mib() {
   local used
-  used=$(smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1) || { log "nvidia-smi failed or did not answer in $NVIDIA_SMI_SECONDS s"; return 1; }
+  # The busiest card: a two-card job's rollout server holds the second (review round 32).
+  used=$(smi --query-gpu=memory.used --format=csv,noheader,nounits | sort -n | tail -1) || { log "nvidia-smi failed or did not answer in $NVIDIA_SMI_SECONDS s"; return 1; }
   [[ $used =~ ^[0-9]+$ ]] || { log "nvidia-smi read the card's memory as '$used'"; return 1; }
   echo "$used"
 }
@@ -90,15 +91,14 @@ pod_self_test() {
   ((cards >= gpus)) || fail "SELF_TEST: this pod has $cards card(s), the job's model needs $gpus"
   free_gb=$(df --output=avail -BG /workspace | tail -1 | tr -dc 0-9)
   [[ $free_gb -ge $need_gb ]] || fail "SELF_TEST: /workspace has ${free_gb} GB free, the job needs $need_gb"
-  # Results go to ~/out: on the container disk, or with SMOKE_VOLUME=1 through a link to the network volume (so the disk is
-  # read at "$HOME/out/", which follows the link), and a relaunch keeps the earlier run beside it (out.prev.*). With expert
+  # Results go to ~/out, on the container disk, and a relaunch keeps the earlier run beside it (out.prev.*). With expert
   # LoRA each Part 1 run writes about 20 GB there (adapter snapshots about 1 GB each, checkpoints about 3 GB): a full disk
   # fails a save late in a run, so the room is checked before anything is paid for beyond setup.
   # On one disk the two needs add up.
-  if [[ $(df --output=target /workspace | tail -1) == $(df --output=target "$HOME/out/" | tail -1) ]]; then
+  if [[ $(df --output=target /workspace | tail -1) == $(df --output=target "$HOME" | tail -1) ]]; then
     ((free_gb >= need_gb + out_need_gb)) || fail "SELF_TEST: /workspace and ~/out share a disk with ${free_gb} GB free, the job needs $need_gb + $out_need_gb"
   else
-    out_free_gb=$(df --output=avail -BG "$HOME/out/" | tail -1 | tr -dc 0-9)
+    out_free_gb=$(df --output=avail -BG "$HOME" | tail -1 | tr -dc 0-9)
     [[ $out_free_gb -ge $out_need_gb ]] || fail "SELF_TEST: the disk holding ~/out has ${out_free_gb} GB free, the job needs $out_need_gb"
   fi
   log "self-test passed: $(smi --query-gpu=name,memory.total --format=csv,noheader), ${free_gb} GB free"

@@ -36,7 +36,6 @@ SMOKE_TRAIN_SECONDS=${SMOKE_TRAIN_SECONDS:-3600}  # fallback-ok: optional settin
 SMOKE_FINAL_EVAL_SECONDS=${SMOKE_FINAL_EVAL_SECONDS:-600}  # fallback-ok: optional setting; time reserved for the after-evaluation when unset
 SMOKE_MEMORY_SECONDS=${SMOKE_MEMORY_SECONDS:-1800}  # fallback-ok: optional setting; the memory check's documented limit when unset
 SMOKE_PROBE_LARGE=${SMOKE_PROBE_LARGE:-0}  # fallback-ok: optional setting; unset means no gpt-oss-120b probe after training, as before 26 Nov
-SMOKE_VOLUME=${SMOKE_VOLUME:-0}  # fallback-ok: optional setting; unset means ~/out on the container disk, as before the network volume (notes section 78)
 source ops/pod_lib.sh
 cleanup() {
   rm -f ~/.judge_key
@@ -55,13 +54,6 @@ read -ra MODEL_OPTIONS <<< "${MODEL_ARGS[$M]}"
 GPUS=${MODEL_GPUS[$M]}
 # With two cards the trainer has the first and the rollout server the second; with one they share it.
 TRAIN_CARD=0 ROLLOUT_CARD=$((GPUS - 1))
-# With SMOKE_VOLUME=1 the driver has made ~/out a link to this run's folder on the network volume, which must be mounted:
-# without the mount the whole output would sit on the container disk and go with the pod. Indexed by SMOKE_VOLUME.
-VOLUME_NEED=(no yes)
-if [[ ${VOLUME_NEED[$SMOKE_VOLUME]} == yes ]]; then
-  mountpoint -q "$VOLUME_MOUNT" || fail "NO_VOLUME: $VOLUME_MOUNT is not a mount; deploy the pod in $VOLUME_DATACENTER with the network volume attached there"
-  [[ $(readlink -f ~/out) == "$VOLUME_RUNS"/* ]] || fail "NO_VOLUME: ~/out is not a run folder under $VOLUME_RUNS"
-fi
 # Results written: 2x the measured 10 GB per Part 1 run with expert LoRA (adapters and checkpoints; 9.8 and 9.9 GB on 26
 # Nov); 10 GB for the preflight runs.
 OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
