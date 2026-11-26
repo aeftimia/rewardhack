@@ -319,7 +319,10 @@ def server_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_mod
     """Samples from the vLLM adapter server that serves the training rollouts, for every task in one call (owner, 26 Nov:
     a library's engine rather than trainer-side generation, which LoRA on the gpt-oss experts made about 8x slower). The
     server samples `adapter_model`'s adapter, or the served base model when it is None, with the same untruncated
-    sampling as training, from per-request seeds that the before- and after-evaluations share. Yields as trainer_samples."""
+    sampling as training, from per-request seeds that the before- and after-evaluations share. Yields as trainer_samples.
+    Its generation time is the whole server call, wake to sleep (adapter save and load included), and covers every task's
+    samples even when the evaluation stops early: `generation_seconds` reads high and `tokens_per_second` low, which errs on
+    the safe side when either sizes a limit. The call's own parts are in rollout-backend.jsonl (`sync_seconds`, `seconds`)."""
     from .vllm_rollouts import SEED_STRIDE
     prompts = [tokenizer.apply_chat_template(prompt(task['statement'], args.prompt_variant, args.report_mode), tokenize=True, return_dict=True,
                                              add_generation_prompt=True, **template_kwargs(args))['input_ids'] for task in tasks]
