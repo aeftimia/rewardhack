@@ -151,7 +151,9 @@ finish() {
     # Left running on purpose: say so only if a removal timer is really armed there. A pod that no longer answers has
     # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
-    if ! "${SSH[@]}" "root@$HOST" true; then say "the pod no longer answers (ssh error above): it has most likely removed itself on its timer. Confirm in the RunPod console"
+    if ! "${SSH[@]}" "root@$HOST" true; then
+      if [[ $ARMED == 1 ]]; then say "the pod no longer answers (ssh error above): it has most likely removed itself on its timer. Confirm in the RunPod console"
+      else say "REMINDER: the pod never accepted SSH, so no removal timer was ever armed on it. Terminate it in the RunPod console now"; code=97; fi
     elif "${SSH[@]}" "root@$HOST" "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
     else say "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
   elif "${SSH[@]}" "root@$HOST" 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
@@ -168,12 +170,14 @@ finish() {
   if [[ $COPIED == 1 && $CHECKPOINTS == 0 && $code == 0 ]]; then code=95; fi
   exit "$code"
 }
+ARMED=0
 trap finish EXIT
 for _ in $(seq 20); do "${SSH[@]}" "root@$HOST" true 2>/dev/null && break; sleep 15; done
 "${SSH[@]}" "root@$HOST" true || { echo 'ssh failed'; exit 1; }
 # Before anything else on a billing pod: a provisional removal timer, so an interrupted copy or a sleeping laptop is bounded.
 # The job's own timer replaces it when the job starts.
 "${SSH[@]}" "root@$HOST" 'bash -s -- --arm-only 900' < ops/remote_job.sh || { echo 'could not arm a provisional removal timer on the pod'; exit 1; }
+ARMED=1  # from here a removal timer runs on the pod, so a pod that stops answering has most likely removed itself
 # results/ stays behind except the model-read labels, which judge validation on the pod needs (7 MB).
 rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
 # The API judge needs the OpenAI key on the pod. It is sent only on request, over the SSH channel into a mode-600

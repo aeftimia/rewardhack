@@ -85,3 +85,11 @@ def test_a_complete_part_one_launch_passes_every_check(tmp_path):
                                   LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                   SMOKE_STEPS='60', SMOKE_FINAL_EVAL_SECONDS='600', SMOKE_TRAIN_SECONDS='6000', SMOKE_TOKEN_LIMIT='2048')
     assert code != 2 and 'invalid' not in output and 'does not read' not in output and reached
+
+
+def test_a_pod_that_never_answered_is_not_reported_as_removed(tmp_path):
+    """A pod whose SSH never came up never got a removal timer: it is still billing, so the driver must say so and exit
+    97, not report it as gone on its timer (review round 4, 26 Nov). The stub ssh here never answers."""
+    code, output, reached = drive(tmp_path, LEAN_ISOLATION='none', SMOKE_STEPS='4')
+    assert reached and code == 97
+    assert 'never accepted SSH' in output and 'removed itself' not in output
