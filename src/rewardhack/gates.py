@@ -9,10 +9,11 @@ script the project owns stays in a Claude Code PreToolUse hook on Bash (`command
 with a raw `runpodctl create`, a job script started over SSH around `remote_job.sh` or without
 `REQUIRE_AUTOSTOP=1`, and a metered API judge with no spend cap. Removing a pod is never refused.
 
-Commit gate. Git hooks (`ops/githooks`, installed with `entrypoints/gate.py install-hooks`) read the staged
-blobs, the commit message and every commit a push would publish, for the owner's withheld terms (kept in an
-untracked file in the main checkout, so the repo does not name them), for secrets, and for binary, non-UTF-8
-or very large files. Git runs them for every commit, from any worktree, whoever types it.
+Commit gate. The pre-commit framework (`.pre-commit-config.yaml`) runs gitleaks and check-added-large-files, and
+two local hooks from here, at pre-commit, commit-msg and pre-push: `terms_problems` reads the staged blobs, the
+commit message and every commit a push may publish for the owner's withheld terms (kept in an untracked file in
+the main checkout, so the repo does not name them) and refuses binary or non-UTF-8 files, which no pattern could
+be read in; `gitleaks_problems` runs gitleaks with this project's flags over the same three things.
 """
 import hashlib
 import json
@@ -45,17 +46,6 @@ READY = '.tools/venv/bin/python entrypoints/gate.py ready --remote ops/<script>.
 DRIVER_SETTINGS = re.compile(r'SMOKE_[A-Z_]+|LEAN_ISOLATION|JUDGE_KIND|JUDGE_MAX_USD|FORWARD_JUDGE_KEY|AUTOSTOP_GRACE_SECONDS|KEEP_POD')
 CHECK_ONLY = 'DRIVE_CHECK_ONLY'  # set to 1, the driver validates the launch and exits before it reaches for a pod
 
-MAX_BYTES = 15_000_000  # the largest result file tracked on purpose is 11 MB of rows; model files start above this
-SECRET_NAMES = re.compile(r'(^|/)(\.env(\..+)?|\.netrc|id_rsa.*|id_ed25519.*|.*\.pem|.*\.key|.*_key)$')
-SECRETS = [
-    ('an OpenAI-style key', re.compile(r'\bsk-[A-Za-z0-9_-]{20,}')),
-    ('a RunPod key', re.compile(r'\brpa_[A-Za-z0-9]{20,}')),
-    ('a Hugging Face token', re.compile(r'\bhf_[A-Za-z0-9]{30,}')),
-    ('a GitHub token', re.compile(r'\bgh[pousr]_[A-Za-z0-9]{30,}')),
-    ('an AWS access key id', re.compile(r'\bAKIA[0-9A-Z]{16}\b')),
-    ('a private key', re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----')),
-]
-HOOKS = ('pre-commit', 'commit-msg', 'pre-push')  # the files in ops/githooks, each a call to `entrypoints/gate.py <its name>`
 
 
 def git(root, *args, text=True):
@@ -383,7 +373,6 @@ def command_problems(root, command, remote=False):
 
 # --- the commit gate -----------------------------------------------------------------------------------------------
 
-ZERO_ID = re.compile(r'0+')
 GITLINK = '160000'  # a submodule entry: a commit id, with no content of its own in this repository
 SCISSORS = re.compile(r'^\S ------------------------ >8 ------------------------$', re.M)  # `git commit -v`: what follows is the diff, not the message
 
@@ -406,24 +395,13 @@ def withheld_terms(root):
 
 
 def text_problems(where, text, terms):
-    problems = []
-    for number, line in enumerate(text.splitlines(), 1):
-        for index, pattern in enumerate(terms, 1):
-            if pattern.search(line):
-                problems.append(f'{where}:{number} matches withheld term {index} of {TERMS}')
-        for label, pattern in SECRETS:
-            if pattern.search(line):
-                problems.append(f'{where}:{number} looks like {label}')
-    return problems
+    return [f'{where}:{number} matches withheld term {index} of {TERMS}'
+            for number, line in enumerate(text.splitlines(), 1) for index, pattern in enumerate(terms, 1) if pattern.search(line)]
 
 
 def content_problems(path, data, terms):
-    """Reasons not to publish this file: its name, its size, its being binary, or what its text says."""
-    if SECRET_NAMES.search(path):
-        return [f'{path} is named like a secret or a key file']
-    if len(data) > MAX_BYTES:
-        return [f'{path} is {len(data)/1e6:.0f} MB, over the {MAX_BYTES/1e6:.0f} MB limit for a tracked file; add an ignore rule for it']
-    if b'\0' in data[:8192]:
+    """Reasons not to publish this file: its being binary or not UTF-8 (so no term could be found in it), or what its text says."""
+    if b'\0' in data:
         return [f'{path} is a binary file; model and build output belong in .gitignore']
     try:
         text = data.decode('utf-8')
@@ -448,68 +426,72 @@ def blob_problems(root, blobs, terms):
     return [problem for path, blob in sorted(blobs) for problem in content_problems(path, git(root, 'cat-file', 'blob', blob, text=False), terms)]
 
 
-def staged_problems(root):
+def message_text(message_file):
+    """The message as git will record it, up to the `git commit -v` scissors line (after it comes the diff). Comment lines are kept."""
+    return SCISSORS.split(Path(message_file).read_text(), maxsplit=1)[0]
+
+
+def unpushed(remote):
+    """`git rev-list`/`git log` arguments for every commit a push to `remote` may publish: whatever any local branch, tag or HEAD
+    reaches that none of the remote's branches had when last fetched. pre-commit (4.7.0, `hook_impl._pre_push_ns`) gives its hooks
+    a range for only the first ref git says is pushed, so `git push origin a b` would go half read from its PRE_COMMIT_FROM_REF;
+    this reads more than one push adds (another unpushed branch too), never less. A remote given as a URL has no tracking
+    branches, so everything is read."""
+    return ['--branches', '--tags', 'HEAD', '--not', f'--remotes={remote}']
+
+
+def pushed_commits(root, remote):
+    return git(root, 'rev-list', *unpushed(remote)).split()
+
+
+def staged_terms(root, terms):
     """pre-commit: the files as staged in the index this commit is made from (git passes a temporary one for `commit -a` and `commit <path>`)."""
-    terms = withheld_terms(root)
     return blob_problems(root, changed_blobs(root, 'diff', '--cached'), terms)
 
 
-def message_problems(root, message_file):
-    """commit-msg: the message as git will record it, up to the `git commit -v` scissors line. Comment lines are read too."""
-    terms = withheld_terms(root)
-    text = SCISSORS.split(Path(message_file).read_text(), maxsplit=1)[0]
-    return text_problems('the commit message', text, terms)
+def message_terms(root, terms, message_file):
+    return text_problems('the commit message', message_text(message_file), terms)
 
 
-def pushed_commits(root, remote, local_id, remote_id):
-    """The commits a push of `local_id` publishes: those not already on any of this remote's branches as last fetched, nor under `remote_id`."""
-    known = []
-    # The remote's current tip is excluded when this clone has it; when it does not (someone else pushed since the last fetch), the
-    # tracking branches still exclude what was last seen there, and anything else is read: more than the push adds, never less.
-    if not ZERO_ID.fullmatch(remote_id) and subprocess.run(['git', '-C', str(root), 'cat-file', '-e', remote_id + '^{commit}'],
-                                                            capture_output=True).returncode == 0:
-        known.append(remote_id)
-    return git(root, 'rev-list', local_id, '--not', f'--remotes={remote}', *known).split()
-
-
-def push_problems(root, remote, updates):
-    """pre-push: every commit each pushed ref adds, its files as that commit changed them and its message. `updates` are git's stdin lines."""
-    terms = withheld_terms(root)
-    commits = []
-    for line in updates.splitlines():
-        _, local_id, _, remote_id = line.split(' ')
-        if ZERO_ID.fullmatch(local_id):
-            continue  # deleting a remote branch publishes nothing
-        commits += [commit for commit in pushed_commits(root, remote, local_id, remote_id) if commit not in commits]
+def pushed_terms(root, terms, remote):
+    """pre-push: every commit a push may publish (`unpushed`), its files as that commit changed them, and its message."""
     blobs = set()
     problems = []
-    for commit in commits:
+    for commit in pushed_commits(root, remote):
         blobs |= changed_blobs(root, 'diff-tree', '-r', '--no-commit-id', '--root', '--diff-merges=first-parent', commit)
         problems += text_problems(f'the message of commit {commit[:9]}', git(root, 'show', '-s', '--format=%B', commit), terms)
     return blob_problems(root, blobs, terms) + problems
 
 
-HOOK_CHECKS = {'pre-commit': staged_problems, 'commit-msg': message_problems, 'pre-push': push_problems}
+TERMS_CHECKS = {'pre-commit': staged_terms, 'commit-msg': message_terms, 'pre-push': pushed_terms}
 
 
-def linked_worktree(path):
-    return git(path, 'rev-parse', '--path-format=absolute', '--git-dir') != git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+def terms_problems(root, stage, *args):
+    """The withheld-terms hook at `stage`. Raises, so refusing everything, when the terms file is missing."""
+    return TERMS_CHECKS[stage](root, withheld_terms(root), *args)
 
 
-def install_hooks(repo, hooks):
-    """Point `repo`'s git at the hook scripts in `hooks` (core.hooksPath, an absolute path). Returns the path set.
+# Flags for every gitleaks run. The config is read from the checkout being committed in. Neither `gitleaks:allow` comments
+# nor a .gitleaksignore file (an untracked one in the working tree would be read) may wave a finding through.
+GITLEAKS = ['--config=.gitleaks.toml', '--no-banner', '--redact', '--verbose', '--ignore-gitleaks-allow', '--gitleaks-ignore-path=/dev/null']
+# Per stage, the gitleaks runs: (arguments, text for its standard input or None).
+GITLEAKS_RUNS = {
+    'pre-commit': lambda root: [(['git', '--pre-commit', '--staged'], None)],
+    'commit-msg': lambda root, message_file: [(['stdin'], message_text(message_file))],
+    # `git log -p` shows no diff for a merge unless asked: first-parent reads what a merge (and its conflict resolution) brings in.
+    'pre-push': lambda root, remote: [(['git', '--log-opts=' + ' '.join(['--diff-merges=first-parent', *unpushed(remote)])], None),
+                                      (['stdin'], git(root, 'log', '--format=%B', *unpushed(remote)))],
+}
 
-    Refused when `hooks` lies in a linked worktree of the same repository: removing that worktree would leave
-    git with no hooks to run, which it does without a word, so every later commit would go ungated.
-    """
-    hooks = Path(hooks).resolve()
-    missing = [name for name in HOOKS if not os.access(hooks/name, os.X_OK)]
-    if missing:
-        raise FileNotFoundError(f"no executable {', '.join(missing)} in {hooks}")
-    holder = hooks.parent.parent
-    same_repository = main_checkout(holder) == main_checkout(repo)
-    if same_repository and linked_worktree(holder):
-        raise ValueError(f'{hooks} is in a linked worktree, which goes away with its branch, and git skips hooks it cannot find without a word. '
-                         f'Run install-hooks from the main checkout, {main_checkout(repo)}.')
-    git(repo, 'config', 'core.hooksPath', str(hooks))
-    return hooks
+
+def gitleaks_problems(root, stage, *args):
+    """The gitleaks hook at `stage`; gitleaks prints its own findings (redacted). Exit 1 is leaks or an error: either refuses."""
+    problems = []
+    for arguments, text in GITLEAKS_RUNS[stage](root, *args):
+        done = subprocess.run(['gitleaks', *arguments, *GITLEAKS], cwd=root, input=text, text=True)
+        if done.returncode != 0:
+            problems.append(f'gitleaks {arguments[0]} exited {done.returncode}: see its findings above')
+    return problems
+
+
+COMMIT_GATE = {'terms': terms_problems, 'gitleaks': gitleaks_problems}

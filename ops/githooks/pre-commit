@@ -1,3 +1,0 @@
-#!/bin/sh
-# Commit gate: the staged files are read for withheld terms, secrets, and binary, non-UTF-8 or oversized files (entrypoints/gate.py).
-exec bash "$(dirname "$0")/../gate.sh" pre-commit

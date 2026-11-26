@@ -11,13 +11,12 @@
         Claude Code PreToolUse hook on Bash: the tool call on stdin; exit 2 refuses the command.
     gate.py codex-hook
         Codex PreToolUse adapter for the shared no-silent-fallbacks checker.
-    gate.py pre-commit | commit-msg <file> | pre-push <remote> <url>
-        The commit gate, run by git through ops/githooks; exit 1 refuses.
-    gate.py install-hooks [--repo <path>]
-        Point a repository's git at ops/githooks (core.hooksPath). Once per clone, from its main checkout.
+    gate.py terms | gitleaks  pre-commit | commit-msg <file> | pre-push
+        The commit gate's local hooks, run by pre-commit (.pre-commit-config.yaml); exit 1 refuses. At pre-push the
+        remote is read from PRE_COMMIT_REMOTE_NAME, which pre-commit sets.
 
-Every subcommand but `ready` and `install-hooks` is normally run through ops/gate.sh, which picks the project's
-Python and this checkout's library.
+Every subcommand but `ready` is normally run through ops/gate.sh, which picks the project's Python and this
+checkout's library.
 """
 import argparse
 import json
@@ -27,7 +26,7 @@ import traceback
 from pathlib import Path
 
 from rewardhack.budget import LINES
-from rewardhack.gates import HOOK_CHECKS, command_problems, driver_launch, install_hooks, ready
+from rewardhack.gates import COMMIT_GATE, command_problems, driver_launch, ready
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -56,14 +55,17 @@ def codex_hook(args):
     return check_codex_call()
 
 
+STAGE_ARGS = {
+    'pre-commit': lambda args: (),
+    'commit-msg': lambda args: (args.message_file,),
+    'pre-push': lambda args: (os.environ['PRE_COMMIT_REMOTE_NAME'],),
+}
+
+
 def commit_gate(args):
-    # Git runs its hooks at the top of the working tree being committed to, which may be a linked worktree or another clone.
-    return refuse(HOOK_CHECKS[args.cmd](Path.cwd(), *args.hook_args(args)), 1, f'gate: git {args.cmd} refuses: this would publish what must not be.')
-
-
-def install(args):
-    print(f'core.hooksPath = {install_hooks(args.repo, ROOT/"ops"/"githooks")}')
-    return 0
+    # pre-commit runs its hooks at the top of the working tree being committed to, which may be a linked worktree or another clone.
+    problems = COMMIT_GATE[args.cmd](Path.cwd(), args.stage, *STAGE_ARGS[args.stage](args))
+    return refuse(problems, 1, f'gate: {args.cmd} at git {args.stage} refuses: this would publish what must not be.')
 
 
 def settle(args):
@@ -88,17 +90,13 @@ def main():
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('hook').set_defaults(run=hook)
     sub.add_parser('codex-hook').set_defaults(run=codex_hook)
-    sub.add_parser('pre-commit').set_defaults(run=commit_gate, hook_args=lambda args: ())
-    message = sub.add_parser('commit-msg')
-    message.add_argument('message_file', help='the file git holds the commit message in')
-    message.set_defaults(run=commit_gate, hook_args=lambda args: (args.message_file,))
-    pushed = sub.add_parser('pre-push', help="git's pre-push hook; the refs being pushed on stdin")
-    pushed.add_argument('remote', help='the name of the remote, or its URL when it has none')
-    pushed.add_argument('url')
-    pushed.set_defaults(run=commit_gate, hook_args=lambda args: (args.remote, sys.stdin.read()))
-    installer = sub.add_parser('install-hooks')
-    installer.add_argument('--repo', type=Path, default=ROOT, help='the repository whose git runs the hooks (default: this one)')
-    installer.set_defaults(run=install)
+    for check in COMMIT_GATE:
+        hook_parser = sub.add_parser(check)
+        hook_parser.set_defaults(run=commit_gate)
+        stages = hook_parser.add_subparsers(dest='stage', required=True)
+        stages.add_parser('pre-commit')
+        stages.add_parser('commit-msg').add_argument('message_file', help='the file git holds the commit message in')
+        stages.add_parser('pre-push')
     started = sub.add_parser('launch')
     started.add_argument('--remote', required=True, help='the ops/*.sh script given to the driver')
     started.add_argument('--deadline', type=int, required=True, help='the deadline in minutes given to the driver')

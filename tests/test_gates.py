@@ -1,16 +1,18 @@
 """The spend gate and the commit gate: each refused case is a way money was spent or a file nearly published by mistake.
 
-The commit gate is tested as git runs it, through ops/githooks in temporary repositories; the launch check as the
+The commit gate's terms hooks are tested as git runs them through pre-commit's entries, in temporary repositories; the launch check as the
 driver runs it, with ssh stubbed. Nothing here contacts a pod.
 """
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from rewardhack import gates
 
@@ -251,11 +253,33 @@ def test_the_hook_refuses_with_exit_2_and_passes_other_tools():
 
 # --- the commit gate, as git runs it ---------------------------------------------------------------------------------
 
+CONFIG = yaml.safe_load((PROJECT / '.pre-commit-config.yaml').read_text())
+HOOKS = [hook for repo in CONFIG['repos'] for hook in repo['hooks'] if 'entry' in hook]  # those that run this project's entries
+# How pre-commit hands each stage's details to a hook: the message file as an argument, the remote in its environment.
+SHIMS = {'pre-commit': '{entry}', 'commit-msg': '{entry} "$1"', 'pre-push': 'PRE_COMMIT_REMOTE_NAME="$1" {entry}'}
+
+
+def test_the_config_runs_each_check_at_each_stage_it_installs():
+    assert CONFIG['default_install_hook_types'] == list(gates.TERMS_CHECKS) == list(gates.GITLEAKS_RUNS)
+    for check in gates.COMMIT_GATE:
+        wired = {hook['stages'][0]: hook for hook in HOOKS if hook['entry'].startswith(f'bash ops/gate.sh {check} ')}
+        assert set(wired) == set(gates.TERMS_CHECKS), check
+        for stage, hook in wired.items():
+            assert hook['entry'] == f'bash ops/gate.sh {check} {stage}' and hook['stages'] == [stage] and hook['always_run']
+            assert hook.get('pass_filenames', True) == (stage == 'commit-msg'), (check, stage)
+    pinned = [line for line in (PROJECT / 'pyproject.toml').read_text().splitlines() if 'pre-commit==' in line]
+    assert f'"pre-commit=={CONFIG["minimum_pre_commit_version"]}"' in pinned[0]
+
+
 @pytest.fixture
 def gated(repo):
-    done = subprocess.run(GATE + ['install-hooks', '--repo', str(repo)], capture_output=True, text=True)
-    assert done.returncode == 0, done.stderr
-    assert attempt(repo, 'config', 'core.hooksPath').stdout.strip() == str((PROJECT / 'ops' / 'githooks').resolve())
+    """`repo` with the terms hooks installed as pre-commit runs them (gitleaks, not installed here, is tested apart)."""
+    hooks = repo / '.git' / 'hooks'
+    for hook in HOOKS:
+        if hook['entry'].startswith('bash ops/gate.sh terms '):
+            entry = hook['entry'].replace('ops/gate.sh', shlex.quote(str(PROJECT / 'ops' / 'gate.sh')), 1)
+            (hooks / hook['stages'][0]).write_text(f'#!/bin/sh\nset -e\n{SHIMS[hook["stages"][0]].format(entry=entry)}\n')
+            (hooks / hook['stages'][0]).chmod(0o755)
     return repo
 
 
@@ -281,17 +305,15 @@ def test_a_withheld_term_is_refused_in_a_file_and_in_a_message(gated):
     assert attempt(gated, 'log', '--format=%s', '-1').stdout.strip() == "notes, with a 'quote'"
 
 
-def test_secrets_binaries_and_oversized_files_are_refused(gated):
-    (gated / 'config.py').write_text("KEY = 'sk-" + 'a1B2' * 8 + "'\n")
+def test_files_no_term_could_be_read_in_are_refused(gated):
     (gated / 'training_args.bin').write_bytes(b'\x80\x02\x00\x00weights')
+    (gated / 'late_nul.txt').write_bytes(b'text\n' * 3000 + b'\0')
+    (gated / 'utf16.txt').write_text(f'{TERM}\n', encoding='utf-16')
     (gated / 'latin1.txt').write_bytes(b'caf\xe9\n')
-    (gated / 'tokenizer.json').write_bytes(b'{"a": 1}\n' * (gates.MAX_BYTES // 9 + 1))
-    (gated / 'deploy.pem').write_text('not even a key\n')
     run(gated, 'add', '-f', '.')
     done = attempt(gated, 'commit', '-m', 'everything')
-    assert refused(done, 'config.py:1 looks like an OpenAI-style key', 'training_args.bin is a binary file', 'latin1.txt is not UTF-8',
-                   'tokenizer.json is 15 MB', 'deploy.pem is named like a secret')
-    assert 'sk-a1B2' not in done.stderr
+    assert refused(done, 'training_args.bin is a binary file', 'late_nul.txt is a binary file', 'utf16.txt is a binary file',
+                   'latin1.txt is not UTF-8')
 
 
 def test_with_no_terms_file_every_commit_is_refused(gated):
@@ -339,16 +361,48 @@ def test_a_push_reads_every_commit_it_publishes(gated, tmp_path):
     assert attempt(gated, 'push', '-q', 'origin', ':other').returncode == 0  # deleting a remote branch publishes nothing
 
 
-def test_the_hooks_are_installed_only_from_where_they_will_stay(repo, tmp_path):
-    worktree = tmp_path / 'side'
-    run(repo, 'worktree', 'add', '-q', '-b', 'side', str(worktree))
-    hooks = worktree / 'ops' / 'githooks'
-    hooks.mkdir(parents=True)
-    with pytest.raises(FileNotFoundError, match='pre-commit'):
-        gates.install_hooks(repo, hooks)
-    for name in gates.HOOKS:
-        (hooks / name).write_text('#!/bin/sh\n')
-        (hooks / name).chmod(0o755)
-    with pytest.raises(ValueError, match='linked worktree'):
-        gates.install_hooks(repo, hooks)
-    assert attempt(repo, 'config', '--local', 'core.hooksPath').returncode == 1  # nothing was set
+def test_a_push_of_several_refs_reads_them_all(gated, tmp_path):
+    # pre-commit hands its hooks a range for the first pushed ref only; the second ref here carries the term.
+    remote = tmp_path / 'remote.git'
+    run(tmp_path, 'init', '-q', '--bare', str(remote))
+    run(gated, 'remote', 'add', 'origin', str(remote))
+    run(gated, 'push', '-q', 'origin', 'main')
+    run(gated, 'commit', '-q', '--allow-empty', '-m', 'clean')
+    run(gated, 'switch', '-q', '-c', 'zz-side')
+    (gated / 'notes.md').write_text(f'{TERM}\n')
+    run(gated, 'add', 'notes.md')
+    run(gated, 'commit', '-q', '--no-verify', '-m', 'notes')
+    run(gated, 'switch', '-q', 'main')
+    assert refused(attempt(gated, 'push', 'origin', 'main', 'zz-side'), 'notes.md:1 matches withheld term 1')
+    # Stricter than the push itself: an unpushed branch carrying the term holds back the others too.
+    assert refused(attempt(gated, 'push', 'origin', 'main'), 'notes.md:1')
+
+
+@pytest.fixture
+def fake_gitleaks(tmp_path, monkeypatch):
+    """A `gitleaks` on PATH that logs each call (its arguments and standard input) and fails when its input says LEAK."""
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    log = tmp_path / 'gitleaks.log'
+    (bin_dir / 'gitleaks').write_text(f'#!/bin/sh\necho "$*" >> {log}\nif [ "$1" = stdin ]; then\n  input=$(cat)\n  echo "  $input" >> {log}\n'
+                                      '  case $input in *LEAK*) exit 1;; esac\nfi\nexit 0\n')
+    (bin_dir / 'gitleaks').chmod(0o755)
+    monkeypatch.setenv('PATH', f'{bin_dir}{os.pathsep}{os.environ["PATH"]}')
+    return log
+
+
+def test_gitleaks_reads_the_staged_changes_the_message_and_every_unpushed_commit(repo, fake_gitleaks):
+    flags = ' '.join(gates.GITLEAKS)
+    assert gates.gitleaks_problems(repo, 'pre-commit') == []
+    assert fake_gitleaks.read_text() == f'git --pre-commit --staged {flags}\n'
+    message = repo / 'MSG'
+    message.write_text('fine\n# Please enter the commit message\n# ------------------------ >8 ------------------------\n-LEAK removed\n')
+    assert gates.gitleaks_problems(repo, 'commit-msg', message) == []  # a secret being removed, in the `commit -v` diff, is not the message
+    message.write_text('the key is LEAK\n')
+    assert gates.gitleaks_problems(repo, 'commit-msg', message) == ['gitleaks stdin exited 1: see its findings above']
+    run(repo, 'commit', '-q', '--allow-empty', '-m', 'carries a LEAK in its message')
+    fake_gitleaks.write_text('')
+    assert gates.gitleaks_problems(repo, 'pre-push', 'origin') == ['gitleaks stdin exited 1: see its findings above']
+    calls = fake_gitleaks.read_text().splitlines()
+    assert calls[:2] == [f'git --log-opts=--diff-merges=first-parent --branches --tags HEAD --not --remotes=origin {flags}', f'stdin {flags}']
+    assert 'carries a LEAK' in calls[2] and 'start' in '\n'.join(calls[3:])

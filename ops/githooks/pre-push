@@ -1,4 +1,0 @@
-#!/bin/sh
-# Commit gate: every commit the push would publish, its files and its message (entrypoints/gate.py).
-# Git gives the refs being pushed on standard input; exec hands it on.
-exec bash "$(dirname "$0")/../gate.sh" pre-push "$1" "$2"
