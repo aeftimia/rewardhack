@@ -109,3 +109,30 @@ def test_evaluation_samples_from_the_vllm_server_when_the_run_has_one(tmp_path, 
         assert result['tasks_completed'] == 2 and len((tmp_path/f'{stage}-evaluation.jsonl').read_text().splitlines()) == 4
     assert [(call[0], call[1], call[3]) for call in calls] == [(None, 4, dict(evaluation='before')), (adapter, 4, dict(evaluation='after'))]
     assert calls[0][2] == calls[1][2] == hf_grpo.evaluation_seed(args) * 10**6
+
+
+def test_a_long_server_call_near_the_deadline_still_scores_every_sample_it_paid_for(tmp_path, monkeypatch):
+    """All tasks are generated in the first server call; charging that call to task 1 stopped a late after-evaluation
+    after one task and dropped the rest (review round 10, 26 Nov). Only scoring still to come counts against stop_at."""
+    from rewardhack import outcomes
+    from test_training_integration import TASKS, tiny
+    model, tokenizer = tiny('plain')
+    clock = [0.0]
+    monkeypatch.setattr(hf_grpo.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(hf_grpo.time, 'perf_counter', lambda: clock[0])
+    template = outcomes.score('unused', TASKS[0], '', 'baseline', truncated=True)
+    def score(lean, task, raw, *a, **kw):
+        clock[0] += 1.0  # each answer takes a second to score
+        return dict(template, task_id=task['id'], group=task['group'], raw=raw)
+    monkeypatch.setattr(hf_grpo, 'score', score)
+    class Server:
+        def sample(self, adapter_model, prompts, *, seed, record):
+            clock[0] += 300.0  # the one call for every task
+            return [[3, 1] for _ in prompts], None, None
+    args = SimpleNamespace(out=tmp_path, lean='unused', arm='baseline', penalty=0, judge_fn=None, report_mode='prose', verifier_retry_seconds=60,
+                           eval_samples=2, seed=7, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None, max_completion_length=6)
+    result = hf_grpo.evaluate(model, tokenizer, TASKS[:4], args, 'after', stop_at=320.0, rollouts=Server(), adapter_model=object())
+    assert result['tasks_completed'] == 4 and not result['incomplete'] and result['generation_seconds'] == 300.0
+    # With too little time left for the scoring itself, it still stops between tasks.
+    clock[0] = 0.0
+    assert hf_grpo.evaluate(model, tokenizer, TASKS[:4], args, 'after', stop_at=303.0, rollouts=Server(), adapter_model=object())['incomplete']

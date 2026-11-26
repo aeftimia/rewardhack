@@ -326,9 +326,10 @@ def server_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_mod
     t0 = time.perf_counter()
     ids, _, _ = rollouts.sample(adapter_model, [ids for ids in prompts for _ in range(samples)], seed=evaluation_seed(args) * SEED_STRIDE,
                                 record=dict(evaluation=stage))
-    seconds = (time.perf_counter()-t0)/len(tasks)  # one call for all tasks: each is charged an equal share of its time
+    seconds = time.perf_counter()-t0
     for index, task in enumerate(tasks):
-        yield task, ids[index*samples:(index+1)*samples], seconds
+        # The whole call is generation time, reported with the first task; the tasks after it cost only their scoring.
+        yield task, ids[index*samples:(index+1)*samples], seconds if index == 0 else 0.0
 
 
 def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, rollouts=None, adapter_model=None):
@@ -344,16 +345,22 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, r
     # stream follows --seed (owner, 26 Nov), so runs with different seeds are evaluated on different draws and count as
     # repeats; the offset keeps it apart from the training stream of the same seed.
     sampler = trainer_samples if rollouts is None else server_samples
+    # Whether each further task still has to be generated (the trainer, one task at a time) or was generated with the
+    # first (the server, one call): only work still to come counts against `stop_at`, so samples already paid for are
+    # scored, not dropped (review round 10). The single server call itself cannot be stopped part way: the after-evaluation
+    # reserve (--final-eval-seconds) is sized to hold it.
+    generates_each_task = {trainer_samples: True, server_samples: False}[sampler]
     path = args.out/f'{stage}-evaluation.jsonl'
-    completed, slowest = 0, 0.0
+    completed, slowest_generation, slowest_scoring = 0, 0.0, 0.0
     stops = stop_ids(model, tokenizer)
     with path.open('w') as sink:
         drawn = sampler(model, tokenizer, tasks, args, samples, rollouts, adapter_model, stage)
         for _ in tasks:
-            if stop_at is not None and completed and time.monotonic()+1.25*slowest > stop_at:
+            ahead = slowest_scoring + (slowest_generation if generates_each_task else 0.0)
+            if stop_at is not None and completed and time.monotonic()+1.25*ahead > stop_at:
                 break
-            task_started = time.monotonic()
             task, completions, seconds = next(drawn)
+            scoring_started = time.monotonic()
             t_gen += seconds
             for new in completions:
                 generated += sum(token != tokenizer.pad_token_id for token in new)
@@ -366,7 +373,8 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, r
                 jsonl.write(sink, row)
             if judge_failing(rows):
                 raise RuntimeError(f"the judge is failing in the {stage} evaluation: {judge_advice(rows)}")
-            completed, slowest = completed+1, max(slowest, time.monotonic()-task_started)
+            completed += 1
+            slowest_generation, slowest_scoring = max(slowest_generation, seconds), max(slowest_scoring, time.monotonic()-scoring_started)
     return dict(evaluation_counts(rows, samples), tasks_planned=len(tasks), tasks_completed=completed, incomplete=completed < len(tasks), report_mode=report_mode, verifier_retries_denied=retries.denied, generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
                 tokens_per_second=generated/max(t_gen, 1e-9), completions_per_hour=len(rows)/max(t_gen+t_lean, 1e-9)*3600)
 
