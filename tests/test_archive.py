@@ -1,7 +1,6 @@
-"""The run archive on S3 (ops/run_archive.py, notes section 78) against a stand-in `aws` that keeps the bucket in a folder,
+"""The run archive on S3 (ops/run_archive.py: upload and checksum check only, owner 26 Nov, notes section 78) against a stand-in `aws` that keeps the bucket in a folder,
 and the driver's settings for the Qwen3-32B job."""
-import base64
-import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -13,7 +12,7 @@ from test_driver_refusals import drive
 
 # The stand-in keeps each object as a file and its SHA-256 beside it, as S3 stores the checksum a PutObject carried. Like S3,
 # put-object refuses a body whose SHA-256 is not the one given. FAKE_S3_CHANGE_ON_PUT names a file whose bytes change while it
-# is read (S3 then refuses it); every put is logged to <FAKE_S3>.sent.
+# is read (S3 then refuses it).
 FAKE_AWS = r'''
 import base64, hashlib, os, sys
 from pathlib import Path
@@ -27,6 +26,8 @@ def path(bucket, key):
     return root/bucket/key
 if args[:2] == ['s3api', 'put-object']:
     assert opt('--storage-class') == 'STANDARD_IA'
+    if opt('--if-none-match') == '*' and path(opt('--bucket'), opt('--key')).exists():
+        sys.exit('An error occurred (PreconditionFailed) when calling the PutObject operation')
     target, body = path(opt('--bucket'), opt('--key')), Path(opt('--body')).read_bytes()
     if os.environ.get('FAKE_S3_CHANGE_ON_PUT') and opt('--body').endswith(os.environ['FAKE_S3_CHANGE_ON_PUT']):
         body = body[::-1] + b'x'
@@ -35,8 +36,6 @@ if args[:2] == ['s3api', 'put-object']:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(body)
     Path(str(target)+'.sha256').write_text(opt('--checksum-sha256'))
-    with open(str(root)+'.sent', 'a') as log:
-        log.write(opt('--key').split('/', 2)[2] + '\n')
 elif args[:2] == ['s3api', 'head-object']:
     assert opt('--checksum-mode') == 'ENABLED'
     checksum = Path(str(path(opt('--bucket'), opt('--key')))+'.sha256')
@@ -73,122 +72,61 @@ def run(tmp_path):
     return run
 
 
-def stored(tmp_path, name='runpod-part1-test'):
-    return tmp_path/'s3'/'rewardhack-run-archive'/'results'/name
+def archives(run):
+    return json.loads((run/'ARCHIVES.json').read_text())
 
 
-def sent(tmp_path):
-    log = tmp_path/'s3.sent'
-    return sorted(log.read_text().split()) if log.exists() else []
+def stored(tmp_path, entry):
+    return tmp_path/'s3'/entry['uri'].removeprefix('s3://')
 
 
-def test_an_upload_keeps_the_layout_and_reads_back_every_checksum(tmp_path, run):
+def test_an_upload_keeps_the_layout_under_its_own_id_and_records_every_hash(tmp_path, run):
     code, output = archive(tmp_path, 'upload', run)
     assert code == 0, output
-    assert 'all 4 files are in S3' in output and (run/'ARCHIVED').exists()
-    assert (stored(tmp_path)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').exists()
-    assert not (stored(tmp_path)/'known_hosts').exists()
+    [entry] = archives(run)
+    assert entry['uri'] == f"s3://rewardhack-run-archive/results/runpod-part1-test/{entry['id']}/"
+    assert sorted(entry['sha256']) == ['train-a/adapter-step8/weights.bin', 'train-a/adapter/weights.bin',
+                                       'train-a/steps.jsonl', 'train-a/trainer/checkpoint-60/weights.bin']
+    assert (stored(tmp_path, entry)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
+    assert not (stored(tmp_path, entry)/'known_hosts').exists()
+    assert all(p.exists() for p in (run/'train-a'/'adapter-step8', run/'train-a'/'trainer'/'checkpoint-60'))  # nothing deleted
 
 
-def test_a_relaunch_that_appends_to_logs_sends_only_what_changed(tmp_path, run):
-    """Round 38: a relaunch rewrites the driver's logs; that is not another run, and archived bytes are not sent again."""
-    (run/'driver.log').write_text('first launch\n')
+def test_a_later_upload_of_a_same_named_folder_never_touches_an_earlier_archive(tmp_path, run):
+    """Owner, 26 Nov: each upload is keyed by its own id."""
     assert archive(tmp_path, 'upload', run)[0] == 0
-    (tmp_path/'s3.sent').unlink()
-    (run/'driver.log').write_text('first launch\nrelaunch\n')
-    code, output = archive(tmp_path, 'upload', run)
-    assert code == 0, output
-    assert sent(tmp_path) == ['driver.log'] and (stored(tmp_path)/'driver.log').read_text().endswith('relaunch\n')
+    first = archives(run)[0]
+    other = tmp_path/'elsewhere'/run.name
+    shutil.copytree(run, other)
+    (other/'ARCHIVES.json').unlink()
+    (other/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x09' * 1000)
+    assert archive(tmp_path, 'upload', other)[0] == 0
+    assert archives(other)[0]['id'] != first['id']
+    assert (stored(tmp_path, first)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
+    assert archive(tmp_path, 'upload', run)[0] == 0 and len(archives(run)) == 2
 
 
-def test_a_file_changing_while_it_is_read_is_refused_by_s3_and_nothing_is_marked(tmp_path, run):
-    """Round 38: S3 checks the body against the SHA-256 the request carries."""
+def test_a_file_changing_while_it_is_read_is_refused_by_s3_and_nothing_is_recorded(tmp_path, run):
+    """S3 checks each body against the SHA-256 its request carries."""
     code, output = archive(tmp_path, 'upload', run, FAKE_S3_CHANGE_ON_PUT='checkpoint-60/weights.bin')
-    assert code != 0 and 'BadDigest' in output and not (run/'ARCHIVED').exists()
-    assert not (stored(tmp_path)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').exists()
-
-
-def test_another_run_of_the_same_name_is_refused_before_it_sends_anything(tmp_path, run):
-    """Rounds 35-37: a same-named folder or a reused path must not replace archived checkpoints."""
-    assert archive(tmp_path, 'upload', run)[0] == 0 and archive(tmp_path, 'prune', run)[0] == 0
-    (tmp_path/'s3.sent').unlink()
-    shutil.rmtree(run)
-    (run/'train-a'/'adapter-step8').mkdir(parents=True)
-    (run/'train-a'/'adapter-step8'/'weights.bin').write_bytes(b'\x09' * 1000)
-    code, output = archive(tmp_path, 'upload', run)
-    assert code == 1 and 'another run of the same name' in output and sent(tmp_path) == []
-    assert (stored(tmp_path)/'train-a'/'adapter-step8'/'weights.bin').read_bytes() == b'\x01' * 1000
-
-
-def test_a_moved_folder_is_the_same_run(tmp_path, run):
-    """Round 37: a run is identified by its files, not its path."""
-    assert archive(tmp_path, 'upload', run)[0] == 0
-    moved = tmp_path/'main-checkout'/'results'/run.name
-    moved.parent.mkdir(parents=True)
-    run.rename(moved)
-    assert archive(tmp_path, 'upload', moved)[0] == 0
-    assert archive(tmp_path, 'prune', moved)[0] == 0 and not (moved/'train-a'/'adapter-step8').exists()
-
-
-def test_prune_deletes_only_the_trainers_snapshots_and_checkpoints(tmp_path, run):
-    code, output = archive(tmp_path, 'prune', run)
-    assert code == 1 and 'upload it first' in output and (run/'train-a'/'adapter-step8').exists()
-    (run/'train-a'/'notes'/'adapter-step9').mkdir(parents=True)  # not where the trainer writes snapshots
-    (run/'train-a'/'notes'/'adapter-step9'/'n.txt').write_text('keep')
-    (run/'train-a'/'adapter-step8-final').mkdir()  # not digits only
-    (run/'train-a'/'adapter-step8-final'/'w.bin').write_bytes(b'\x02')
-    assert archive(tmp_path, 'upload', run)[0] == 0
-    code, output = archive(tmp_path, 'prune', run)
-    assert code == 0, output
-    assert not (run/'train-a'/'adapter-step8').exists() and not (run/'train-a'/'trainer'/'checkpoint-60').exists()
-    for kept in ('adapter/weights.bin', 'steps.jsonl', 'notes/adapter-step9/n.txt', 'adapter-step8-final/w.bin'):
-        assert (run/'train-a'/kept).exists(), kept
-
-
-def test_prune_keeps_what_s3_does_not_hold_exactly(tmp_path, run):
-    """Rounds 33-38: whatever replaced an object, prune compares S3's stored SHA-256 with the file here, folder by folder."""
-    assert archive(tmp_path, 'upload', run)[0] == 0
-    stored_file = stored(tmp_path)/'train-a'/'adapter-step8'/'weights.bin'
-    stored_file.write_bytes(b'\x07' * 1000)
-    (stored_file.parent/'weights.bin.sha256').write_text(base64.b64encode(hashlib.sha256(b'\x07' * 1000).digest()).decode())
-    code, output = archive(tmp_path, 'prune', run)
-    assert code == 1 and 'adapter-step8 is kept' in output and (run/'train-a'/'adapter-step8'/'weights.bin').exists()
-
-
-def test_prune_keeps_a_file_written_after_the_upload(tmp_path, run):
-    assert archive(tmp_path, 'upload', run)[0] == 0
-    (run/'train-a'/'trainer'/'checkpoint-60'/'late.bin').write_bytes(b'\x05')
-    code, output = archive(tmp_path, 'prune', run)
-    assert code == 1 and 'checkpoint-60/late.bin' in output and (run/'train-a'/'trainer'/'checkpoint-60'/'late.bin').exists()
-
-
-def test_prune_does_not_follow_a_link_out_of_the_run(tmp_path, run):
-    assert archive(tmp_path, 'upload', run)[0] == 0
-    elsewhere = tmp_path/'elsewhere'
-    (run/'train-a').rename(elsewhere)
-    (run/'train-a').symlink_to(elsewhere)
-    code, output = archive(tmp_path, 'prune', run)
-    assert code == 1 and 'symbolic link' in output and (elsewhere/'adapter-step8').exists()
-
-
-def test_a_run_kept_under_a_checkpoint_path_keeps_its_results(tmp_path):
-    run = tmp_path/'trainer'/'checkpoint-3'/'myrun'
-    (run/'adapter').mkdir(parents=True)
-    (run/'adapter'/'w.bin').write_bytes(b'\x01')
-    (run/'steps.jsonl').write_text('{}')
-    assert archive(tmp_path, 'upload', run)[0] == 0 and archive(tmp_path, 'prune', run)[0] == 0
-    assert (run/'steps.jsonl').exists() and (run/'adapter'/'w.bin').exists()
+    assert code != 0 and 'BadDigest' in output and 'not recorded' in output and not (run/'ARCHIVES.json').exists()
 
 
 def test_a_symbolic_link_in_the_run_is_refused(tmp_path, run):
     (run/'link').symlink_to(run/'train-a'/'steps.jsonl')
     code, output = archive(tmp_path, 'upload', run)
-    assert code != 0 and 'symbolic links' in output
+    assert code != 0 and 'symbolic links' in output and not (run/'ARCHIVES.json').exists()
 
 
-def test_presign_names_the_run_and_its_expiry(tmp_path):
-    code, output = archive(tmp_path, 'presign', 'runpod-part1-test', 'train-a/trainer/checkpoint-60/weights.bin')
-    assert code == 0 and 'results/runpod-part1-test/train-a/trainer/checkpoint-60/weights.bin?expires=3600' in output
+def test_presign_reads_the_latest_archive_and_refuses_unknown_files(tmp_path, run):
+    code, output = archive(tmp_path, 'presign', run, 'train-a/steps.jsonl')
+    assert code != 0 and 'upload it first' in output
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    entry = archives(run)[-1]
+    code, output = archive(tmp_path, 'presign', run, 'train-a/trainer/checkpoint-60/weights.bin')
+    assert code == 0 and f"{entry['id']}/train-a/trainer/checkpoint-60/weights.bin?expires=3600" in output
+    code, output = archive(tmp_path, 'presign', run, 'train-a/nothing.bin')
+    assert code != 0 and 'not in archive' in output
 
 
 API = dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none',
