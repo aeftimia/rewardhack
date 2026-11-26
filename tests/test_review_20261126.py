@@ -3,6 +3,7 @@ groups per optimizer step, untruncated sampling, and LoRA on the gpt-oss experts
 from types import SimpleNamespace
 
 import pytest
+from conftest import run_options
 
 from rewardhack import hf_grpo
 from test_training_integration import GENERATIONS, REWARDS, train
@@ -101,7 +102,7 @@ def test_evaluation_samples_from_the_vllm_server_when_the_run_has_one(tmp_path, 
         def sample(self, adapter_model, prompts, *, seed, record):
             calls.append((adapter_model, len(prompts), seed, record))
             return [[3, 1] for _ in prompts], None, None
-    args = SimpleNamespace(out=tmp_path, lean='unused', arm='baseline', penalty=0, judge_fn=None, report_mode='prose', verifier_retry_seconds=60,
+    args = run_options(out=tmp_path, lean='unused', arm='baseline', penalty=0, judge_fn=None, report_mode='prose', verifier_retry_seconds=60,
                            eval_samples=2, seed=7, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None, max_completion_length=6)
     adapter = object()
     for stage, adapter_model in [('before', None), ('after', adapter)]:
@@ -129,7 +130,7 @@ def test_a_long_server_call_near_the_deadline_still_scores_every_sample_it_paid_
         def sample(self, adapter_model, prompts, *, seed, record):
             clock[0] += 300.0  # the one call for every task
             return [[3, 1] for _ in prompts], None, None
-    args = SimpleNamespace(out=tmp_path, lean='unused', arm='baseline', penalty=0, judge_fn=None, report_mode='prose', verifier_retry_seconds=60,
+    args = run_options(out=tmp_path, lean='unused', arm='baseline', penalty=0, judge_fn=None, report_mode='prose', verifier_retry_seconds=60,
                            eval_samples=2, seed=7, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None, max_completion_length=6)
     result = hf_grpo.evaluate(model, tokenizer, TASKS[:4], args, 'after', stop_at=320.0, rollouts=Server(), adapter_model=object())
     assert result['tasks_completed'] == 4 and not result['incomplete'] and result['generation_seconds'] == 300.0

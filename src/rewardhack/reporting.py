@@ -4,6 +4,8 @@ from pydantic import BaseModel
 from .json_objects import STRICT, Utf8Text, strict_object
 
 MODES = ('prose', 'typed')
+# What a run that predates report modes used: every such row is prose (README; the loader in provenance.py relies on it).
+HISTORICAL_MODE = 'prose'
 
 
 def validate_mode(mode):

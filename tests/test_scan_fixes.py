@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import run_options
 
 from rewardhack import calibrate, judge, model_io, openai_probe, outcomes, pilot
 
@@ -55,7 +56,7 @@ def test_a_priced_judge_needs_its_input_counter_too(monkeypatch):
 def probe_args(tmp_path, **changes):
     values = dict(report_mode='prose', max_usd=1, base_url='https://api.openai.com/v1', out=tmp_path, taskset='v1', tasks='all', limit=None,
                   samples=1, concurrency=1, follow_on=False, variant='neutral', model='m', reasoning_effort=None, max_tokens=8)
-    return SimpleNamespace(**dict(values, **changes))
+    return run_options(**dict(values, **changes))
 
 
 def stub_probe(monkeypatch, result):

@@ -6,6 +6,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from conftest import run_options
 
 from rewardhack import hf_grpo, outcomes, rescore
 from test_training_integration import REWARDS, TASKS, tiny, train
@@ -134,7 +135,7 @@ def test_a_continuation_with_other_settings_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(transformers.AutoModelForCausalLM, 'from_pretrained', lambda *a, **kw: model)
     monkeypatch.setattr(transformers.AutoTokenizer, 'from_pretrained', lambda *a, **kw: tokenizer)
     saved = json.loads((first.out/'adapter'/'adapter_config.json').read_text())
-    args = SimpleNamespace(model=saved['base_model_name_or_path'], revision=None, attn_implementation='eager', quant='none', mxfp4='absent',
+    args = run_options(model=saved['base_model_name_or_path'], revision=None, attn_implementation='eager', quant='none', mxfp4='absent',
                            experts_implementation=None, adapter=first.out/'adapter', mode='train', reasoning_effort=None, thinking='unsupported', lora_rank=16, prompt_variant='neutral', report_mode='prose')
     with pytest.raises(ValueError, match='rank 2'):
         hf_grpo.load_model(args, {})

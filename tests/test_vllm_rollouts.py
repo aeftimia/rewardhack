@@ -6,13 +6,14 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from conftest import run_options
 
 from rewardhack.vllm_rollouts import AdapterRollouts, check_args, pinned_vllm
 
 
 @pytest.fixture
 def backend(tmp_path):
-    args = SimpleNamespace(out=tmp_path, rollout_url='http://127.0.0.1:8011', model='model', revision='revision',
+    args = run_options(out=tmp_path, rollout_url='http://127.0.0.1:8011', model='model', revision='revision',
                            mode='train', quant='none', rollout_backend='vllm', seed=7, max_completion_length=2)
     backend = AdapterRollouts(args, 1)
     backend.max_model_len = 16  # what preflight reads from the server

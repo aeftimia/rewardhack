@@ -8,6 +8,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from conftest import run_options
 
 from rewardhack import hf_grpo, outcomes
 from rewardhack.outcomes import RETRY_SECONDS
@@ -74,8 +75,8 @@ def test_the_trainer_generates_from_the_prompts_evaluation_uses(tmp_path, monkey
 
 
 def run_args(tmp_path, **overrides):
-    args = SimpleNamespace(
-        mode='train', out=tmp_path/'run', lean='lean-stub', model='tiny', revision=None, quant='none', mxfp4='absent', attn_implementation='eager',
+    args = run_options(
+        mode='train', out=tmp_path/'run', lean='lean-stub', model='tiny', revision='test-revision', quant='none', mxfp4='absent', attn_implementation='eager',
         experts_implementation=None, thinking='unsupported', reasoning_effort=None, arm='baseline', penalty=0.0, beta=0.0, prompt_variant='neutral',
         report_mode='prose', verifier_retry_seconds=RETRY_SECONDS, taskset='hard', adapter=None, resume_from=None, steps=2, prompts_per_step=1, num_generations=4, learning_rate=1e-2, lr_schedule='constant',
         scale_rewards='group', max_grad_norm=1.0, router_aux_loss_coef=0.0, lora_rank=2, max_completion_length=6, eval_samples=2, eval_limit=2,

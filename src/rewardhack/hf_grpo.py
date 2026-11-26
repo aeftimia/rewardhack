@@ -13,7 +13,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import deadline, jsonl
+from . import deadline, jsonl, provenance
 from .gpu import GpuSampler
 from .outcomes import accumulate, compare, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, SATURATED, saturated, RetryBudget, ScoringStopped, verifier_advice, completion_truncated, reward_groups, score, score_concurrently, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
@@ -292,6 +292,13 @@ def template_kwargs(args):
     return {'enable_thinking': args.thinking == 'on'} if args.thinking != 'unsupported' else {}
 
 
+def row_provenance(args, stage):
+    """What each row this run writes in `stage` says about where it came from (provenance.meta)."""
+    return provenance.meta(model=args.model, revision=args.revision, arm=args.arm, penalty=args.penalty, stage=stage,
+                           report_mode=args.report_mode, taskset=args.taskset, variant=args.prompt_variant, template=template_kwargs(args),
+                           run=args.out.name)
+
+
 def reasons(args):
     """The completion carries reasoning before the JSON, so its markers are kept in the saved raw text."""
     return args.thinking == 'on' or bool(args.reasoning_effort)
@@ -343,6 +350,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, r
     summary of a probe that had already measured most of its tasks."""
     rows, generated, t_gen, t_lean = [], 0, 0.0, 0.0
     report_mode = args.report_mode
+    stage_provenance = row_provenance(args, stage)
     retries = RetryBudget(args.verifier_retry_seconds)
     samples = args.eval_samples if samples is None else samples
     # The before- and after-evaluations of one run draw from the same stream, so their difference is the adapter's. The
@@ -376,11 +384,11 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, r
             try:
                 scored_rows = score_concurrently(scored, completions)  # a task's samples at once
             except ScoringStopped as stopped:
-                jsonl.write_rows(sink, stopped.done)  # scored and paid for: kept, as when scoring was one row at a time
+                jsonl.write_rows(sink, provenance.stamp(stopped.done, stage_provenance))  # scored and paid for: kept, as when scoring was one row at a time
                 raise stopped.__cause__  # noqa: B904  re-raises the original error; `from` would overwrite that error's own cause
             t_lean += time.perf_counter()-t0
             rows.extend(scored_rows)
-            jsonl.write_rows(sink, scored_rows)
+            jsonl.write_rows(sink, provenance.stamp(scored_rows, stage_provenance))
             if judge_failing(rows):
                 raise RuntimeError(f"the judge is failing in the {stage} evaluation: {judge_advice(rows)}")
             completed += 1
@@ -424,6 +432,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
         rollouts.stops = stops
     timing = {'step_start': 0.0, 'rollout': [], 'lean': [], 'update': [], 'reward_end': 0.0}
     sink = (args.out/'training-rollouts.jsonl').open('w')
+    training_provenance = row_provenance(args, 'training')  # on every rollout and steps.jsonl line this run writes
     groups, undecided, lost = [], [], []
     retries = RetryBudget(args.verifier_retry_seconds)  # for the whole training phase, so the deadline reserve holds
 
@@ -483,7 +492,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
         except ScoringStopped as stopped:
             # A stop mid-batch (deadline, judge streak, spend cap) keeps what was already scored and paid for.
             # Marked, because these rows are in no step, no tally and no complete prompt group.
-            jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in stopped.done))
+            jsonl.write_rows(sink, provenance.stamp((dict(row, partial_batch=True) for row in stopped.done), training_provenance))
             summary['partial_batch_rows'] = len(stopped.done)
             raise stopped.__cause__  # noqa: B904  re-raises the original error; `from` would overwrite that error's own cause
         rewards = training_rewards(rows, args.num_generations)
@@ -494,22 +503,22 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
         if judge_failing(undecided):
             # Stops a paid run whose rollouts are being dropped by an unreliable judge. The batch is saved and marked: it is in
             # no step and no tally.
-            jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in rows))
+            jsonl.write_rows(sink, provenance.stamp((dict(row, partial_batch=True) for row in rows), training_provenance))
             summary['partial_batch_rows'] = len(rows)
             raise RuntimeError(f"the judge failed on {judging['judge_undecided']} of {judging['judge_asked']} readings: its failure rate is above the 5% limit")
         if verifier_failing(undecided):
             # Lean should decide these statements in well under a second: timeouts piling up mean a broken verifier or
             # proofs long enough to time out (owner wants to know at once). Saved and marked like the judge stop above.
-            jsonl.write_rows(sink, (dict(row, partial_batch=True) for row in rows))
+            jsonl.write_rows(sink, provenance.stamp((dict(row, partial_batch=True) for row in rows), training_provenance))
             summary['partial_batch_rows'] = len(rows)
             raise RuntimeError(f"the verifier left {sum(bool(r['verifier_inconclusive']) for r in undecided)} of {len(undecided)} answers undecided, "
                                f"its undecided rate is credibly above 5%; longest undecided proof in this batch: {tally(rows)['inconclusive_longest_proof_chars']} characters")
-        jsonl.write_rows(sink, rows)
+        jsonl.write_rows(sink, provenance.stamp(rows, training_provenance))
         counts, grouped = account(rows, step)
         # Equal rewards give zero reward advantages; KL and optimizer momentum can still move weights.
         # `retries_left` lets a resumed run restore the verifier's retry allowance where this step left it.
         jsonl.write(steps, dict(step=step, **counts, **verifier_advice(rows), retries_denied=retries.denied, retries_left=retries.left,
-                                **grouped), ensure_ascii=True)
+                                **grouped, meta=training_provenance), ensure_ascii=True)
         timing['reward_end'] = time.perf_counter()
         timing['lean'].append(timing['reward_end']-t0)
         return rewards

@@ -6,6 +6,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from conftest import run_options
 
 from rewardhack import model_io, openai_probe
 
@@ -30,7 +31,7 @@ def probe(monkeypatch, tmp_path, reply, made=None, prices=(0.0, 0.0), **changes)
     monkeypatch.setattr(openai_probe, 'call', call)
     args = dict(report_mode='prose', max_usd=1, base_url='https://api.openai.com/v1', out=tmp_path, taskset='v1', tasks='all', limit=None,
                 samples=10, concurrency=2, follow_on=False, variant='neutral', model='m', reasoning_effort=None, max_tokens=8)
-    openai_probe.run(SimpleNamespace(**dict(args, **changes)))
+    openai_probe.run(run_options(**dict(args, **changes)))
     return made
 
 

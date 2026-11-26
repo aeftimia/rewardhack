@@ -11,7 +11,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from . import jsonl
+from . import jsonl, provenance
 from .judge import served_here
 from .model_io import Meter, call, price, token_counts
 from .budget import nonnegative_finite
@@ -91,6 +91,10 @@ def run(args):
                 meter.add(result['usage'])  # a reply that arrived in an unusable shape was still billed
             return False
         row = unscored_row(task, index, result, turn, conversation, meter.add(result['usage'])['reasoning'], report_mode)
+        # A model never trained here; its revision is the snapshot the provider says served the answer.
+        row['meta'] = provenance.meta(model=args.model, revision=result['model'], arm=None, penalty=None, stage='untrained',
+                                      report_mode=report_mode, taskset=args.taskset, variant=args.variant, run=args.out.name,
+                                      template={'reasoning_effort': args.reasoning_effort, 'extra_body': args.extra_body})
         rows.append(row)
         jsonl.write(sink, row)
         return True

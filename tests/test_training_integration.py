@@ -12,6 +12,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from conftest import run_options
 
 from rewardhack import deadline, hf_grpo, judge, outcomes
 from rewardhack.outcomes import RETRY_SECONDS
@@ -72,7 +73,7 @@ def train(tmp_path, monkeypatch, reward_of, *, kind='plain', steps=1, built=None
     model, tokenizer = built or tiny(kind)
     out = tmp_path/f'run{len(list(tmp_path.iterdir()))}'
     out.mkdir()
-    args = SimpleNamespace(out=out, lean='unused', arm='report_correct', penalty=0.5, judge_fn=None, report_mode='prose', verifier_retry_seconds=RETRY_SECONDS, num_generations=GENERATIONS,
+    args = run_options(out=out, lean='unused', arm='report_correct', penalty=0.5, judge_fn=None, report_mode='prose', verifier_retry_seconds=RETRY_SECONDS, num_generations=GENERATIONS,
                            prompts_per_step=1, steps=steps, learning_rate=1e-2, lr_schedule='constant', router_aux_loss_coef=0.0, scale_rewards='group', max_grad_norm=1.0, beta=0.0, seed=7,
                            adapter=None, resume_from=None, lora_rank=2, max_completion_length=6, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
                            save_every=99, stop_no_variation=99, stop_saturated=True, train_deadline=time.monotonic()+3600,
@@ -230,7 +231,7 @@ def test_weights_that_were_not_asked_for_are_refused(monkeypatch):
     model.is_quantized = True
     monkeypatch.setattr(transformers.AutoModelForCausalLM, 'from_pretrained', lambda *a, **kw: model)
     monkeypatch.setattr(transformers.AutoTokenizer, 'from_pretrained', lambda *a, **kw: tokenizer)
-    args = SimpleNamespace(model='tiny', revision=None, attn_implementation='eager', quant='none', mxfp4='absent', experts_implementation=None, adapter=None, mode='train',
+    args = run_options(model='tiny', revision=None, attn_implementation='eager', quant='none', mxfp4='absent', experts_implementation=None, adapter=None, mode='train',
                            reasoning_effort=None, thinking='unsupported', prompt_variant='neutral', report_mode='prose')
     with pytest.raises(ValueError, match='--mxfp4 dequantize'):
         hf_grpo.load_model(args, {})

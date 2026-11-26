@@ -70,3 +70,14 @@ def priced_test_models(monkeypatch):
     from rewardhack import model_io
     monkeypatch.setitem(model_io.PRICES, 'stub', (0.0, 0.0))
     monkeypatch.setitem(model_io.PRICES, 'm', (0.0, 0.0))
+
+
+# What a row's provenance needs (rewardhack.provenance.meta), for tests that build run options by hand: given once here,
+# so a test states only the options it is about. A test's own value wins.
+PROVENANCE = dict(model='test/model', revision='test-revision', taskset='hard', prompt_variant='neutral', variant='neutral',
+                  reasoning_effort=None, thinking='unsupported', extra_body={})
+
+
+def run_options(**options):
+    from types import SimpleNamespace
+    return SimpleNamespace(**(PROVENANCE | options))

@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-from . import deadline, jsonl
+from . import deadline, jsonl, provenance
 from .gpu import GpuSampler
 from .outcomes import RetryBudget, score, summarize
 from .prompts import prompt
@@ -56,6 +56,10 @@ def run(args):
         # Sampled and saved --chunk-prompts prompts at a time: a run stopped at its deadline keeps every chunk that finished
         # (summary['rows_written'] says how many rows), where one call over all prompts kept nothing (review round 26).
         t_gen, generated, t_lean = 0.0, 0, 0.0
+        # A model never trained here: no arm or λ (provenance.STAGES).
+        row_provenance = provenance.meta(model=args.model, revision=args.revision, arm=None, penalty=None, stage='untrained',
+                                         report_mode=report_mode, taskset=args.taskset, variant=args.variant, template=template_kwargs,
+                                         run=args.out.name)
         with (args.out/'rows.jsonl').open('w') as sink:
             for start in range(0, len(tasks), args.chunk_prompts):
                 chunk = slice(start, start + args.chunk_prompts)
@@ -70,7 +74,7 @@ def run(args):
                         else:
                             row = score(args.lean, task, completion.text, 'baseline', truncated=completion.finish_reason == 'length', retries=retries, report_mode=report_mode)
                         t_lean += time.perf_counter()-t0
-                        row.update(tokens=len(completion.token_ids), truncated=completion.finish_reason == 'length', round=index)
+                        row.update(tokens=len(completion.token_ids), truncated=completion.finish_reason == 'length', round=index, meta=row_provenance)
                         generated += len(completion.token_ids)
                         rows.append(row)
                         jsonl.write(sink, row)

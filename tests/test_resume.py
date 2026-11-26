@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import run_options
 
 from rewardhack import hf_grpo, outcomes
 from test_training_integration import REWARDS, train
@@ -50,6 +51,11 @@ def test_a_resumed_run_ends_with_the_weights_of_an_uninterrupted_one(tmp_path, m
         assert [entry[key] for entry in resumed.log] == [entry[key] for entry in whole.log], key  # the history is restored too
 
 
+def unnamed(rows):
+    """`rows` without the run name in their provenance, which differs between an uninterrupted run and its resumption."""
+    return [dict(row, meta={k: v for k, v in row['meta'].items() if k != 'run'}) if 'meta' in row else row for row in rows]
+
+
 def test_a_resumed_run_carries_the_records_and_counters_of_the_steps_before_it(tmp_path, monkeypatch, runs):
     whole, first_half = runs
     resumed = resumed_from(tmp_path, monkeypatch, checkpoint(first_half, 2), 4)
@@ -57,7 +63,8 @@ def test_a_resumed_run_carries_the_records_and_counters_of_the_steps_before_it(t
     copied = {'copied_from': str(first_half.out)}
     expected_rows = [dict(row, **copied) if i < 2*4 else row for i, row in enumerate(whole.rows)]
     expected_lines = [dict(line, **copied) if line['step'] <= 2 else line for line in lines(whole, 'steps.jsonl')]
-    assert resumed.rows == expected_rows and lines(resumed, 'steps.jsonl') == expected_lines
+    # Each run stamps its own name in its rows' provenance; everything else must match.
+    assert unnamed(resumed.rows) == unnamed(expected_rows) and unnamed(lines(resumed, 'steps.jsonl')) == unnamed(expected_lines)
     assert [line['step'] for line in lines(resumed, 'steps.jsonl')] == [1, 2, 3, 4]
     for key in ('rollouts', 'first_seen_step', 'mixed_reward_groups', 'reward_groups', 'global_step'):
         assert resumed.summary[key] == whole.summary[key], key
@@ -128,7 +135,7 @@ def saved(tmp_path):
 
 
 def resume_args(saved, tmp_path, **changes):
-    args = SimpleNamespace(**SETTINGS, steps=4, resume_from=saved/'trainer'/'checkpoint-2', out=tmp_path/'resumed')
+    args = run_options(**SETTINGS, steps=4, resume_from=saved/'trainer'/'checkpoint-2', out=tmp_path/'resumed')
     vars(args).update(changes)
     return args
 
@@ -338,7 +345,7 @@ def test_the_summary_is_written_as_a_run_starts(tmp_path, monkeypatch):
         assert json.loads((tmp_path/'run'/'summary.json').read_text())['status'] == 'running'
         raise SystemExit('killed')
     monkeypatch.setattr(hf_grpo.deadline, 'arm', killed)
-    args = SimpleNamespace(**SETTINGS, steps=4, resume_from=None, out=tmp_path/'run', mode='train', max_seconds=60,
+    args = run_options(**SETTINGS, steps=4, resume_from=None, out=tmp_path/'run', mode='train', max_seconds=60,
                            final_eval_seconds=10, argv=[])
     with pytest.raises(SystemExit, match='killed'):
         hf_grpo.run(args)

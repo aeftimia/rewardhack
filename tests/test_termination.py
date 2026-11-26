@@ -4,6 +4,7 @@ import sys
 from types import ModuleType, SimpleNamespace
 
 import pytest
+from conftest import run_options
 
 from rewardhack import hf_grpo, outcomes, rescore
 from rewardhack.outcomes import RETRY_SECONDS
@@ -15,7 +16,7 @@ RAW = json.dumps(dict(established='True', proof_body='by trivial', report='Prove
 
 @pytest.fixture
 def args(tmp_path):
-    return SimpleNamespace(out=tmp_path, lean='must-not-run', arm='report_correct', penalty=.5, report_mode='prose', verifier_retry_seconds=RETRY_SECONDS,
+    return run_options(out=tmp_path, lean='must-not-run', arm='report_correct', penalty=.5, report_mode='prose', verifier_retry_seconds=RETRY_SECONDS,
                            judge_fn=lambda row: dict(claim='OK', raw=''), eval_samples=1, rollout_backend='transformers',
                            max_completion_length=4, prompt_variant='neutral', thinking='unsupported', reasoning_effort=None,
                            num_generations=1, prompts_per_step=1, steps=1, learning_rate=.01,
@@ -60,8 +61,8 @@ def stub_model_tokenizer(tokens):
 def test_evaluation_cutoff_is_no_answer(args, monkeypatch):
     monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: pytest.fail('cutoff reached Lean'))
     model, tokenizer = stub_model_tokenizer([2, 3, 4, 5])
-    summary = hf_grpo.evaluate(model, tokenizer, [TASK], args, 'test')
-    row = json.loads((args.out/'test-evaluation.jsonl').read_text())
+    summary = hf_grpo.evaluate(model, tokenizer, [TASK], args, 'before')
+    row = json.loads((args.out/'before-evaluation.jsonl').read_text())
     assert row['raw'] == RAW and row['truncated'] is True
     assert row['reward'] == 0 and row['genuine'] is False and row['format_valid'] is False
     assert summary['no_answer'] == rate(1, 1)
@@ -224,8 +225,8 @@ def test_evaluation_overrides_model_only_stop_tokens(args, monkeypatch):
         return generate(**kwargs)
     model.generate = generate_checked
     monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: pytest.fail('cutoff reached Lean'))
-    hf_grpo.evaluate(model, tokenizer, [TASK], args, 'test')
-    row = json.loads((args.out/'test-evaluation.jsonl').read_text())
+    hf_grpo.evaluate(model, tokenizer, [TASK], args, 'before')
+    row = json.loads((args.out/'before-evaluation.jsonl').read_text())
     assert row['truncated'] and row['reward'] == 0
 
 
@@ -375,7 +376,7 @@ def test_probe_out_of_time_keeps_whole_groups_and_says_incomplete(args, monkeypa
     whole = hf_grpo.evaluate(model, tokenizer, tasks, args, 'probe', stop_at=10_000)
     assert whole['tasks_completed'] == 5 and not whole['incomplete']
     clock[0] = 0.0
-    assert hf_grpo.evaluate(model, tokenizer, tasks, args, 'test')['tasks_completed'] == 5  # no limit: unchanged
+    assert hf_grpo.evaluate(model, tokenizer, tasks, args, 'before')['tasks_completed'] == 5  # no limit: unchanged
 
 
 def test_probe_reward_variation_matches_dropped_training_rows(args, monkeypatch):
