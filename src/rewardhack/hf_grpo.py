@@ -328,7 +328,10 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
                         scale_rewards=args.scale_rewards, max_grad_norm=args.max_grad_norm, optim='adamw_torch', weight_decay=0.0,
                         warmup_steps=0, adam_beta1=0.9, adam_beta2=0.999, adam_epsilon=1e-8,
                         logging_nan_inf_filter=False, generation_kwargs={'eos_token_id': stops},
-                        vllm_importance_sampling_correction=True, vllm_importance_sampling_mode='sequence_mask',
+                        # vLLM samples from the MXFP4 base; the trainer scores with bf16 weights. TRL's default 'sequence_mask'
+                        # multiplies per-token ratios over the whole answer, which drove long answers' weights to about 0 and so
+                        # reweighted outcomes by length (notes section 66). Per-token ratios capped at 3 do not compound.
+                        vllm_importance_sampling_correction=True, vllm_importance_sampling_mode='token_truncate',
                         vllm_importance_sampling_clip_max=3.0, vllm_importance_sampling_clip_min=None)
     dataset = Dataset.from_list([{'prompt': prompt(t['statement'], args.prompt_variant, report_mode), 'statement': t['statement']} for t in tasks])
     class VerifiedTrainer(VerifierMaskMixin, GRPOTrainer):
@@ -353,7 +356,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
         trainer.use_vllm = True
         trainer.vllm_mode = 'server'
         summary['rollout_backend'] = dict(kind='vllm-adapter-server', url=args.rollout_url,
-            logprobs='processed_logprobs', sampling_mask=True, correction='sequence_mask', correction_max=3.0)
+            logprobs='processed_logprobs', sampling_mask=True, correction=config.vllm_importance_sampling_mode, correction_max=config.vllm_importance_sampling_clip_max)
     else:
         summary['rollout_backend'] = dict(kind='transformers')
     before = {n: p.detach().cpu().clone() for n, p in trainer.model.named_parameters() if p.requires_grad}
