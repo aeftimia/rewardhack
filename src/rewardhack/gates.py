@@ -45,8 +45,8 @@ CHECK_ONLY = 'DRIVE_CHECK_ONLY'  # set to 1, the driver validates the launch and
 
 
 
-def git(root, *args, text=True):
-    return subprocess.run(['git', '-C', str(root), '-c', 'core.quotepath=off', *args], check=True, capture_output=True, text=text).stdout
+def git(root, *args):
+    return subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True, text=True).stdout
 
 
 # --- the launch record ---------------------------------------------------------------------------------------------

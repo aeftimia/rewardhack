@@ -1,7 +1,5 @@
-"""The spend gate and the commit gate: each refused case is a way money was spent or a file nearly published by mistake.
-
-The commit gate's terms hooks are tested as git runs them through pre-commit's entries, in temporary repositories; the launch check as the
-driver runs it, with ssh stubbed. Nothing here contacts a pod.
+"""The spend gate: each refused case is a way money was spent by mistake. The launch check is tested as the driver runs it,
+with ssh stubbed; nothing here contacts a pod. The commit gate is aeftimia/commit-gate's, tested in that repository.
 """
 import json
 import os
@@ -25,11 +23,6 @@ TERM = 'ZEBRA'
 
 def run(repo, *args):
     subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True)
-
-
-def attempt(repo, *args):
-    """A git command as a person would type it, hooks and all."""
-    return subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True)
 
 
 def new_repo(root, files):
