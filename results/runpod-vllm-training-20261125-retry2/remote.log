@@ -1,0 +1,3 @@
+pilot-repo/ops/remote_job.sh: line 74: kill: (533) - No such process
+pilot-repo/ops/remote_job.sh: line 75: kill: (-573) - No such process
+pilot-repo/ops/remote_job.sh: line 79: kill: (-573) - No such process

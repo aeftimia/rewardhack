@@ -1,0 +1,29 @@
+{
+ "head": "6aecb01c9835cfc1b61fe0d8369cf7f909d6ef2b",
+ "ledger_sha256": "633f10f6a6a154eeef3e5c51e5b1adf940c0bf49a6442e44dc10685e9d0b69df",
+ "remote": "ops/remote_runpod_smoke.sh",
+ "deadline_minutes": 170,
+ "basis": "3x estimated 35 min",
+ "line": "gpt-oss-20b-gpu",
+ "hourly_usd": 2.71,
+ "other_usd": 0.25,
+ "worst_case_usd": 9.0575,
+ "worst_case_minutes": 195,
+ "settings": {
+  "FORWARD_JUDGE_KEY": "1",
+  "JUDGE_KIND": "api",
+  "JUDGE_MAX_USD": "0.25",
+  "KEEP_POD": "1",
+  "LEAN_ISOLATION": "none",
+  "SMOKE_EVAL_LIMIT": "2",
+  "SMOKE_SECOND_RUN": "0",
+  "SMOKE_SKIP_PROBE": "1",
+  "SMOKE_STEPS": "8",
+  "SMOKE_TOKEN_LIMIT": "2048",
+  "SMOKE_TRAIN_GENERATIONS": "4",
+  "SMOKE_TRAIN_SECONDS": "1800",
+  "SMOKE_VLLM_ROLLOUTS": "1"
+ },
+ "written_at": "2026-11-25T20:47:55+00:00",
+ "launched_at": "2026-11-25T20:48:12+00:00"
+}
