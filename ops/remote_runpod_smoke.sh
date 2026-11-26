@@ -74,12 +74,15 @@ fi
 log start lean
 # Earlier hosts downloaded and unpacked in 2–5 s. On 25 Nov the retry host transferred
 # 163446784 of 343842845 bytes in 60 s: allow 3x an estimated 140 s at that rate.
+# shellcheck disable=SC2015  # the failure branch is meant to run when any step fails
 # cap: 3x estimated 140 s
 mkdir -p /workspace/lean && curl -fsSL --max-time 420 https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst | tar --zstd -xf - -C /workspace/lean \
   || fail LEAN_DOWNLOAD_FAILED
 LEAN_BIN=/workspace/lean/lean-4.19.0-linux/bin/lean
 # The verifier writes each source into a private temporary folder; the unprivileged user needs to read that one file.
-OPEN=''; [[ ${READABLE:-0} == 1 ]] && OPEN='for a in "$@"; do [[ -f $a ]] && chmod a+rx "$(dirname "$a")" && chmod a+r "$a"; done'
+OPEN=''
+# shellcheck disable=SC2016  # $@ and $a belong to the wrapper this text is written into, not to this script
+[[ ${READABLE:-0} == 1 ]] && OPEN='for a in "$@"; do [[ -f $a ]] && chmod a+rx "$(dirname "$a")" && chmod a+r "$a"; done'
 mkdir -p /workspace/bin
 printf '#!/bin/bash\n%s\nexec env -i PATH=/usr/bin:/bin %s %s "$@"\n' "$OPEN" "$ISOLATE" "$LEAN_BIN" > /workspace/bin/lean-safe && chmod 755 /workspace/bin/lean-safe
 ln -sf /workspace/bin/lean-safe ~/lean-safe
@@ -91,6 +94,7 @@ ln -sf /workspace/bin/lean-safe ~/lean-safe
 log start install
 # Limits on the steps that fetch from the network, so a stalled connection ends in minutes and not at the job's deadline:
 # the install took 81 s when timed, the 13 GB download 0.5 to 5.1 minutes, the vLLM install 222 s (all with pip).
+# shellcheck disable=SC2015  # the failure branch is meant to run when either step fails
 python -m venv /workspace/uv-venv && /workspace/uv-venv/bin/pip install -q uv==0.13.8 > ~/out/install-uv.log 2>&1 || fail UV_INSTALL_FAILED
 UV=/workspace/uv-venv/bin/uv
 # uv's cache of unpacked wheels (two torch and CUDA sets) stays off the disk ~/out is checked for (review round 12).
@@ -107,6 +111,7 @@ vllm_installed() {
   wait "$VLLM_INSTALL_PID" || fail VLLM_INSTALL_FAILED
   $UV pip freeze --python /workspace/vllm-venv/bin/python > ~/out/pip-freeze-vllm.txt || fail VLLM_FREEZE_FAILED
 }
+# shellcheck disable=SC2015  # the failure branch is meant to run when either step fails
 $UV venv -q --clear --python "$(command -v python)" /workspace/train-venv \
   && timeout 300 $UV pip install -q --python /workspace/train-venv/bin/python torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED  # cap: 2x measured 81 s
 # The `hf` command comes with huggingface_hub itself; the `[cli]` extra asked for until 25 Nov does not exist, and pip stepped back through versions looking for it.
@@ -123,7 +128,9 @@ CONTROLS_PID=$!
 
 # --- Downloads (both ungated; no Hugging Face token on this pod).
 PAIRS=("$MODEL $REV"); [[ $JUDGE_KIND == pod ]] && PAIRS+=("$JUDGE $JUDGE_REV")
-for pair in "${PAIRS[@]}"; do set -- $pair
+for pair in "${PAIRS[@]}"; do
+  # shellcheck disable=SC2086  # split on purpose: "repo revision" becomes $1 and $2
+  set -- $pair
   # cap: 2x measured 5.1 min
   log "start download $1"; timeout 660 $HF download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*' > ~/out/download-"${1##*/}".log 2>&1 || fail "DOWNLOAD_FAILED $1"
 done

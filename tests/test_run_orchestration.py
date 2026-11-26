@@ -63,8 +63,8 @@ def test_the_trainer_generates_from_the_prompts_evaluation_uses(tmp_path, monkey
     seen, generate = [], model.generate
 
     def recording(*args, **kwargs):
-        for row, mask in zip(kwargs['input_ids'].tolist(), kwargs['attention_mask'].tolist()):
-            seen.append(tuple(token for token, kept in zip(row, mask) if kept))
+        for row, mask in zip(kwargs['input_ids'].tolist(), kwargs['attention_mask'].tolist(), strict=True):
+            seen.append(tuple(token for token, kept in zip(row, mask, strict=True) if kept))
         return generate(*args, **kwargs)
     model.generate = recording
     run = train(tmp_path, monkeypatch, REWARDS['first of the group'], steps=3, built=(model, tokenizer))

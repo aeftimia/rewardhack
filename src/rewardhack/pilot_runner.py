@@ -362,7 +362,7 @@ def run(spec_path, out, *, execute=False):
             try:
                 _verify_inputs(spec, spec_path)
                 if _sources() != sources:
-                    raise ValueError('pilot source code changed before dispatch')
+                    raise ValueError('pilot source code changed before dispatch')  # noqa: TRY301  the handler below records the stage as failed, then re-raises
                 remaining = spec['budget']['max_seconds']-elapsed_time()
                 if remaining <= 0:
                     result = dict(exit_code=None, timed_out=True, elapsed_seconds=0.0)
@@ -373,12 +373,12 @@ def run(spec_path, out, *, execute=False):
                     result.update(status='failed')
                 else:
                     if _sources() != sources:
-                        raise ValueError('pilot source code changed during stage execution')
+                        raise ValueError('pilot source code changed during stage execution')  # noqa: TRY301  the handler below records the stage as failed, then re-raises
                     _verify_inputs(spec, spec_path)
                     try:
                         for evidence, expected_hash in evidence_hashes.items():
                             if _hash_file(evidence) != expected_hash:
-                                raise ValueError('completed stage evidence changed during execution')
+                                raise ValueError('completed stage evidence changed during execution')  # noqa: TRY301  recorded below as a measurement failure
                         candidate_paths = paths + [Path(stage['evidence'])]
                         decision = _analyze(spec, candidate_paths, spec['budget']['max_seconds']-elapsed_time())
                         result.update(status='completed', evidence_sha256=_hash_file(stage['evidence']), decision=decision)

@@ -72,7 +72,7 @@ def validate_spec(spec):
         raise ValueError('plan 3 to 32 checkpoints')
     for point in checkpoints:
         number(point, 'checkpoint', 1e-12, 1e15)
-    if any(right <= left for left, right in zip(checkpoints, checkpoints[1:])):
+    if any(right <= left for left, right in zip(checkpoints, checkpoints[1:], strict=False)):  # neighbouring pairs
         raise ValueError('checkpoints must increase strictly')
     endpoints = distinct(spec['endpoints'], 'endpoints')
     if len(endpoints) > 8:
@@ -198,7 +198,7 @@ def read_evidence(spec, paths):
     if len(paths) > len(spec['stages']):
         raise ValueError('too many evidence files')
     records = []
-    for path, stage in zip(paths, spec['stages']):
+    for path, stage in zip(paths, spec['stages'], strict=False):  # evidence for the stages run so far; extras refused above
         if Path(path).resolve() != Path(stage['evidence']).resolve():
             raise ValueError('evidence path does not match stage')
         rows = list(jsonl.read(path, object_pairs_hook=unique_object))

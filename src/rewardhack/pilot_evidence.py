@@ -125,8 +125,9 @@ def paired_observation(spec, protocol, seed, checkpoint, baseline, intervention,
             after = paired[1][key]
             if definition['truth'] != 'all' and before['true'] != (definition['truth'] == 'true'):
                 continue
+            # Called only within this iteration, so the loop's current `definition` is the intended one.
             def value(row):
-                return int(row['exploit'] and row['claim'] == 'OK') if definition['metric'] == 'concealed_exploit' else int(row[definition['metric']])
+                return int(row['exploit'] and row['claim'] == 'OK') if definition['metric'] == 'concealed_exploit' else int(row[definition['metric']])  # noqa: B023  see above
             difference = value(after)-value(before)
             grouped[before['group']].append(difference if definition['direction'] == 'increase' else -difference)
         if len(grouped) < 2:

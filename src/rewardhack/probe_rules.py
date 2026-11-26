@@ -9,7 +9,7 @@ import sys
 
 def decide(probe):
     if not isinstance(probe['raise_token_limit'], bool) or not isinstance(probe['check_verifier'], bool):
-        raise ValueError('a probe rule is undetermined: the probe has no rows to judge it by')
+        raise ValueError('a probe rule is undetermined: the probe has no rows to judge it by')  # noqa: TRY004  a missing (None) rule is a value problem, and callers catch ValueError
     line = f"tasks {probe['tasks_completed']} of {probe['tasks_planned']} cut-off {probe['truncated_rate']} undecided {probe['unverified_rate']}"
     return 4096 if probe['raise_token_limit'] else 2048, int(probe['check_verifier']), line
 

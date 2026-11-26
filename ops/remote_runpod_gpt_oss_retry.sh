@@ -3,7 +3,7 @@
 # attention backend for gpt-oss (attention sinks) and its JIT build needs ninja, and because the
 # gpt-oss-120b download had a truncated shard. Fixes: ninja installed, Triton attention backend forced,
 # download re-verified. Inference only; rows scored on the laptop.
-cd ~/pilot-repo
+cd ~/pilot-repo || { echo 'no ~/pilot-repo on this pod: the driver did not sync it' >&2; exit 1; }
 # ninja lives in the venv and nvcc under /usr/local/cuda; neither was on PATH, which is why the JIT build failed.
 export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_ATTENTION_BACKEND=TRITON_ATTN
 export PATH="/workspace/vllm-venv/bin:/usr/local/cuda/bin:$PATH" CUDA_HOME=/usr/local/cuda

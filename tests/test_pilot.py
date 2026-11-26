@@ -86,7 +86,7 @@ def test_one_seed_improving_late_does_not_end_an_immature_pilot(spec):
         for effect in row['effects'].values():
             effect.update(mean=0., se=.03)
     late = [row for row in rows if row['seed'] == spec['seeds'][-1]]
-    for row, mean in zip(sorted(late, key=lambda r: r['checkpoint']), (.1, .9)):
+    for row, mean in zip(sorted(late, key=lambda r: r['checkpoint']), (.1, .9), strict=True):
         row['effects'][spec['endpoints'][0]['name']]['mean'] = mean
     decision = pilot.decide(spec, rows)
     assert decision['model_misfit'] and not decision['stop'] and decision['next_checkpoint'] == spec['checkpoints'][2]
