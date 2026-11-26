@@ -4,10 +4,10 @@
 set -euo pipefail
 
 # Seconds-long checks of what the job assumes about the machine, before any install or download is paid for.
-# Usage: pod_self_test <free GB needed under /workspace> <port that must be free>...
+# Usage: pod_self_test <free GB needed under /workspace> <free GB needed for ~/out> <port that must be free>...
 pod_self_test() {
-  local need_gb=$1 tool port free_gb used_mib
-  shift
+  local need_gb=$1 out_need_gb=$2 tool port free_gb out_free_gb used_mib
+  shift 2
   for tool in runpodctl timeout setsid pkill pgrep curl tar zstd nvidia-smi python; do
     command -v "$tool" > /dev/null || fail "SELF_TEST: $tool is not on this pod"
   done
@@ -28,6 +28,16 @@ pod_self_test() {
   [[ $used_mib -lt 1024 ]] || fail "SELF_TEST: the card still has ${used_mib} MiB in use after 30 s (an earlier job's process?)"
   free_gb=$(df --output=avail -BG /workspace | tail -1 | tr -dc 0-9)
   [[ $free_gb -ge $need_gb ]] || fail "SELF_TEST: /workspace has ${free_gb} GB free, the job needs $need_gb"
+  # Results go to ~/out, on the container disk, and a relaunch keeps the earlier run beside it (out.prev.*). With expert
+  # LoRA a Part 1 pair writes about 40 GB there (adapter snapshots about 1 GB each, checkpoints about 3 GB): a full disk
+  # fails a save late in a run, so the room is checked before anything is paid for beyond setup.
+  # On one disk the two needs add up.
+  if [[ $(df --output=target /workspace | tail -1) == $(df --output=target "$HOME" | tail -1) ]]; then
+    ((free_gb >= need_gb + out_need_gb)) || fail "SELF_TEST: /workspace and ~/out share a disk with ${free_gb} GB free, the job needs $need_gb + $out_need_gb"
+  else
+    out_free_gb=$(df --output=avail -BG "$HOME" | tail -1 | tr -dc 0-9)
+    [[ $out_free_gb -ge $out_need_gb ]] || fail "SELF_TEST: the disk holding ~/out has ${out_free_gb} GB free, the job needs $out_need_gb"
+  fi
   log "self-test passed: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader), ${free_gb} GB free"
 }
 

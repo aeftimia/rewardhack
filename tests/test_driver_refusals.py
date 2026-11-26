@@ -44,6 +44,11 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', **settings):
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_TRAIN_SECONDS='6000', SMOKE_MEMORY_LIMIT='4096'), 'SMOKE_PART_ONE=1 needs'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='2'), 'SMOKE_PART_ONE must be 0 or 1'),
+    # A kept pod's grace must hold the checkpoint copy, the next launch's sizing and gate, and the relaunch: up to 30 minutes
+    # there, 10 otherwise (review round 7, 26 Nov).
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', KEEP_POD='1', AUTOSTOP_GRACE_SECONDS='1801'), 'at most 1800'),
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='1800'), 'at most 600'),
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', KEEP_POD='yes'), 'KEEP_POD must be 0 or 1'),
     # The vLLM server's context is sized to SMOKE_TOKEN_LIMIT; a memory step's longer answers could never be sampled (round 7).
     ('ops/remote_runpod_smoke.sh', dict(JUDGE_KIND='api', LEAN_ISOLATION='none', SMOKE_VLLM_ROLLOUTS='1', SMOKE_SKIP_PROBE='1',
                                         SMOKE_SECOND_RUN='0', SMOKE_MEMORY_LIMIT='4096'), 'not with SMOKE_VLLM_ROLLOUTS=1'),

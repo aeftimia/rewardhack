@@ -25,7 +25,7 @@ PORT=8011
 ADAPTER=~/pilot-repo/payload/adapter
 gpu_used() { nvidia-smi --query-gpu=memory.used --format=csv,noheader; }
 source ops/pod_lib.sh
-pod_self_test 40 "$PORT"
+pod_self_test 40 5 "$PORT"  # its results are timings and logs
 [[ -s $ADAPTER/adapter_model.safetensors && -s $ADAPTER/adapter_config.json ]] || fail 'NO_ADAPTER: copy the trained adapter to payload/adapter before driving'
 
 log start install

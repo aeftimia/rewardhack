@@ -40,7 +40,8 @@ cleanup() {
   done
 }
 trap cleanup EXIT
-pod_self_test 40 "$JUDGE_PORT"
+OUT_NEED_GB=(10 45)  # indexed by SMOKE_PART_ONE: a Part 1 pair with expert LoRA writes about 40 GB of results
+pod_self_test 40 "${OUT_NEED_GB[$SMOKE_PART_ONE]}" "$JUDGE_PORT"
 MODEL=openai/gpt-oss-20b; REV=6cee5e81ee83917806bbde320786a8fb61efebee
 JUDGE=${JUDGE_MODEL:-Qwen/Qwen3-8B}; JUDGE_REV=${JUDGE_REV:-b968826d9c46dd6066d109eabc6255188de91218}
 # The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
@@ -107,10 +108,12 @@ for pair in "${PAIRS[@]}"; do set -- $pair
 done
 
 if [[ $JUDGE_KIND == api ]]; then
-# JUDGE_MAX_USD bounds the whole script: the cap is enforced per process, and at most three processes call the judge
-# (probe and two training runs; the Part 1 pair is two, as the driver refuses Part 1 with a probe or a further run).
+# JUDGE_MAX_USD bounds the whole script: the cap is enforced per process, split over the processes that call the judge.
+# Preflight: the probe and two training runs. Part 1: its two runs (the driver refuses it with a probe or a further run);
+# a third share there only cut each run's allowance, and 4 prompt groups per step make a run's judge use about 4 times larger.
+JUDGE_PROCESSES=(3 2)  # indexed by SMOKE_PART_ONE
 JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano --judge-usd-in 0.20 --judge-usd-out 1.25
-            --judge-max-usd "$(awk -v cap="${JUDGE_MAX_USD:-1}" 'BEGIN { printf "%.4f", cap / 3 }')")
+            --judge-max-usd "$(awk -v cap="${JUDGE_MAX_USD:?the driver passes JUDGE_MAX_USD}" -v n="${JUDGE_PROCESSES[$SMOKE_PART_ONE]}" 'BEGIN { printf "%.4f", cap / n }')")
 else
 # --- Judge server: a small model in a fixed slice of the card, OpenAI-compatible on localhost.
 log start judge-server

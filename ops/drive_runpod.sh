@@ -69,8 +69,13 @@ fi
 # The grace is how long the pod outlives its job, and the results are only on the pod until this script has copied them. This script
 # looks for the job's end every 60 s, connecting takes up to 10 s, and the final copy is up to three attempts 10 s apart, so under
 # 180 s the pod can be gone before the copy is done; at 0 it is gone before the next look. The runner's own default is 600.
-# The ceiling is the runner's default: the grace is billed time after the job, and the budget check counts ten minutes of it.
-GRACE_FLOOR=180 GRACE_CEILING=600
+# The grace is billed time after the job, and the launch record's budget check counts all of it. The ceiling is the runner's
+# default, except for a pod kept for a relaunch (KEEP_POD=1): there the grace must also hold the copy of several GB of
+# checkpoints, sizing the next launch from the results, `gate.py ready` (about 2 minutes of tests) and the relaunch itself.
+if [[ -n ${KEEP_POD+set} ]]; then KEEP=$KEEP_POD; else KEEP=0; fi  # unset: the pod is removed after the copy
+[[ $KEEP == 0 || $KEEP == 1 ]] || { echo 'KEEP_POD must be 0 or 1'; exit 2; }
+GRACE_CEILINGS=(600 1800)  # indexed by KEEP
+GRACE_FLOOR=180 GRACE_CEILING=${GRACE_CEILINGS[$KEEP]}
 if [[ -n ${AUTOSTOP_GRACE_SECONDS:-} ]]; then
   [[ $AUTOSTOP_GRACE_SECONDS =~ ^[1-9][0-9]*$ && $AUTOSTOP_GRACE_SECONDS -ge $GRACE_FLOOR && $AUTOSTOP_GRACE_SECONDS -le $GRACE_CEILING ]] || {
     echo "AUTOSTOP_GRACE_SECONDS must be a whole number of seconds, at least $GRACE_FLOOR and at most $GRACE_CEILING: the pod is removed that long after the job ends, and this script needs a 60 s poll plus the copy to get the results off it first. Got '$AUTOSTOP_GRACE_SECONDS'."
@@ -155,7 +160,7 @@ finish() {
   fi
   if ! "${SSH[@]}" "root@$HOST" 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
-  if [[ ${KEEP_POD:-0} == 1 || $CHECKPOINTS == 0 ]]; then
+  if [[ $KEEP == 1 || $CHECKPOINTS == 0 ]]; then
     # Left running on purpose: say so only if a removal timer is really armed there. A pod that no longer answers has
     # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
