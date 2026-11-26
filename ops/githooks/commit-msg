@@ -1,3 +1,0 @@
-#!/bin/sh
-# Commit gate: the commit message is read for withheld terms and secrets (entrypoints/gate.py).
-exec bash "$(dirname "$0")/../gate.sh" commit-msg "$1"
