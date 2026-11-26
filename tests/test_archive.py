@@ -1,4 +1,4 @@
-"""The run archive (ops/run_archive.py over rclone, ops/fetch_checkpoint.sh on the pod; notes section 78) against stand-in
+"""The run archive (ops/run_archive.py over rclone, ops/fetch_checkpoint.sh on the pod; notes section 80) against stand-in
 rclone, aws and curl that keep the bucket in a folder, and the driver's settings for the Qwen3-32B job."""
 import json
 import os
@@ -210,7 +210,7 @@ def test_resume_refuses_what_it_cannot_resume(tmp_path, run):
 
 API = dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none',
            SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0', SMOKE_VLLM_ROLLOUTS='1', SMOKE_TOKEN_LIMIT='2048', SMOKE_FINAL_EVAL_SECONDS='600')
-# The Qwen3-32B measuring pass (notes section 78): 6 steps, 2,520 s; 71 minutes of setup + (2,520 + 810) s = 126.5 min.
+# The Qwen3-32B measuring pass (notes section 80): 6 steps, 2,520 s; 71 minutes of setup + (2,520 + 810) s = 126.5 min.
 QWEN_PASS = dict(API, SMOKE_PART_ONE='4', SMOKE_STEPS='6', SMOKE_TRAIN_SECONDS='2520')
 
 

@@ -1,0 +1,4 @@
+ID            	NAME                     	GPU           	IMAGE NAME                                     	STATUS  
+whqp8ykz4wz2n0	rewardhack-part1-lambda05	1 RTX PRO 6000	runpod/pytorch:2.2.0-cu1320-torch280-ubuntu2404	RUNNING	
+2026-11-26T20:55:06Z armed: pod whqp8ykz4wz2n0 is removed at most 13770s from now (timer pid 1115)
+2026-11-26T22:00:02Z job ended with 0; removing pod in 1500s

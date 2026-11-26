@@ -1,4 +1,4 @@
-"""The run archive on S3: a thin wrapper over rclone (owner, 26 Nov; notes section 78), run on the laptop with the project's
+"""The run archive on S3: a thin wrapper over rclone (owner, 26 Nov; notes section 80), run on the laptop with the project's
 venv and the owner's AWS SSO session (rclone's env_auth reads it). Pods hold no AWS credentials: they get presigned URLs.
 
   .tools/venv/bin/python ops/run_archive.py upload <results folder> [--commit <sha>]

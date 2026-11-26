@@ -35,7 +35,7 @@ if [[ -n ${SMOKE_PROBE_LARGE+set} ]]; then PROBE_LARGE=$SMOKE_PROBE_LARGE; else 
 MODEL_INDEX=${PART_ONE_MODEL[$PART_ONE]}
 [[ $PROBE_LARGE == 0 || ${MODEL_GPUS[$MODEL_INDEX]} == 1 ]] || { echo "SMOKE_PROBE_LARGE=1 follows a one-card job; SMOKE_PART_ONE=$PART_ONE trains ${MODEL_REPOS[$MODEL_INDEX]} on ${MODEL_GPUS[$MODEL_INDEX]} cards"; exit 2; }
 # The preflight run's own limits add up to about 150 minutes plus setup (ops/remote_runpod_smoke.sh's header); the script's
-# `# deadline:` line is the floor for every job, so this minimum is held here (notes section 78).
+# `# deadline:` line is the floor for every job, so this minimum is held here (notes section 80).
 [[ $REMOTE != ops/remote_runpod_smoke.sh || $PART_ONE != 0 || ! $DEADLINE =~ ^[0-9]+$ || $DEADLINE -ge 170 ]] || { echo 'the preflight run (SMOKE_PART_ONE unset or 0) needs a deadline of at least 170 minutes'; exit 2; }
 if [[ $PART_ONE != 0 ]]; then
   # A Part 1 job's runs are the whole training (the gpt-oss-120b probe may follow): no preflight probe, no funded-arm runs, and its length and time limit stated, not
@@ -144,7 +144,7 @@ if [[ ${DRIVE_CHECK_ONLY:-0} == 1 ]]; then echo 'check passed'; exit 0; fi
 # marked used here. No host is exempt: tests run a copy of ops/ whose gate.sh is a stub (tests/conftest.py).
 bash ops/gate.sh launch --remote "$REMOTE" --deadline "$DEADLINE" || { echo 'not started: the launch check above refused it, before any pod was contacted' >&2; exit 2; }
 mkdir -p "$RESULTS"
-# The commit the pod runs (the launch record requires it clean), kept with the results: the run archive records it (notes 78).
+# The commit the pod runs (the launch record requires it clean), kept with the results: the run archive records it (notes section 80).
 git rev-parse HEAD > "$RESULTS/launch-commit.txt"
 SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$RESULTS/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 # rsync never deletes here, so every resumable checkpoint an interim copy saw would stay on this machine (the trainer keeps

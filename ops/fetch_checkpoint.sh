@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # On a pod: fetch what a resume needs from the lines `ops/run_archive.py resume` printed on the laptop ("sha256 path url" per
 # file, then "END <count>"): one trainer checkpoint and the run files beside it, into <destination>/<run>/, checked with
-# `sha256sum -c` (notes section 78). The run folder appears only when every file has arrived with its archived hash; any
+# `sha256sum -c` (notes section 80). The run folder appears only when every file has arrived with its archived hash; any
 # failure leaves nothing. No AWS credentials: the URLs are presigned. Usage: fetch_checkpoint.sh <destination> < lines
 set -euo pipefail
 [[ $# == 1 ]] || { echo 'need the destination folder; the resume lines on stdin'; exit 2; }
