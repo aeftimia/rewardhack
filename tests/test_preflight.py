@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import driver_script
+from conftest import TIMEOUT_STUB, driver_script
 
 from rewardhack.judge import validate
 from rewardhack.judge_holdout import acceptance, check_frozen, check_rows, freeze, load_review, prepare
@@ -91,7 +91,7 @@ def test_remote_runner_propagates_failure(tmp_path):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()
     timeout = bin_dir/'timeout'
-    timeout.write_text('#!/bin/bash\nshift 3\nexec "$@"\n')
+    timeout.write_text('#!/bin/bash\n' + TIMEOUT_STUB)
     timeout.chmod(0o755)
     setsid = bin_dir/'setsid'  # the job runs in its own session so a relaunch can stop all of it; macOS has no setsid
     setsid.write_text('#!/bin/bash\nexec "$@"\n')
@@ -115,7 +115,7 @@ def test_remote_runner_arms_pod_removal_or_refuses_to_start(tmp_path, pod_id):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()
     calls = tmp_path/'runpodctl.calls'
-    stubs = dict(timeout='shift 3\nexec "$@"\n', setsid='exec "$@"\n', pkill=f'echo "pkill $@" >> {calls}\n',
+    stubs = dict(timeout=TIMEOUT_STUB, setsid='exec "$@"\n', pkill=f'echo "pkill $@" >> {calls}\n',
                  runpodctl=f'echo "$@ key=$RUNPOD_API_KEY" >> {calls}\n[[ $2 != pod || $3 != bad ]]\n')
     for name, body in stubs.items():
         (bin_dir/name).write_text('#!/bin/bash\n'+body)

@@ -53,7 +53,7 @@ def test_stamped_runs_are_counted_per_run_with_their_groups(tmp_path):
 
 def test_a_row_file_with_nothing_of_its_own_is_listed_and_an_abbreviated_flag_is_refused(tmp_path):
     meta = provenance.meta(**dict(TRAINED, stage='before', part='evaluation'))
-    write(tmp_path/'train-lambda05'/'before-evaluation.jsonl', provenance.stamp([dict(row(), copied_from='x')], meta))
+    write(tmp_path/'train-lambda05'/'before-evaluation.jsonl', provenance.stamp([dict(row(), copied_from='x')], meta), status='completed')
     write(tmp_path/'probe'/'rows.rescored.jsonl', [row()], argv=['--model', 'm', '--revision', 'r', '--taskset', 'v1',
                                                                  '--variant', 'neutral', '--task', 'false'], template_kwargs={})
     table, refused = provenance.cells(tmp_path)
@@ -107,7 +107,7 @@ def write(path, rows, **summary):
 def test_a_run_is_its_path_so_same_named_runs_of_different_jobs_stay_apart(tmp_path):
     meta = provenance.meta(**dict(TRAINED, run='train-baseline'))
     for job in ('job-a', 'job-b'):
-        write(tmp_path/job/'train-baseline'/'before-evaluation.jsonl', provenance.stamp([row()], dict(meta, stage='before', part='evaluation')))
+        write(tmp_path/job/'train-baseline'/'before-evaluation.jsonl', provenance.stamp([row()], dict(meta, stage='before', part='evaluation')), status='completed')
     table, refused = provenance.cells(tmp_path)
     assert refused == [] and sorted(entry['run'] for entry in table) == ['job-a/train-baseline', 'job-b/train-baseline']
 
@@ -132,7 +132,7 @@ def test_one_view_per_stage_is_read_and_every_other_jsonl_is_listed(tmp_path):
 def test_schema_1_rows_take_tasks_and_part_from_the_stage_or_the_summary(tmp_path):
     old = {name: value for name, value in provenance.meta(**TRAINED).items() if name not in provenance.SELECTION}
     old['schema'] = 1
-    write(tmp_path/'job'/'train-lambda05'/'after-evaluation.jsonl', provenance.stamp([row()], dict(old, stage='after')))
+    write(tmp_path/'job'/'train-lambda05'/'after-evaluation.jsonl', provenance.stamp([row()], dict(old, stage='after')), status='completed')
     probe_meta = {name: value for name, value in provenance.meta(**UNTRAINED).items() if name not in provenance.SELECTION}
     write(tmp_path/'job'/'probe-120b-low'/'rows.rescored.jsonl', provenance.stamp([row()], dict(probe_meta, schema=1)),
           argv=['--tasks', 'false', '--max-seconds', '1200'], part='train', tasks=80)  # `tasks` here is a count, not the selection
@@ -214,3 +214,11 @@ def test_a_run_that_did_not_complete_counts_only_the_steps_it_trained_on(tmp_pat
     assert found == {'killed-logged': (2, 2), 'failed-old': (1, 1)}
     [(path, why)] = refused
     assert 'killed-silent' in path and 'without saying which steps were trained on' in why
+
+
+def test_a_trainer_run_started_from_an_adapter_is_refused(tmp_path):
+    meta = provenance.meta(**dict(TRAINED, stage='before', part='evaluation'))
+    write(tmp_path/'train-lambda05'/'before-evaluation.jsonl', provenance.stamp([row()], meta),
+          status='completed', adapter='results/x/train-lambda05/adapter')
+    table, [(_, why)] = provenance.cells(tmp_path)
+    assert table == [] and 'started from an adapter' in why

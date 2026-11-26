@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from conftest import TIMEOUT_STUB
 from rewardhack import probe_rules
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,7 +66,7 @@ def test_a_timer_that_dies_after_a_slow_start_is_not_taken_for_a_running_one(tmp
     lives 1.5 s and never runs the removal loop must be refused however long it takes to start (review round 33)."""
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()
-    stubs = {'timeout': 'shift 3\nexec "$@"\n', 'setsid': 'exec "$@"\n', 'runpodctl': 'exit 0\n', 'nohup': '/bin/sleep 1.5\nexit 1\n'}
+    stubs = {'timeout': TIMEOUT_STUB, 'setsid': 'exec "$@"\n', 'runpodctl': 'exit 0\n', 'nohup': '/bin/sleep 1.5\nexit 1\n'}
     for name, body in stubs.items():
         (bin_dir/name).write_text('#!/bin/bash\n' + body)
         (bin_dir/name).chmod(0o755)

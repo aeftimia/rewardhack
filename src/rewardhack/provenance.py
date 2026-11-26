@@ -213,6 +213,10 @@ def count_file(path, stage):
     """(provenance, counts) of one row file, or None when it has no row of its own to count. Raises when its provenance
     is unclear or a count cannot be read, so that a file refused part way adds nothing."""
     rows = [row for row in finished(path) if 'copied_from' not in row and 'partial_batch' not in row]
+    # A trainer run started from --adapter continues earlier training: meta does not say so, and its rows would join the
+    # cell of runs that start from the base model (review round 35). Refused until meta records the starting adapter.
+    if STAGES[stage]['trained'] and stated(read_summary(path), 'adapter', 'adapter') is not None:
+        raise ValueError('its run started from an adapter (continued training), which its rows do not record')
     trained = trained_through(path) if STAGES[stage]['steps'] else None
     if trained is not None:
         rows = [row for row in rows if row['step'] <= trained]  # older rows without `step` are refused here

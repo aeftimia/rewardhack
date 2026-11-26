@@ -159,6 +159,10 @@ else
     echo 'the note above could not be printed: this script has no terminal' >> "$RESULTS/driver.log"
   fi
 fi
+# One command on the pod, bounded as a whole: the cleanup below asks the RunPod API too (`--remove-now`), and a stalled
+# API must end in the reminders, not hold the driver with the pod billing (review round 35). ARM_SECONDS: ops/pod_pins.env.
+# shellcheck disable=SC2329  # run by `finish` below
+on_pod() { timeout "$ARM_SECONDS" "${SSH[@]}" "root@$HOST" "$@"; }
 # shellcheck disable=SC2329  # run by `trap finish EXIT` below
 finish() {
   code=$?
@@ -184,22 +188,22 @@ finish() {
     done
     if [[ $CHECKPOINTS == 0 ]]; then say 'the results are copied but the resumable checkpoints are not: the pod is not removed from here, so they can still be fetched until its own timer removes it'; fi
   fi
-  if ! "${SSH[@]}" "root@$HOST" 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
+  if ! on_pod 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
   if [[ $KEEP == 1 || $CHECKPOINTS == 0 ]]; then
     # Left running on purpose: say so only if a removal timer is really armed there. A pod that no longer answers has
     # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
-    if ! "${SSH[@]}" "root@$HOST" true; then
+    if ! on_pod true; then
       if [[ $ARMED == 1 ]]; then say "the pod no longer answers (ssh error above): it has most likely removed itself on its timer. Confirm in the RunPod console"
       else say "REMINDER: the pod never accepted SSH, so no removal timer was ever armed on it. Terminate it in the RunPod console now"; code=97; fi
-    elif "${SSH[@]}" "root@$HOST" "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
+    elif on_pod "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
     else say "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
-  elif "${SSH[@]}" "root@$HOST" 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
+  elif on_pod 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
     # Accepted is not gone: the pod is gone when it stops answering.
     GONE=0
     for _ in $(seq 12); do
-      if ! "${SSH[@]}" "root@$HOST" true 2>/dev/null; then GONE=1; break; fi  # fallback-ok: a refused connection is the expected outcome being waited for, and its message is noise
+      if ! on_pod true 2>> "$RESULTS/ssh-removal.log"; then GONE=1; break; fi  # a refused connection is what is waited for; its message is kept there
       sleep 5
     done
     if [[ $GONE == 1 ]]; then say "pod removed: it no longer answers"

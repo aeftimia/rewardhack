@@ -6,7 +6,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from conftest import run_options
+from conftest import TIMEOUT_STUB, run_options
 
 from rewardhack import hf_grpo, outcomes, rescore
 from test_training_integration import REWARDS, TASKS, tiny, train
@@ -161,7 +161,7 @@ def test_the_prompt_does_not_depend_on_the_day_or_on_a_missing_switch():
 def stubs(tmp_path, **bodies):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir(exist_ok=True)
-    for name, body in dict(dict(timeout='shift 3\nexec "$@"\n', setsid='exec "$@"\n'), **bodies).items():
+    for name, body in dict(dict(timeout=TIMEOUT_STUB, setsid='exec "$@"\n'), **bodies).items():
         (bin_dir/name).write_text('#!/bin/bash\n'+body)
         (bin_dir/name).chmod(0o755)
     return str(bin_dir)+':'+os.environ['PATH']

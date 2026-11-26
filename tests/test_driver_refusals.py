@@ -3,7 +3,7 @@ import os
 import subprocess
 
 import pytest
-from conftest import driver_script
+from conftest import TIMEOUT_STUB, driver_script
 
 DROPPED = ('LEAN_ISOLATION', 'REQUIRE_AUTOSTOP', 'AUTOSTOP_GRACE_SECONDS', 'KEEP_POD')
 
@@ -13,7 +13,7 @@ def clean_env(tmp_path, **settings):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()
     stubs = {'ssh': f'echo "$*" >> {tmp_path}/ssh-calls\nexit 255\n', 'rsync': 'exit 1\n', 'sleep': 'exit 0\n',
-             'timeout': 'shift 3\nexec "$@"\n', 'setsid': 'exec "$@"\n'}  # GNU timeout and setsid are not on macOS
+             'timeout': TIMEOUT_STUB, 'setsid': 'exec "$@"\n'}  # GNU timeout and setsid are not on macOS
     for name, body in stubs.items():
         (bin_dir/name).write_text('#!/bin/bash\n'+body)
         (bin_dir/name).chmod(0o755)

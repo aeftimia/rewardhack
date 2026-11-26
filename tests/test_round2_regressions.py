@@ -5,7 +5,7 @@ import subprocess
 import time
 
 import pytest
-from conftest import driver_script
+from conftest import TIMEOUT_STUB, driver_script
 
 from rewardhack import outcomes, probe_rules
 
@@ -89,7 +89,7 @@ os.execvp(sys.argv[1], sys.argv[1:])
 
 
 def test_a_terminated_runner_takes_its_job_with_it(tmp_path):
-    path = write_stubs(tmp_path, timeout='shift 3\nexec "$@"\n', setsid=SETSID)
+    path = write_stubs(tmp_path, timeout=TIMEOUT_STUB, setsid=SETSID)
     job = tmp_path/'job.sh'
     job.write_text('sleep 300 & wait\n')
     pids = tmp_path/'pids'
@@ -120,7 +120,7 @@ def test_a_terminated_runner_takes_its_job_with_it(tmp_path):
 
 def test_a_timer_that_does_not_start_leaves_the_earlier_one_running(tmp_path, pod_id):
     ran = tmp_path/'job-ran'
-    path = write_stubs(tmp_path, timeout='shift 3\nexec "$@"\n', setsid='exec "$@"\n', runpodctl='exit 0\n', nohup='exit 1\n')
+    path = write_stubs(tmp_path, timeout=TIMEOUT_STUB, setsid='exec "$@"\n', runpodctl='exit 0\n', nohup='exit 1\n')
     pod = pod_id('podz')  # this test's own: parallel tests cannot touch its timers
     earlier = subprocess.Popen(['bash', '-c', f"sleep 300; runpodctl remove pod '{pod}'"])
     job = tmp_path/'job.sh'

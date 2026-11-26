@@ -54,6 +54,23 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize('repeat_index', range(count))
 
 
+def pytest_collection_modifyitems(config, items):
+    """--repeat-match that repeats nothing is an error, not a run of single tests reported as repeated (review round 35)."""
+    match = config.getoption('repeat_match')
+    if config.getoption('repeat_each') < 1:
+        raise pytest.UsageError('--repeat-each must be at least 1')
+    if match and config.getoption('repeat_each') < 2:
+        raise pytest.UsageError('--repeat-match needs --repeat-each of 2 or more')
+    unmatched = [text for text in match if not any(text in item.nodeid for item in items)]
+    if unmatched:
+        raise pytest.UsageError(f"--repeat-match selects no test: {', '.join(unmatched)}")
+
+
+# GNU timeout's stand-in where tests stub it: skip its options and its duration, run the rest. The runner calls
+# `timeout --signal=TERM --kill-after=N secs cmd`, the driver `timeout secs cmd`; a fixed `shift 3` mangled the second.
+TIMEOUT_STUB = 'while [[ $1 == -* ]]; do shift; done\nshift\nexec "$@"\n'
+
+
 @pytest.fixture
 def pod_id():
     """A fake pod id no other test or repeat shares: the runner stops every timer of its pod id, by design. Ids made from
