@@ -46,9 +46,10 @@ if [[ $PART_ONE != 0 ]]; then
   # measured on 25 Nov): a shorter job deadline would end the last run before its after-evaluation.
   # cap: 2x measured 15 min
   PART1_SETUP_MINUTES=30
-  # Whole numbers before any arithmetic: bash evaluates text inside (( )) as an expression.
-  [[ $DEADLINE =~ ^[1-9][0-9]*$ && $SMOKE_TRAIN_SECONDS =~ ^[1-9][0-9]*$ && $SMOKE_FINAL_EVAL_SECONDS =~ ^[1-9][0-9]*$ ]] || {
-    echo "SMOKE_PART_ONE=$PART_ONE needs the deadline, SMOKE_TRAIN_SECONDS and SMOKE_FINAL_EVAL_SECONDS as whole numbers"; exit 2;
+  # Whole numbers before any arithmetic: bash evaluates text inside (( )) as an expression. At most six digits (about 11
+  # days of seconds): a longer one overflows bash's arithmetic and turned the deadline check below into a pass (round 28).
+  [[ $DEADLINE =~ ^[1-9][0-9]{0,5}$ && $SMOKE_TRAIN_SECONDS =~ ^[1-9][0-9]{0,5}$ && $SMOKE_FINAL_EVAL_SECONDS =~ ^[1-9][0-9]{0,5}$ ]] || {
+    echo "SMOKE_PART_ONE=$PART_ONE needs the deadline, SMOKE_TRAIN_SECONDS and SMOKE_FINAL_EVAL_SECONDS as whole numbers of at most six digits"; exit 2;
   }
   # The after-evaluation's reserve comes out of each run's limit and must leave the before-evaluation and some training.
   ((SMOKE_FINAL_EVAL_SECONDS < SMOKE_TRAIN_SECONDS)) || {

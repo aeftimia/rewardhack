@@ -48,16 +48,13 @@ read -ra RUNS <<< "${PART_ONE_RUNS[$SMOKE_PART_ONE]}"
 # Results written: 2x the measured 10 GB per Part 1 run with expert LoRA (adapters and checkpoints; 9.8 and 9.9 GB on 26
 # Nov); 10 GB for the preflight runs.
 OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
-# Room under /workspace for the environments, the uv cache and the weights; gpt-oss-120b adds about 65 GB and a third
-# environment, unless a launch on this pod already fetched all of it (a relaunch on a kept pod keeps /workspace). Every
-# shard its index names must be there: the snapshot folder appears with the first file of an interrupted download.
-LARGE_SNAPSHOT=$HF_HOME/hub/models--${GPT_OSS_120B/\//--}/snapshots/$GPT_OSS_120B_REV
-large_fetched() {
-  [[ -f $LARGE_SNAPSHOT/model.safetensors.index.json ]] && python -c 'import json, os, sys
-d = sys.argv[1]; shards = set(json.load(open(os.path.join(d, "model.safetensors.index.json")))["weight_map"].values())
-sys.exit(0 if all(os.path.exists(os.path.join(d, s)) for s in shards) else 1)' "$LARGE_SNAPSHOT"
-}
-if [[ $SMOKE_PROBE_LARGE == 1 ]] && ! large_fetched; then WORKSPACE_NEED_GB=120; else WORKSPACE_NEED_GB=40; fi
+# Room under /workspace for the environments, the uv cache and the weights: 40 GB, and for the gpt-oss-120b probe about
+# 70 GB more (65 GB of weights and a third environment) less whatever of it an earlier launch on this pod already fetched
+# (a relaunch on a kept pod keeps /workspace, including a partial download).
+LARGE_CACHE=$HF_HOME/hub/models--${GPT_OSS_120B/\//--}
+if [[ -d $LARGE_CACHE ]]; then LARGE_HERE_GB=$(du -s -BG "$LARGE_CACHE" | tr -dc 0-9); else LARGE_HERE_GB=0; fi
+LARGE_NEED_GB=(0 $((LARGE_HERE_GB < 70 ? 70 - LARGE_HERE_GB : 0)))  # indexed by SMOKE_PROBE_LARGE
+WORKSPACE_NEED_GB=$((40 + ${LARGE_NEED_GB[$SMOKE_PROBE_LARGE]}))
 pod_self_test "$WORKSPACE_NEED_GB" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
 MODEL=$GPT_OSS_20B; REV=$GPT_OSS_20B_REV
 JUDGE=$POD_JUDGE; JUDGE_REV=$POD_JUDGE_REV
@@ -129,7 +126,7 @@ HF=$(env_bin train hf)
 [[ -x $HF ]] || fail 'NO_HF_COMMAND: huggingface_hub did not install its hf command'
 if [[ $JUDGE_KIND == pod ]]; then vllm_installed; fi
 PY=$(env_bin train python)
-nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
+smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt || fail NVIDIA_SMI_FAILED
 # The verifier checks run beside the model download (owner, 26 Nov); they are joined, with their own failure code, before
 # anything uses Lean's verdicts.
 "$PY" entrypoints/run.py controls --out ~/out/controls --lean ~/lean-safe > ~/out/controls.log 2>&1 &
@@ -218,7 +215,7 @@ step() { name=$1; shift; log "start $name"
   status=$("$PY" -c 'import json, sys; s = json.load(open(sys.argv[1])); print("steps", s["global_step"], "early stop", s["early_stop"] if "early_stop" in s else "none")' ~/out/"$name"/summary.json) \
     || fail "$name SUMMARY_UNREADABLE"
   log "end $name passed: $status"
-  nvidia-smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log; }
+  smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log || fail NVIDIA_SMI_FAILED; }
 # Eight generations at 2,048 tokens ran out of memory on a 96 GB card (2026-11-24); four fit (2026-11-25). Every training step below uses this.
 GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
 # Prompt groups per optimizer step (owner, 26 Nov, notes section 72): one group of four had reward variation in 12 of 60
@@ -236,7 +233,7 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 && ${#RUNS[@]} -gt 0 ]]; then
   # sizes up to 1,024 on this card, most of a 125 s engine start (measuring pass). Larger batches (prefill) run eagerly.
   VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True \
     in_env vllm vllm serve "$MODEL" --revision "$REV" --served-model-name "$MODEL@$REV" \
-      --host 127.0.0.1 --port "$ROLLOUT_PORT" --max-model-len $((LIMIT + 2048)) --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) --max-cudagraph-capture-size 32 \
+      --host 127.0.0.1 --port "$ROLLOUT_PORT" --max-model-len $((LIMIT + PROMPT_ROOM_TOKENS)) --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) --max-cudagraph-capture-size 32 \
       --enable-lora --max-lora-rank 16 --max-loras 2 --enable-sleep-mode --enable-scale-out \
       --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
   ROLLOUT_PID=$!
@@ -254,7 +251,8 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   wait "$PROBE_INSTALL_PID" || fail PROBE_INSTALL_FAILED
   # Also the offline read the probe will do (its hub version differs from the one that downloads), on gpt-oss-20b's
   # tokenizer, which is already here.
-  HF_HUB_OFFLINE=1 in_env probe python -c 'import sys, vllm; from vllm import LLM, SamplingParams; import rewardhack.vllm_probe, rewardhack.hf_grpo
+  # cap: 1.5x estimated 200 s (importing vLLM and reading a tokenizer)
+  HF_HUB_OFFLINE=1 in_env probe timeout 300 python -c 'import sys, vllm; from vllm import LLM, SamplingParams; import rewardhack.vllm_probe, rewardhack.hf_grpo
 from transformers import AutoTokenizer; AutoTokenizer.from_pretrained(sys.argv[1], revision=sys.argv[2]); print("probe environment: vllm", vllm.__version__)' "$MODEL" "$REV" \
     >> ~/out/steps.log 2>&1 || fail PROBE_ENVIRONMENT_BROKEN
 fi
@@ -298,12 +296,14 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   for stage in "${PROBE_LARGE_STAGES[@]}"; do
     read -r effort seconds samples tokens chunk <<< "$stage"
     name=probe-120b-$effort
-    if pgrep -f "$(env_bin probe '')" > /dev/null; then pkill -9 -f "$(env_bin probe '')"; fi
+    # Whatever still holds the card (vLLM renames its engine process, so a match on the environment's path misses it);
+    # the rollout server is stopped above, so only a previous stage's leftovers can be there.
+    for pid in $(smi --query-compute-apps=pid --format=csv,noheader); do kill -9 "$pid" || [[ ! -e /proc/$pid ]]; done
     if ! (wait_card_free "$name"); then PROBE_FAILED+=("$name"); continue; fi
     log "start $name"
     if HF_HUB_OFFLINE=1 in_env probe timeout $((seconds + PROBE_LARGE_EXIT_SECONDS)) python entrypoints/probe_vllm.py --out ~/out/"$name" --lean none \
          --model "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" --taskset hard --tasks false --max-seconds "$seconds" --samples "$samples" \
-         --max-tokens "$tokens" --max-model-len $((tokens + 1024)) --chunk-prompts "$chunk" --template-kwargs "{\"reasoning_effort\": \"$effort\"}" > ~/out/"$name".log 2>&1; then
+         --max-tokens "$tokens" --max-model-len $((tokens + PROMPT_ROOM_TOKENS)) --chunk-prompts "$chunk" --template-kwargs "{\"reasoning_effort\": \"$effort\"}" > ~/out/"$name".log 2>&1; then
       log "end $name passed"
     else log "end $name FAILED exit=$?"; PROBE_FAILED+=("$name"); fi
   done

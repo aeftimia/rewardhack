@@ -5,6 +5,10 @@
 # Neither needs the laptop or the console. With REQUIRE_AUTOSTOP=1 the job refuses to start unless that
 # cap could be armed. Elsewhere this stops the job, not the billing.
 set -uo pipefail
+# The wait between TERM and KILL is ops/pod_pins.env's KILL_AFTER_SECONDS, written out here because the driver also sends
+# this script over SSH on stdin (--remove-now, --arm-only), where there is no file beside it to source;
+# tests/test_shared_constants.py keeps the two equal.
+KILL_AFTER_SECONDS=30
 OUT=${REMOTE_JOB_OUT:-$HOME/out}
 GRACE=${AUTOSTOP_GRACE_SECONDS:-600}  # time for the driver to copy results before the pod is removed
 mkdir -p "$OUT"
@@ -85,7 +89,7 @@ fi
 if can_remove; then
   AUTOSTOP=1
   # A relaunch on the same pod replaces the earlier job's timers; otherwise the old one would remove the pod mid-run.
-  arm "$(($2+30+GRACE))"
+  arm "$(($2+KILL_AFTER_SECONDS+GRACE))"
 elif [[ $REQUIRE_AUTOSTOP == 1 ]]; then
   echo 'NO_AUTOSTOP: this pod cannot remove itself (no pod id, no runpodctl, or its key was refused); not starting' | tee -a "$OUT/autostop.log"
   exit 3
@@ -93,7 +97,7 @@ else
   echo "$(date -u +%FT%TZ) NO_AUTOSTOP: REQUIRE_AUTOSTOP=0 and this machine cannot remove itself (no pod id, no runpodctl, or its key was refused). The job starts with NO removal timer: this script stops the job after ${2}s but does not stop the billing." | tee -a "$OUT/autostop.log"
 fi
 # Its own session, so everything the job starts (servers, their workers) is one process group a relaunch can stop.
-setsid timeout --signal=TERM --kill-after=30 "$2" bash "$1" &
+setsid timeout --signal=TERM --kill-after="$KILL_AFTER_SECONDS" "$2" bash "$1" &
 JOB=$!
 printf '%s %s\n' "$$" "$JOB" > "$PIDS"
 wait "$JOB"

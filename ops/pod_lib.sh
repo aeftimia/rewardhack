@@ -13,7 +13,16 @@ SERVER_WAIT=900
 # gives its memory back within seconds. Usage: wait_card_free <who is waiting, for the failure message>.
 # The limit, CARD_FREE_SECONDS, is in ops/pod_pins.env, where the driver also counts it: the whole wait, each query's own
 # limit (NVIDIA_SMI_SECONDS) included, ends within it.
-card_used_mib() { timeout "$NVIDIA_SMI_SECONDS" nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1; }
+# Every nvidia-smi query goes through here: it can hang on a wedged card.
+smi() { timeout "$NVIDIA_SMI_SECONDS" nvidia-smi "$@"; }
+# The card's memory in use, in MiB. A failed query, or an empty or non-numeric reading, is a failure with its reason in
+# the log (the callers fail on it), not a free card.
+card_used_mib() {
+  local used
+  used=$(smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1) || { log "nvidia-smi failed or did not answer in $NVIDIA_SMI_SECONDS s"; return 1; }
+  [[ $used =~ ^[0-9]+$ ]] || { log "nvidia-smi read the card's memory as '$used'"; return 1; }
+  echo "$used"
+}
 wait_card_free() {
   local used end=$((SECONDS + CARD_FREE_SECONDS))
   used=$(card_used_mib) || fail NVIDIA_SMI_FAILED
@@ -88,7 +97,7 @@ pod_self_test() {
     out_free_gb=$(df --output=avail -BG "$HOME" | tail -1 | tr -dc 0-9)
     [[ $out_free_gb -ge $out_need_gb ]] || fail "SELF_TEST: the disk holding ~/out has ${out_free_gb} GB free, the job needs $out_need_gb"
   fi
-  log "self-test passed: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader), ${free_gb} GB free"
+  log "self-test passed: $(smi --query-gpu=name,memory.total --format=csv,noheader), ${free_gb} GB free"
 }
 
 # Wait for an OpenAI-compatible server we started. Ready means: our process is alive AND the port's model list names our
