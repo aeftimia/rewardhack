@@ -41,8 +41,12 @@ if [[ -n ${SMOKE_PART_ONE+set} && $SMOKE_PART_ONE == 1 ]]; then
   ((SMOKE_FINAL_EVAL_SECONDS < SMOKE_TRAIN_SECONDS)) || {
     echo 'SMOKE_PART_ONE=1 needs SMOKE_FINAL_EVAL_SECONDS below SMOKE_TRAIN_SECONDS'; exit 2;
   }
-  ((DEADLINE*60 >= PART1_SETUP_MINUTES*60 + 2*SMOKE_TRAIN_SECONDS)) || {
-    echo "SMOKE_PART_ONE=1 needs a deadline of at least $((PART1_SETUP_MINUTES + (2*SMOKE_TRAIN_SECONDS+59)/60)) minutes: setup and two runs of SMOKE_TRAIN_SECONDS"; exit 2;
+  # A run stopped at its own limit exits only once the answers already being scored finish (outcomes.score_concurrently):
+  # one row's worst case, a grader check, three verifier checks with retries and a judge request with its retries.
+  # cap: 1.5x estimated 470 s
+  SCORING_TAIL_SECONDS=720
+  ((DEADLINE*60 >= PART1_SETUP_MINUTES*60 + 2*(SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS))) || {
+    echo "SMOKE_PART_ONE=1 needs a deadline of at least $((PART1_SETUP_MINUTES + (2*(SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS)+59)/60)) minutes: setup and two runs of SMOKE_TRAIN_SECONDS, each with its scoring tail"; exit 2;
   }
 fi
 [[ $REMOTE =~ ^ops/[a-zA-Z0-9_-]+\.sh$ && -f $REMOTE && $DEADLINE =~ ^[1-9][0-9]*$ ]] || { echo 'the remote script must be an existing ops/*.sh and the deadline a whole number of minutes'; exit 2; }

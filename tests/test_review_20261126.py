@@ -138,7 +138,7 @@ def test_a_long_server_call_near_the_deadline_still_scores_every_sample_it_paid_
     assert hf_grpo.evaluate(model, tokenizer, TASKS[:4], args, 'after', stop_at=303.0, rollouts=Server(), adapter_model=object())['incomplete']
 
 
-def test_concurrent_scoring_keeps_item_order_and_every_finished_result_on_a_failure():
+def test_concurrent_scoring_keeps_item_order_and_every_finished_result_on_a_failure(monkeypatch):
     """Scoring runs on a thread pool (owner, 26 Nov). Results come back in item order whatever order they finish in, and a
     failure leaves the results that did finish, so rows already paid for are kept as a partial batch."""
     import threading
@@ -156,7 +156,20 @@ def test_concurrent_scoring_keeps_item_order_and_every_finished_result_on_a_fail
         return item
     with pytest.raises(outcomes.ScoringStopped) as stopped:
         outcomes.score_concurrently(fails_on_two, [0, 1, 2, 3])
-    assert stopped.value.done == [0, 1, 3] and 'spend cap' in str(stopped.value.__cause__)
+    # Item 3 either finished first or was cancelled when item 2 failed: either way only finished results come back, in order.
+    assert stopped.value.done in ([0, 1], [0, 1, 3]) and 'spend cap' in str(stopped.value.__cause__)
+    # Calls not yet started when one fails are cancelled, not run (review round 13): one worker runs them in order.
+    calls = []
+    def logged(item):
+        calls.append(item)
+        if item > 2:
+            time.sleep(0.3)  # long enough that the failure is seen while these wait in the queue
+        return fails_on_two(item)
+    monkeypatch.setattr(outcomes, 'SCORING_WORKERS', 1)
+    with pytest.raises(outcomes.ScoringStopped) as stopped:
+        outcomes.score_concurrently(logged, [0, 1, 2, 3, 4, 5])
+    # Item 3 may already be running when the failure is seen; 4 and 5 never start.
+    assert stopped.value.done in ([0, 1], [0, 1, 3]) and 4 not in calls and 5 not in calls
 
 
 def test_the_retry_allowance_holds_under_concurrent_scoring():

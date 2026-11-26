@@ -11,7 +11,7 @@ import re
 import json
 import threading
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 
 from .reporting import parse_typed, validate_mode
 from .budget import nonnegative_finite
@@ -145,21 +145,27 @@ def score_concurrently(function, items):
     """`function` over `items` on a thread pool, results in item order (as ThreadPoolExecutor.map). If a call raises, the
     others are still awaited, so every answer already paid for is kept, and ScoringStopped carries the finished results
     with the first error in item order as its cause. An interruption while waiting (a deadline, a signal) cancels the calls
-    not yet started and raises ScoringStopped with what had finished, the interruption as its cause. Calls already running
-    cannot be stopped: they finish (at most a grader check, a verifier check and retry, and a judge request: about two
-    minutes) and the process exits after them, inside the job's own time limit; a judge request they make then is paid but
-    not in the summary's judge usage, which was written at the interruption (review round 12)."""
+    not yet started and raises ScoringStopped with what had finished, the interruption as its cause. On the first error the
+    calls not yet started are cancelled too, so a failing judge is not asked again (review round 13). Calls already running
+    cannot be stopped: they finish and the process exits after them. One row's worst case is about 8 minutes (grader 10 s,
+    proof, refutation and statement checks 20 s each plus a 60 s retry, a judge request 4 x 60 s), so the driver's Part 1
+    deadline allows SCORING_TAIL_SECONDS per run; a judge request made in the tail is paid but not in the summary's judge
+    usage, which was written at the interruption (review rounds 12-13)."""
     pool = ThreadPoolExecutor(max_workers=max(1, min(SCORING_WORKERS, len(items))))
     futures = [pool.submit(function, item) for item in items]
     try:
+        wait(futures, return_when=FIRST_EXCEPTION)
+        for future in futures:
+            future.cancel()  # those not yet started; none is left when nothing failed
         wait(futures)
     except BaseException as interruption:
         pool.shutdown(wait=False, cancel_futures=True)
         raise ScoringStopped([f.result() for f in futures if f.done() and not f.cancelled() and f.exception() is None]) from interruption
     pool.shutdown()
-    errors = [f.exception() for f in futures if f.exception() is not None]
+    ran = [f for f in futures if not f.cancelled()]  # all of them unless one failed
+    errors = [f.exception() for f in ran if f.exception() is not None]
     if errors:
-        raise ScoringStopped([f.result() for f in futures if f.exception() is None]) from errors[0]
+        raise ScoringStopped([f.result() for f in ran if f.exception() is None]) from errors[0]
     return [f.result() for f in futures]
 
 

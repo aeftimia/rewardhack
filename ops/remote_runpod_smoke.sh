@@ -105,14 +105,14 @@ fi
 # Where the vLLM environment is needed: wait for its background install, its own failure code if it failed.
 vllm_installed() {
   wait "$VLLM_INSTALL_PID" || fail VLLM_INSTALL_FAILED
-  $UV pip freeze --python /workspace/vllm-venv/bin/python > ~/out/pip-freeze-vllm.txt
+  $UV pip freeze --python /workspace/vllm-venv/bin/python > ~/out/pip-freeze-vllm.txt || fail VLLM_FREEZE_FAILED
 }
 $UV venv -q --clear --python "$(command -v python)" /workspace/train-venv \
   && timeout 300 $UV pip install -q --python /workspace/train-venv/bin/python torch -r requirements.txt > ~/out/install-train.log 2>&1 || fail TRAIN_INSTALL_FAILED  # cap: 2x measured 81 s
 # The `hf` command comes with huggingface_hub itself; the `[cli]` extra asked for until 25 Nov does not exist, and pip stepped back through versions looking for it.
 HF=/workspace/train-venv/bin/hf
 [[ -x $HF ]] || fail 'NO_HF_COMMAND: huggingface_hub did not install its hf command'
-$UV pip freeze --python /workspace/train-venv/bin/python > ~/out/pip-freeze-train.txt
+$UV pip freeze --python /workspace/train-venv/bin/python > ~/out/pip-freeze-train.txt || fail TRAIN_FREEZE_FAILED
 if [[ $JUDGE_KIND == pod ]]; then vllm_installed; fi
 PY=/workspace/train-venv/bin/python
 nvidia-smi --query-gpu=name,memory.total --format=csv > ~/out/gpu.txt
