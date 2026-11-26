@@ -263,7 +263,9 @@ SHIMS = {'pre-commit': '{entry}', 'commit-msg': '{entry} "$1"',
 
 
 def test_the_config_runs_each_check_at_each_stage_it_installs():
-    assert CONFIG['default_install_hook_types'] == list(gates.TERMS_CHECKS) == list(gates.GITLEAKS_RUNS)
+    # pre-commit installs the commit hooks; git's pre-push hook is ops/pre-push, which runs pre-commit's pre-push stage itself.
+    assert CONFIG['default_install_hook_types'] == ['pre-commit', 'commit-msg']
+    assert list(gates.TERMS_CHECKS) == list(gates.GITLEAKS_RUNS) == list(gates.STAGE_PROBLEMS) == ['pre-commit', 'commit-msg', 'pre-push']
     for check in gates.COMMIT_GATE:
         wired = {hook['stages'][0]: hook for hook in HOOKS if hook['entry'].startswith(f'bash ops/gate.sh {check} ')}
         assert set(wired) == set(gates.TERMS_CHECKS), check
@@ -458,6 +460,46 @@ def test_odd_paths_submodules_and_tag_chains_are_read(gated, tmp_path):
     assert refused(attempt(gated, 'push', 'origin', 'outer'), 'the message of tag')
 
 
+@pytest.fixture
+def pushing(repo, tmp_path, monkeypatch):
+    """`repo` with git's pre-push hook linked to ops/pre-push as installed, and a pre-commit config running the terms hook at
+    pre-push through real pre-commit (gitleaks, not installed here, is tested apart); `origin` is a bare repository."""
+    hook = PROJECT / 'ops' / 'gate.sh'
+    (repo / '.pre-commit-config.yaml').write_text(
+        'repos:\n  - repo: local\n    hooks:\n      - id: withheld-terms-push\n        name: withheld terms\n'
+        f'        entry: bash {shlex.quote(str(hook))} terms pre-push\n        language: unsupported\n        pass_filenames: false\n'
+        '        always_run: true\n        stages: [pre-push]\n')
+    run(repo, 'add', '.pre-commit-config.yaml')
+    run(repo, 'commit', '-q', '-m', 'config')
+    (repo / '.git' / 'hooks' / 'pre-push').symlink_to(PROJECT / 'ops' / 'pre-push')
+    monkeypatch.setenv('PRE_COMMIT_HOME', str(tmp_path / 'pre-commit-home'))
+    pushable(repo, tmp_path)
+    return repo
+
+
+def test_a_push_runs_through_ops_pre_push_and_pre_commit(pushing, tmp_path):
+    run(pushing, 'commit', '-q', '--allow-empty', '-m', 'clean')
+    done = attempt(pushing, 'push', '-q', 'origin', 'HEAD:refs/heads/start')  # the remote is empty: a new history, refused
+    assert refused(done, 'starts a new history')
+    run(pushing, 'push', '-q', '--no-verify', 'origin', 'HEAD~1:refs/heads/main')  # what the owner would let through
+    run(pushing, 'fetch', '-q', 'origin')
+    done = attempt(pushing, 'push', '-q', 'origin', 'main')
+    assert done.returncode == 0, done.stderr
+    (pushing / 'notes.md').write_text(f'{TERM}\n')
+    run(pushing, 'add', 'notes.md')
+    run(pushing, 'commit', '-q', '--no-verify', '-m', 'notes')
+    assert refused(attempt(pushing, 'push', 'origin', 'main'), 'notes.md:1 matches withheld term 1')
+    run(pushing, 'reset', '-q', '--hard', 'origin/main')
+    # A tag on a tree or blob adds no commit, so pre-commit runs no hook for it: ops/pre-push refuses it first.
+    run(pushing, 'tag', 'lwtree', 'HEAD^{tree}')
+    run(pushing, 'tag', '-a', 'antree', 'HEAD^{tree}', '-m', f'the {TERM} tree')
+    blob = subprocess.run(['git', '-C', str(pushing), 'hash-object', '-w', '--stdin'], input=f'{TERM}\n', capture_output=True, text=True, check=True).stdout.strip()
+    run(pushing, 'tag', 'lwblob', blob)
+    for tag, kind in [('lwtree', 'tree'), ('antree', 'tree'), ('lwblob', 'blob')]:
+        assert refused(attempt(pushing, 'push', 'origin', tag), f'refs/tags/{tag} points at a {kind}, not a commit'), tag
+    assert attempt(pushing, 'ls-remote', '--tags', 'origin').stdout == ''
+
+
 def test_a_tag_on_a_tree_does_not_break_a_push_and_is_read_when_pushed(gated, tmp_path):
     pushable(gated, tmp_path)
     run(gated, 'push', '-q', 'origin', 'main')
@@ -519,6 +561,10 @@ def test_gitleaks_reads_the_staged_changes_the_message_and_every_unpushed_commit
     message.write_text(f'fine\n# Please enter the commit message\n{scissors}# Do not modify or remove the line above.\n'
                        '# Everything below it will be ignored.\n-LEAK removed\n')
     assert gates.gitleaks_problems(repo, 'commit-msg', message) == []  # a secret being removed, in the `commit -v` diff, is not the message
+    run(repo, 'config', 'core.commentString', '//')  # any comment string git is set to use, and its warning in any language
+    message.write_text(f'fine\n// ------------------------ >8 ------------------------\n// Ne pas modifier.\n-LEAK removed\n')
+    assert gates.gitleaks_problems(repo, 'commit-msg', message) == []
+    run(repo, 'config', '--unset', 'core.commentString')
     message.write_text(f'fine\n{scissors}the key is LEAK\n')  # with -m or -F git keeps a scissors line and what follows
     assert gates.gitleaks_problems(repo, 'commit-msg', message) == ['gitleaks stdin exited 1: see its findings above']
     message.write_text('the key is LEAK\n')

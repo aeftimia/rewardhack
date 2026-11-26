@@ -1,7 +1,7 @@
 # Commit gate (CLAUDE.md, "Hooks"). Installed once per clone, from the main checkout, with `pre-commit install`.
 # Every hook runs whatever files changed: gitleaks and the terms check read git's own objects, not a file list.
 minimum_pre_commit_version: 4.7.0
-default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_install_hook_types: [pre-commit, commit-msg]  # pre-push: ops/pre-push, linked by hand (CLAUDE.md)
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
