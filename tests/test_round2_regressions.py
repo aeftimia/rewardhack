@@ -139,8 +139,9 @@ def test_probe_rules_are_read_from_a_real_summary():
     row = outcomes.score('unused', dict(id='t', group='g', tier='easy', true=True, statement='True'), '', 'baseline', truncated=True)
     probe = dict(outcomes.summarize([row, dict(row, truncated=False)]), tasks_planned=2, tasks_completed=1)
     limit, check, line = probe_rules.decide(probe)
-    # Half the answers were cut off: the limit goes up. Two answers cannot show the undecided rate is below 5% either.
-    assert limit == 4096 and check == 1 and 'tasks 1 of 2' in line
+    # Half the answers were cut off: the limit goes up. Two decided answers are no evidence of an undecided rate above
+    # 5% either way, and the verifier check now needs such evidence (review round 16).
+    assert limit == 4096 and check == 0 and 'tasks 1 of 2' in line
     decided = dict(row, truncated=False, format_valid=True)
     probe = dict(outcomes.summarize([decided]*48), tasks_planned=12, tasks_completed=12)
     assert probe_rules.decide(probe)[:2] == (2048, 0)  # none of 48 cut off or undecided: P(rate > 5%) = 0.03

@@ -5,6 +5,7 @@ set -euo pipefail
 source ops/pod_pins.env  # models, revisions, versions and ports: stated once there
 # The rollout server and a judge served on the pod have their own ports (pod_pins.env), so the two are never confused.
 # 15 minutes for a vLLM server to answer. Its first start took 6.5 minutes (390 s) on this pod type with its own weight fetch.
+# shellcheck disable=SC2034  # read by the job scripts that source this file
 # cap: 2x measured 390 s
 SERVER_WAIT=900
 

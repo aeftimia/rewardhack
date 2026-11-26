@@ -21,5 +21,5 @@ def test_ruff_finds_nothing():
 def test_shellcheck_finds_nothing():
     shellcheck = Path(sys.executable).parent/'shellcheck'
     assert shellcheck.exists(), f'no {shellcheck}: install the dev extra (pip install -e .[dev])'
-    done = run([str(shellcheck), '--format=gcc', *map(str, SHELL_SCRIPTS)])
+    done = run([str(shellcheck), '--format=gcc', '-x', *map(str, SHELL_SCRIPTS)])  # -x: follow ops/pod_pins.env, sourced from the root
     assert done.returncode == 0, done.stdout + done.stderr

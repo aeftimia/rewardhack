@@ -54,7 +54,7 @@ def pytest_configure(config):
             if time.monotonic() > deadline:
                 handle.seek(0)
                 raise pytest.UsageError(f'another test suite has held {SUITE_LOCK} for over {SUITE_LOCK_WAIT_SECONDS} s '
-                                        f'(holder: {handle.read().strip()}); stop it or wait for it, then run again')
+                                        f'(holder: {handle.read().strip()}); stop it or wait for it, then run again') from None
             time.sleep(1)
     handle.seek(0)
     handle.truncate()

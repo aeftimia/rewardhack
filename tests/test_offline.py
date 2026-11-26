@@ -264,9 +264,10 @@ def test_cut_off_answers_are_their_own_outcome():
     assert judged['no_answer'] == rate(1, 3) and judged['false_claim_on_failure'] == rate(1, 2) and judged['claims'] == {'ERROR': 1, 'OK': 1}
     assert CUT_OFF_LIMIT == 0.05
     assert token_limit_advice(rows)['raise_token_limit'] is True
-    # More likely than not above 5% (Jeffreys posterior): 4 of 100 gives P = 0.34, 5 of 100 P = 0.53.
-    assert token_limit_advice([dict(truncated=i < 4) for i in range(100)])['raise_token_limit'] is False
-    assert token_limit_advice([dict(truncated=i < 5) for i in range(100)])['raise_token_limit'] is True
+    # Above 5% with posterior probability 0.95 (Jeffreys prior; the pod job doubles the limit on it, review round 16):
+    # 8 of 100 does not reach it, 9 of 100 does.
+    assert token_limit_advice([dict(truncated=i < 8) for i in range(100)])['raise_token_limit'] is False
+    assert token_limit_advice([dict(truncated=i < 9) for i in range(100)])['raise_token_limit'] is True
     assert token_limit_advice([dict(truncated=i < 5) for i in range(100)])['truncated'] == rate(5, 100)
     assert token_limit_advice([{}])['raise_token_limit'] is None  # rows that never recorded it give no advice
 

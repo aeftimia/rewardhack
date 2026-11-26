@@ -123,9 +123,9 @@ def test_decided_rows_train_without_verifier_warning(train_stub):
     assert len(updates) == 1
     for record in records['steps.jsonl'] + records['monitor.jsonl'] + [records['summary']]:
         assert record['unverified_rate'] == 0.0
-        # Training goes on (no stop), but the advice stands: none undecided in two answers still leaves a 60% posterior
-        # chance (Jeffreys prior) that the verifier's undecided rate is above 5%.
-        assert record['check_verifier'] is True
+        # Training goes on, and no advice either: the advice acts (the pod job fails on it), so it needs a 95% posterior
+        # chance that the undecided rate is above 5%, and none undecided in two answers gives 60% (review round 16).
+        assert record['check_verifier'] is False
 
 
 def test_dropped_rows_do_not_dilute_kept_gradients(train_stub):

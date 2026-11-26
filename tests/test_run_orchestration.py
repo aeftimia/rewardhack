@@ -164,8 +164,8 @@ def test_the_judge_failure_test_works_at_the_size_of_a_real_run():
     assert judge_failing(readings(5000, 10)) is True, 'a 10% judge was not stopped'
     # Rows the judge was never asked about are no evidence either way.
     assert judge_failing([dict(judge_undecided=True)]*50) is False
-    # Bayesian stop (Jeffreys prior, P(rate > 5%) > 0.999): the fewest failures that stop, at a few reading counts.
-    assert not credibly_failing(1, 20) and credibly_failing(3, 3) and credibly_failing(4, 10) and not credibly_failing(3, 10)
+    # Bayesian stop (Jeffreys prior, P(rate > 5%) > 0.999, and at least four failures): the fewest failures that stop.
+    assert not credibly_failing(1, 20) and not credibly_failing(3, 3) and credibly_failing(4, 4) and credibly_failing(4, 10) and not credibly_failing(3, 10)
     assert credibly_failing(5, 16) and not credibly_failing(4, 16) and credibly_failing(21, 200) and not credibly_failing(20, 200)
     assert not credibly_failing(0, 40)
 
