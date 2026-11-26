@@ -44,6 +44,11 @@ elif args[:2] == ['s3api', 'head-object']:
     if not checksum.exists():
         sys.exit('An error occurred (404) when calling the HeadObject operation: Not Found')
     print(checksum.read_text())
+elif args[:2] == ['configure', 'export-credentials']:
+    import datetime, json
+    left = int(os.environ.get('FAKE_SESSION_SECONDS', '28800'))
+    expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=left)
+    print(json.dumps({'Version': 1, 'Expiration': expiry.isoformat().replace('+00:00', 'Z')}))
 elif args[:2] == ['s3', 'presign']:
     print(f'https://example.invalid/{args[2].removeprefix("s3://")}?expires={opt("--expires-in")}')
 else:
@@ -161,6 +166,41 @@ def test_resume_refuses_a_record_pointing_elsewhere(tmp_path, run):
     (run/'ARCHIVES.json').write_text(json.dumps(entries))
     code, output = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60')
     assert code != 0 and 'not an archive of this folder' in output
+
+
+def test_resume_refuses_when_the_session_ends_before_the_urls(tmp_path, run):
+    """Round 41: a presigned URL stops working when the SSO session that signed it ends."""
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    code, output = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60', FAKE_SESSION_SECONDS='600')
+    assert code != 0 and 'aws sso login' in output and 'https://' not in output
+
+
+def test_the_pod_fetches_one_checkpoint_and_checks_every_hash(tmp_path, run):
+    """ops/fetch_checkpoint.sh on the resume lines: files land only when their SHA-256 matches the archive's."""
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    code, lines = archive(tmp_path, 'resume', run, 'train-a/trainer/checkpoint-60')
+    assert code == 0
+    entry = archives(run)[-1]
+    # The stand-in's URLs point at its bucket folder: a curl stand-in copies from there.
+    bin_dir = tmp_path/'bin'
+    (bin_dir/'curl').write_text(f"""#!/bin/bash
+out=; url=; while [[ $# -gt 0 ]]; do case $1 in -o) out=$2; shift 2;; --max-time) shift 2;; -*) shift;; *) url=$1; shift;; esac; done
+src={tmp_path}/s3/${{url#https://example.invalid/}}; cp "${{src%%\\?*}}" "$out"
+""")
+    (bin_dir/'curl').chmod(0o755)
+    (bin_dir/'python3').write_text(f'#!/bin/bash\nexec "{sys.executable}" "$@"\n')
+    (bin_dir/'python3').chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
+    fetched = subprocess.run(['bash', str(PROJECT/'ops'/'fetch_checkpoint.sh'), str(tmp_path/'pod')], input=lines, text=True,
+                             capture_output=True, env=env)
+    assert fetched.returncode == 0, fetched.stdout + fetched.stderr
+    assert (tmp_path/'pod'/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').read_bytes() == b'\x01' * 1000
+    assert not (tmp_path/'pod'/'train-a'/'adapter-step8').exists()
+    (stored(tmp_path, entry)/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').write_bytes(b'\x00')
+    fetched = subprocess.run(['bash', str(PROJECT/'ops'/'fetch_checkpoint.sh'), str(tmp_path/'pod2')], input=lines, text=True,
+                             capture_output=True, env=env)
+    assert fetched.returncode == 1 and 'SHA-256 differs' in fetched.stdout
+    assert not (tmp_path/'pod2'/'train-a'/'trainer'/'checkpoint-60'/'weights.bin').exists()
 
 
 API = dict(JUDGE_KIND='api', FORWARD_JUDGE_KEY='1', OPENAI_API_KEY='placeholder-not-a-key', LEAN_ISOLATION='none',

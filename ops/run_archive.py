@@ -115,9 +115,12 @@ def records(folder):
     if not path.exists():
         return []
     try:
-        return json.loads(path.read_text())
+        archives = json.loads(path.read_text())
     except json.JSONDecodeError as error:
         raise SystemExit(f'{path} is not valid JSON ({error}): repair it before archiving or resuming') from error
+    if not isinstance(archives, list) or not all(isinstance(a, dict) and {'id', 'uri', 'at', 'sha256'} <= a.keys() for a in archives):
+        raise SystemExit(f'{path} is not a list of archives this tool writes: repair it before archiving or resuming')
+    return archives
 
 
 def record(folder, archives):
@@ -171,6 +174,18 @@ def resume(path, checkpoint):
     names = sorted(name for name in latest['sha256'] if name.startswith(checkpoint + '/'))
     if not names:
         raise SystemExit(f'no {checkpoint} in archive {latest["id"]}')
+    odd = [name for name in names if any(part in ('', '.', '..') for part in name.split('/'))]
+    if odd:
+        raise SystemExit(f'{folder/RECORD} lists names this tool never writes: {odd[:3]}')
+    # A presigned URL dies with the SSO session that signed it, whatever its own expiry (review round 41).
+    done = aws('configure', 'export-credentials', '--format', 'process', timeout=HEAD_TIMEOUT)
+    if done.returncode != 0:
+        raise SystemExit(f'cannot read the AWS session: {done.stderr.strip()}')
+    expiration = json.loads(done.stdout)['Expiration']
+    left = (datetime.fromisoformat(expiration.replace('Z', '+00:00')) - datetime.now(timezone.utc)).total_seconds()
+    if left < URL_SECONDS:
+        raise SystemExit(f'the AWS session ends in {left / 60:.0f} minutes, before the URLs would ({URL_SECONDS / 60:.0f}): '
+                         'run `aws sso login` again first')
     for name in names:
         done = aws('s3', 'presign', latest['uri'] + name, '--expires-in', str(URL_SECONDS), timeout=HEAD_TIMEOUT)
         if done.returncode != 0:
