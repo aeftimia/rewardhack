@@ -264,9 +264,11 @@ TRAIN=(--steps "$SMOKE_STEPS" --learning-rate 1e-4 "${SHAPE[@]}" --max-seconds "
 if [[ $SMOKE_PART_ONE != 0 ]]; then
   # Part 1 (owner, 26 Nov; issue #2): the job's runs from ops/pod_pins.env, same seed and settings, one after the other.
   # Each keeps resumable checkpoints in <name>/trainer, so a later run can extend it with --resume-from.
+  # No saturation stop (owner, 26 Nov; notes section 77): the event Part 1 looks for, a first refutation, is a rare escape
+  # from a plateau, and a stopped run can no longer show it. All 60 steps, as the 26 Nov pair ran before the stop existed.
   for run in "${RUNS[@]}"; do
     IFS=: read -r name arm penalty <<< "$run"
-    step "train-$name" "${TRAIN[@]}" --arm "$arm" --penalty "$penalty"
+    step "train-$name" "${TRAIN[@]}" --no-stop-saturated --arm "$arm" --penalty "$penalty"
   done
 else
   step train-lr1e-4 "${TRAIN[@]}" "${FUNDED[@]}"
