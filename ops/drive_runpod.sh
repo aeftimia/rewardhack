@@ -16,6 +16,8 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   [[ ${JUDGE_KIND:?vLLM pilot needs JUDGE_KIND=api} == api && ${SMOKE_SKIP_PROBE:?vLLM pilot needs SMOKE_SKIP_PROBE=1} == 1 && ${SMOKE_SECOND_RUN:?vLLM pilot needs SMOKE_SECOND_RUN=0} == 0 ]] || {
     echo 'vLLM pilot needs API judge, SMOKE_SKIP_PROBE=1 and SMOKE_SECOND_RUN=0'; exit 2;
   }
+  # The vLLM server's context is sized to SMOKE_TOKEN_LIMIT: a longer memory step could never be sampled there.
+  [[ -z ${SMOKE_MEMORY_LIMIT+set} ]] || { echo 'SMOKE_MEMORY_LIMIT is a question for the transformers sampler: not with SMOKE_VLLM_ROLLOUTS=1'; exit 2; }
 fi
 [[ -z ${SMOKE_PART_ONE+set} || $SMOKE_PART_ONE == 0 || $SMOKE_PART_ONE == 1 ]] || { echo 'SMOKE_PART_ONE must be 0 or 1'; exit 2; }
 if [[ -n ${SMOKE_PART_ONE+set} && $SMOKE_PART_ONE == 1 ]]; then
@@ -136,12 +138,14 @@ finish() {
   # The small files, then the adapters, then the resumable checkpoints (several GB with expert LoRA): the pod removes
   # itself at most 10 minutes after the job ends, and a slow copy must cost the checkpoints, never the results.
   # Results and checkpoints are recorded apart, so that a failed checkpoint copy is not reported as lost results.
-  COPIED=0 CHECKPOINTS=0
+  COPIED=0 CHECKPOINTS=0 SMALL_COPIED=0
   for attempt in 1 2 3; do
-    if pull "${SMALL[@]}" && pull "${ADAPTERS[@]}"; then COPIED=1; break; fi
+    if pull "${SMALL[@]}"; then SMALL_COPIED=1; fi
+    if [[ $SMALL_COPIED == 1 ]] && pull "${ADAPTERS[@]}"; then COPIED=1; break; fi
     say "copy attempt $attempt failed"; sleep 10
   done
-  if [[ $COPIED == 0 ]]; then say 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'
+  if [[ $SMALL_COPIED == 0 ]]; then say 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'
+  elif [[ $COPIED == 0 ]]; then say 'the logs, rows, summaries and evaluations are copied but the saved adapters are not: the pod is not removed from here, so they can still be fetched until its own timer removes it'
   else
     for attempt in 1 2 3; do
       if pull; then CHECKPOINTS=1; break; fi
@@ -170,7 +174,8 @@ finish() {
     if [[ $GONE == 1 ]]; then say "pod removed: it no longer answers"
     else say "REMINDER: RunPod accepted the removal but the pod still answers after a minute. Check the console now"; code=97; fi
   else say "REMINDER: could not remove the pod from here. Terminate it in the RunPod console now"; code=97; fi
-  if [[ $COPIED == 0 && $code == 0 ]]; then code=96; fi
+  if [[ $SMALL_COPIED == 0 && $code == 0 ]]; then code=96; fi
+  if [[ $SMALL_COPIED == 1 && $COPIED == 0 && $code == 0 ]]; then code=94; fi
   if [[ $COPIED == 1 && $CHECKPOINTS == 0 && $code == 0 ]]; then code=95; fi
   exit "$code"
 }
