@@ -131,11 +131,14 @@ def test_an_undecided_rollout_moves_nothing_in_training():
 
 
 def test_the_undecided_rate_has_an_alarm():
-    # Advice when the undecided rate is more likely than not above 5% (Jeffreys posterior). One in twenty is an observed 5%,
-    # but its posterior puts 57% on a rate above it; none in twenty puts 15% there.
+    # Advice when the undecided rate is above 5% with posterior probability 0.95 (Jeffreys prior). The pod job acts on it
+    # (fails on check_verifier), so one in twenty, an observed 5% with 57% of its posterior above, does not flag; three do.
     rows = [row(verifier_inconclusive=True)] + [row() for _ in range(19)]
-    assert outcomes.summarize(rows)['unverified_rate'] == 0.05 and outcomes.summarize(rows)['check_verifier'] is True
+    assert outcomes.summarize(rows)['unverified_rate'] == 0.05 and outcomes.summarize(rows)['check_verifier'] is False
+    three = [row(verifier_inconclusive=i < 3) for i in range(20)]
+    assert outcomes.summarize(three)['check_verifier'] is True
     assert outcomes.summarize(rows[1:])['check_verifier'] is False
+    assert outcomes.summarize([row(), row(), row(), row()])['check_verifier'] is False  # a probe cut short: no evidence
     many = [row(verifier_inconclusive=i < 4) for i in range(100)]
     assert outcomes.summarize(many)['check_verifier'] is False  # 4 of 100: P(rate > 5%) = 0.34
     old = row(); del old['verifier_inconclusive']

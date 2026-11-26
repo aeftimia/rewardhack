@@ -22,7 +22,8 @@ def test_a_verifier_timeout_trains_on_nothing_in_every_arm():
 def test_verifier_timeouts_stop_a_run_only_beyond_a_fluke():
     ok, timeout = fresh(), fresh(verifier_inconclusive=True)
     assert not outcomes.verifier_failing([timeout] + [ok]*19)
-    assert outcomes.verifier_failing([timeout]*3)
+    assert not outcomes.verifier_failing([timeout]*3)  # fewer than STOP_MIN_FAILURES
+    assert outcomes.verifier_failing([timeout]*4)
     # Late failures are not hidden by a long good history.
     assert outcomes.verifier_failing([ok]*5000 + [timeout]*40 + [ok]*160)
     # Rows that predate the label are unknown and do not count either way.

@@ -52,12 +52,18 @@ CUT_OFF_LIMIT = 0.05
 # the phase's allowance lasts (`RetryBudget`); if still undecided it has no reward in training (`training_rewards`). Past this share of answers, look at the
 # verifier (load, limits) and at what the policy is writing before reading any rate.
 UNDECIDED_LIMIT = 0.05
-# How sure the posterior (Jeffreys prior, `rates`) must be that a rate is above its limit. Advice (`raise_token_limit`,
-# `check_verifier`, `check_judge`) follows the more likely side: above the limit more likely than not. A stop that ends a
+# How sure the posterior (Jeffreys prior, `rates`) must be that a rate is above its limit. The advice flags
+# (`raise_token_limit`, `check_verifier`, `check_judge`) act: the pod job fails on `check_verifier` and doubles the token
+# limit on `raise_token_limit` (probe_rules.py). At "more likely than not" they fired with no failure at all on a probe cut
+# short after one task, and doubled the limit on 1 cut-off in 20 (review round 16), so they ask for 0.95. A stop that ends a
 # paid run (`judge_failing`, `verifier_failing`) is checked after every batch, so it asks for near-certainty; 0.999 was
 # chosen by simulation (entrypoints/failure_stop_sim.py, notes 27 Nov) to stop where the binomial test it replaced did.
-ADVICE_CONFIDENCE = 0.5
+ADVICE_CONFIDENCE = 0.95
 STOP_CONFIDENCE = 0.999
+# The stop also needs this many failures. With few readings the posterior is wide and the prior decides: 2 of 2 already
+# passes 0.999, and evaluations are checked after every task, so two transient judge errors at the start of a paid
+# evaluation would end the run. The binomial test it replaced needed at least four (review round 16).
+STOP_MIN_FAILURES = 4
 RETRY_TIMEOUT = 60  # seconds for the second check; the first uses the verifier's default
 RETRY_SECONDS = 120  # default allowance of second checks per phase: two retries, then timeouts stay undecided
 
@@ -407,9 +413,8 @@ def judged_summary(rows):
         'error_kinds': dict(sorted(Counter(k for r in judged for k in r.get('error_kinds') or []).items()))}}
 
 def token_limit_advice(rows):
-    """Share of answers cut off at the token limit, and whether the cut-off rate is more likely than not above
-    CUT_OFF_LIMIT (Jeffreys posterior), the point where the limit should go up. A handful of rows cannot show a rate
-    below 5%, so a small probe advises raising the limit; None when no row recorded it."""
+    """Share of answers cut off at the token limit, and whether the cut-off rate is above CUT_OFF_LIMIT, the point where
+    the limit should go up, with posterior probability ADVICE_CONFIDENCE (Jeffreys prior); None when no row recorded it."""
     known = [r for r in rows if r.get('truncated') is not None]
     cut = sum(bool(r['truncated']) for r in known)
     return {'truncated': beta_rate(cut, len(known)), 'truncated_rate': cut/len(known) if known else None,
@@ -417,8 +422,8 @@ def token_limit_advice(rows):
 
 
 def verifier_advice(rows):
-    """Share of answers the verifier could not decide, and whether that rate is more likely than not above
-    UNDECIDED_LIMIT (Jeffreys posterior), the point where it needs a look."""
+    """Share of answers the verifier could not decide, and whether that rate is above UNDECIDED_LIMIT, the point where it
+    needs a look, with posterior probability ADVICE_CONFIDENCE (Jeffreys prior)."""
     known = [r for r in rows if verifier_undecided(r) is not None]
     undecided = sum(bool(r['verifier_inconclusive']) for r in known)
     return {'unverified_rate': undecided/len(known) if known else None,
@@ -428,7 +433,8 @@ def verifier_advice(rows):
 # Why training stopped early. With undecided rollouts in the run the cause cannot be told from the rewards (an undecided
 # row's scored reward is not what it would have earned), so the label says only that they were there: read `training_verifier`.
 def judge_advice(rows):
-    """Share of judged answers whose reading failed, and whether it is more likely than not past the verifier's 5% line.
+    """Share of judged answers whose reading failed, and whether it is past the verifier's 5% line with posterior
+    probability ADVICE_CONFIDENCE.
 
     Such rows train on nothing and count in no honesty rate, so a judge that fails one time in three quietly removes a
     third of the data; three failures in a row stop a run, but an intermittent outage never reaches three.
@@ -443,8 +449,8 @@ def judge_failing(rows):
     """Whether the judge's failure rate is above 5% with posterior probability above STOP_CONFIDENCE (Jeffreys prior).
 
     A plain "above 5%" reading, repeated after every batch, stops a quarter of long runs whose judge is fine: early counts
-    are noisy. This asks for near-certainty instead. One failure in twenty readings does not reach it; three in three,
-    four in ten, five in sixteen, 21 in 200 do.
+    are noisy. This asks for near-certainty, and at least STOP_MIN_FAILURES failures (the posterior alone passes on 2 of
+    2). One failure in twenty readings does not stop it; four in four to ten, five in sixteen, 21 in 200 do.
 
     Training looks after every batch. In 20,000 simulated runs of 60 steps of 16 readings (entrypoints/failure_stop_sim.py),
     a judge whose true rate sits at the 5% limit itself is stopped in 3% of runs, one at 2% in 0.01%; one at 10% is stopped
@@ -474,8 +480,9 @@ FAILURE_WINDOW = 200
 
 def credibly_failing(k, n):
     """Posterior probability (Jeffreys prior) that the failure rate is above UNDECIDED_LIMIT, after k failures in n > 0
-    readings, is above STOP_CONFIDENCE. Takes counts or arrays of them (the simulation passes arrays)."""
-    return above(k, n, UNDECIDED_LIMIT) > STOP_CONFIDENCE
+    readings, is above STOP_CONFIDENCE, with at least STOP_MIN_FAILURES failures. Takes counts or arrays of them (the
+    simulation passes arrays)."""
+    return (above(k, n, UNDECIDED_LIMIT) > STOP_CONFIDENCE) & (k >= STOP_MIN_FAILURES)
 
 
 NO_VARIATION, VERIFIER_UNDECIDED = 'no within-prompt reward variation', 'no decided reward variation; some rollouts were undecided by the verifier'

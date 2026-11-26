@@ -115,7 +115,8 @@ def test_the_stop_waits_for_near_certainty_and_matches_the_simulation():
     assert outcomes.STOP_CONFIDENCE == 0.999 and outcomes.FAILURE_WINDOW == 200
     flags = [False]*19 + [True]
     assert outcomes.failing(flags) is False and outcomes.failing([]) is False
-    assert outcomes.failing([True]*3) is True
+    # The posterior alone passes on 2 of 2; the stop also waits for STOP_MIN_FAILURES (review round 16).
+    assert outcomes.failing([True]*3) is False and outcomes.failing([True]*4) is True and outcomes.STOP_MIN_FAILURES == 4
     path = Path(__file__).resolve().parent.parent/'entrypoints'/'failure_stop_sim.py'
     spec = importlib.util.spec_from_file_location('failure_stop_sim', path)
     sim = importlib.util.module_from_spec(spec)
