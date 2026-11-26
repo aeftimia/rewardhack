@@ -255,8 +255,11 @@ def test_the_hook_refuses_with_exit_2_and_passes_other_tools():
 
 CONFIG = yaml.safe_load((PROJECT / '.pre-commit-config.yaml').read_text())
 HOOKS = [hook for repo in CONFIG['repos'] for hook in repo['hooks'] if 'entry' in hook]  # those that run this project's entries
-# How pre-commit hands each stage's details to a hook: the message file as an argument, the remote in its environment.
-SHIMS = {'pre-commit': '{entry}', 'commit-msg': '{entry} "$1"', 'pre-push': 'PRE_COMMIT_REMOTE_NAME="$1" {entry}'}
+# How pre-commit hands each stage's details to a hook: the message file as an argument, the remote and the first pushed
+# commit in its environment (a push that only deletes runs no hooks).
+SHIMS = {'pre-commit': '{entry}', 'commit-msg': '{entry} "$1"',
+         'pre-push': 'read -r _ sha _ _\n[ "$sha" = 0000000000000000000000000000000000000000 ] && exit 0\n'
+                     'PRE_COMMIT_REMOTE_NAME="$1" PRE_COMMIT_TO_REF="$sha" {entry}'}
 
 
 def test_the_config_runs_each_check_at_each_stage_it_installs():
@@ -267,6 +270,8 @@ def test_the_config_runs_each_check_at_each_stage_it_installs():
         for stage, hook in wired.items():
             assert hook['entry'] == f'bash ops/gate.sh {check} {stage}' and hook['stages'] == [stage] and hook['always_run']
             assert hook.get('pass_filenames', True) == (stage == 'commit-msg'), (check, stage)
+    large = [hook for repo in CONFIG['repos'] for hook in repo['hooks'] if hook['id'] == 'check-added-large-files']
+    assert f'--maxkb={gates.MAX_KB}' in large[0]['args']
     pinned = [line for line in (PROJECT / 'pyproject.toml').read_text().splitlines() if 'pre-commit==' in line]
     assert f'"pre-commit=={CONFIG["minimum_pre_commit_version"]}"' in pinned[0]
 
@@ -378,6 +383,35 @@ def test_a_push_of_several_refs_reads_them_all(gated, tmp_path):
     assert refused(attempt(gated, 'push', 'origin', 'main'), 'notes.md:1')
 
 
+def test_a_pushed_commit_no_local_ref_reaches_is_read(gated, tmp_path):
+    remote = tmp_path / 'remote.git'
+    run(tmp_path, 'init', '-q', '--bare', str(remote))
+    run(gated, 'remote', 'add', 'origin', str(remote))
+    run(gated, 'push', '-q', 'origin', 'main')
+    run(gated, 'switch', '-q', '-c', 'gone')
+    (gated / 'notes.md').write_text(f'{TERM}\n')
+    run(gated, 'add', 'notes.md')
+    run(gated, 'commit', '-q', '--no-verify', '-m', 'notes')
+    sha = attempt(gated, 'rev-parse', 'HEAD').stdout.strip()
+    run(gated, 'switch', '-q', 'main')
+    run(gated, 'branch', '-q', '-D', 'gone')
+    assert refused(attempt(gated, 'push', 'origin', f'{sha}:refs/heads/x'), 'notes.md:1 matches withheld term 1')
+
+
+def test_a_push_reads_the_size_of_every_pushed_file(gated, tmp_path):
+    # check-added-large-files reads the working tree: a big file committed past the hooks and deleted again is not there.
+    remote = tmp_path / 'remote.git'
+    run(tmp_path, 'init', '-q', '--bare', str(remote))
+    run(gated, 'remote', 'add', 'origin', str(remote))
+    run(gated, 'push', '-q', 'origin', 'main')
+    (gated / 'rows.jsonl').write_bytes(b'{"a": 1}\n' * (gates.MAX_KB * 1024 // 9 + 1))
+    run(gated, 'add', 'rows.jsonl')
+    run(gated, 'commit', '-q', '--no-verify', '-m', 'rows')
+    run(gated, 'rm', '-q', 'rows.jsonl')
+    run(gated, 'commit', '-q', '--no-verify', '-m', 'drop rows')
+    assert refused(attempt(gated, 'push', 'origin', 'main'), f'rows.jsonl is {gates.MAX_KB} KB in a pushed commit')
+
+
 @pytest.fixture
 def fake_gitleaks(tmp_path, monkeypatch):
     """A `gitleaks` on PATH that logs each call (its arguments and standard input) and fails when its input says LEAK."""
@@ -401,8 +435,17 @@ def test_gitleaks_reads_the_staged_changes_the_message_and_every_unpushed_commit
     message.write_text('the key is LEAK\n')
     assert gates.gitleaks_problems(repo, 'commit-msg', message) == ['gitleaks stdin exited 1: see its findings above']
     run(repo, 'commit', '-q', '--allow-empty', '-m', 'carries a LEAK in its message')
+    sha = attempt(repo, 'rev-parse', 'HEAD').stdout.strip()
     fake_gitleaks.write_text('')
-    assert gates.gitleaks_problems(repo, 'pre-push', 'origin') == ['gitleaks stdin exited 1: see its findings above']
+    assert gates.gitleaks_problems(repo, 'pre-push', 'origin', [sha]) == ['gitleaks stdin exited 1: see its findings above']
     calls = fake_gitleaks.read_text().splitlines()
-    assert calls[:2] == [f'git --log-opts=--diff-merges=first-parent --branches --tags HEAD --not --remotes=origin {flags}', f'stdin {flags}']
+    assert calls[:2] == [f'git --log-opts=--diff-merges=first-parent --branches --tags HEAD --exclude=refs/remotes/origin/* --remotes {sha} '
+                         f'--not --remotes=origin {flags}', f'stdin {flags}']
     assert 'carries a LEAK' in calls[2] and 'start' in '\n'.join(calls[3:])
+
+
+def test_gitleaks_is_not_run_beside_a_gitleaksignore(repo, fake_gitleaks):
+    # gitleaks 8.30.1 reads a .gitleaksignore at the top of the scanned tree whatever --gitleaks-ignore-path says.
+    (repo / '.gitleaksignore').write_text('anything\n')
+    assert '.gitleaksignore exists' in gates.gitleaks_problems(repo, 'pre-commit')[0]
+    assert not fake_gitleaks.exists()

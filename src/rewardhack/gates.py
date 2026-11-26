@@ -377,6 +377,7 @@ def command_problems(root, command, remote=False):
 
 # --- the commit gate -----------------------------------------------------------------------------------------------
 
+MAX_KB = 15000  # check-added-large-files --maxkb in .pre-commit-config.yaml (tests/test_gates.py checks they agree)
 GITLINK = '160000'  # a submodule entry: a commit id, with no content of its own in this repository
 SCISSORS = re.compile(r'^\S ------------------------ >8 ------------------------$', re.M)  # `git commit -v`: what follows is the diff, not the message
 
@@ -435,17 +436,18 @@ def message_text(message_file):
     return SCISSORS.split(Path(message_file).read_text(), maxsplit=1)[0]
 
 
-def unpushed(remote):
-    """`git rev-list`/`git log` arguments for every commit a push to `remote` may publish: whatever any local branch, tag or HEAD
-    reaches that none of the remote's branches had when last fetched. pre-commit (4.7.0, `hook_impl._pre_push_ns`) gives its hooks
-    a range for only the first ref git says is pushed, so `git push origin a b` would go half read from its PRE_COMMIT_FROM_REF;
-    this reads more than one push adds (another unpushed branch too), never less. A remote given as a URL has no tracking
-    branches, so everything is read."""
-    return ['--branches', '--tags', 'HEAD', '--not', f'--remotes={remote}']
+def unpushed(remote, pushed):
+    """`git rev-list`/`git log` arguments for every commit a push to `remote` may publish: whatever the pushed commits, any local
+    branch, tag or HEAD, or another remote's tracking branch (`git push origin fork/feat:feat`) reaches that none of `remote`'s
+    branches had when last fetched. pre-commit (4.7.0, `hook_impl._pre_push_ns`) reads git's list of pushed refs itself and
+    passes on only the first one's commit (`pushed`, from PRE_COMMIT_TO_REF; none when that push starts a new history), so the
+    refs around it are read too: more than one push adds, never less. A remote given as a URL has no tracking branches, so
+    everything is read. Not covered: a second pushed ref that none of these reach (`git push origin a stash@{0}:x`)."""
+    return ['--branches', '--tags', 'HEAD', f'--exclude=refs/remotes/{remote}/*', '--remotes', *pushed, '--not', f'--remotes={remote}']
 
 
-def pushed_commits(root, remote):
-    return git(root, 'rev-list', *unpushed(remote)).split()
+def pushed_commits(root, remote, pushed):
+    return git(root, 'rev-list', *unpushed(remote, pushed)).split()
 
 
 def staged_terms(root, terms):
@@ -457,14 +459,18 @@ def message_terms(root, terms, message_file):
     return text_problems('the commit message', message_text(message_file), terms)
 
 
-def pushed_terms(root, terms, remote):
-    """pre-push: every commit a push may publish (`unpushed`), its files as that commit changed them, and its message."""
+def pushed_terms(root, terms, remote, pushed):
+    """pre-push: every commit a push may publish (`unpushed`), its files as that commit changed them (also their size, which
+    check-added-large-files reads only in the working tree), and its message."""
     blobs = set()
     problems = []
-    for commit in pushed_commits(root, remote):
+    for commit in pushed_commits(root, remote, pushed):
         blobs |= changed_blobs(root, 'diff-tree', '-r', '--no-commit-id', '--root', '--diff-merges=first-parent', commit)
         problems += text_problems(f'the message of commit {commit[:9]}', git(root, 'show', '-s', '--format=%B', commit), terms)
-    return blob_problems(root, blobs, terms) + problems
+    sizes = [(path, int(git(root, 'cat-file', '-s', blob))) for path, blob in sorted(blobs)]
+    too_big = [f'{path} is {size//1024} KB in a pushed commit, over the {MAX_KB} KB limit; add an ignore rule for it'
+               for path, size in sizes if size > MAX_KB*1024]
+    return too_big + blob_problems(root, blobs, terms) + problems
 
 
 TERMS_CHECKS = {'pre-commit': staged_terms, 'commit-msg': message_terms, 'pre-push': pushed_terms}
@@ -476,20 +482,24 @@ def terms_problems(root, stage, *args):
 
 
 # Flags for every gitleaks run. The config is read from the checkout being committed in. Neither `gitleaks:allow` comments
-# nor a .gitleaksignore file (an untracked one in the working tree would be read) may wave a finding through.
+# nor a .gitleaksignore file may wave a finding through: gitleaks 8.30.1 reads `--gitleaks-ignore-path` and also one at the top
+# of the scanned tree (cmd/root.go), so a run with one there is refused (`gitleaks_problems`).
 GITLEAKS = ['--config=.gitleaks.toml', '--no-banner', '--redact', '--verbose', '--ignore-gitleaks-allow', '--gitleaks-ignore-path=/dev/null']
 # Per stage, the gitleaks runs: (arguments, text for its standard input or None).
 GITLEAKS_RUNS = {
     'pre-commit': lambda root: [(['git', '--pre-commit', '--staged'], None)],
     'commit-msg': lambda root, message_file: [(['stdin'], message_text(message_file))],
     # `git log -p` shows no diff for a merge unless asked: first-parent reads what a merge (and its conflict resolution) brings in.
-    'pre-push': lambda root, remote: [(['git', '--log-opts=' + ' '.join(['--diff-merges=first-parent', *unpushed(remote)])], None),
-                                      (['stdin'], git(root, 'log', '--format=%B', *unpushed(remote)))],
+    'pre-push': lambda root, remote, pushed: [(['git', '--log-opts=' + ' '.join(['--diff-merges=first-parent', *unpushed(remote, pushed)])], None),
+                                              (['stdin'], git(root, 'log', '--format=%B', *unpushed(remote, pushed)))],
 }
 
 
 def gitleaks_problems(root, stage, *args):
     """The gitleaks hook at `stage`; gitleaks prints its own findings (redacted). Exit 1 is leaks or an error: either refuses."""
+    ignore = Path(root)/'.gitleaksignore'
+    if ignore.exists():
+        return [f'{ignore} exists, and gitleaks would let what it lists through; remove it']
     problems = []
     for arguments, text in GITLEAKS_RUNS[stage](root, *args):
         done = subprocess.run(['gitleaks', *arguments, *GITLEAKS], cwd=root, input=text, text=True, check=False)  # the exit code is read below
