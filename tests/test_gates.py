@@ -258,8 +258,8 @@ HOOKS = [hook for repo in CONFIG['repos'] for hook in repo['hooks'] if 'entry' i
 # How pre-commit hands each stage's details to a hook: the message file as an argument, the remote and the first pushed
 # commit in its environment (a push that only deletes runs no hooks).
 SHIMS = {'pre-commit': '{entry}', 'commit-msg': '{entry} "$1"',
-         'pre-push': 'read -r _ sha _ _\n[ "$sha" = 0000000000000000000000000000000000000000 ] && exit 0\n'
-                     'PRE_COMMIT_REMOTE_NAME="$1" PRE_COMMIT_TO_REF="$sha" {entry}'}
+         'pre-push': 'read -r local sha remote _\n[ "$sha" = 0000000000000000000000000000000000000000 ] && exit 0\n'
+                     'PRE_COMMIT_TO_REF="$sha" PRE_COMMIT_LOCAL_BRANCH="$local" PRE_COMMIT_REMOTE_BRANCH="$remote" {entry}'}
 
 
 def test_the_config_runs_each_check_at_each_stage_it_installs():
@@ -412,6 +412,44 @@ def test_a_push_reads_the_size_of_every_pushed_file(gated, tmp_path):
     assert refused(attempt(gated, 'push', 'origin', 'main'), f'rows.jsonl is {gates.MAX_KB} KB in a pushed commit')
 
 
+def pushable(gated, tmp_path, name='origin'):
+    remote = tmp_path / f'{name}.git'
+    run(tmp_path, 'init', '-q', '--bare', str(remote))
+    run(gated, 'remote', 'add', name, str(remote))
+    return remote
+
+
+def test_what_any_remote_has_is_not_read_again(gated, tmp_path):
+    # The term in history already on `origin` does not hold back a push to a new, never-fetched `backup`.
+    pushable(gated, tmp_path)
+    (gated / 'notes.md').write_text(f'{TERM}\n')
+    run(gated, 'add', 'notes.md')
+    run(gated, 'commit', '-q', '--no-verify', '-m', 'notes')
+    run(gated, 'push', '-q', '--no-verify', 'origin', 'main')
+    pushable(gated, tmp_path, 'backup')
+    run(gated, 'commit', '-q', '--allow-empty', '-m', 'clean')
+    done = attempt(gated, 'push', '-q', 'backup', 'main')
+    assert done.returncode == 0, done.stderr
+
+
+def test_paths_tag_messages_and_ref_names_are_read(gated, tmp_path):
+    pushable(gated, tmp_path)
+    run(gated, 'push', '-q', 'origin', 'main')
+    (gated / f'{TERM}.md').write_text('harmless\n')
+    run(gated, 'add', '.')
+    assert refused(attempt(gated, 'commit', '-m', 'notes'), f'the path {TERM}.md:1 matches withheld term 1')
+    run(gated, 'commit', '-q', '--no-verify', '-m', 'notes')
+    assert refused(attempt(gated, 'push', 'origin', 'main'), f'the path {TERM}.md:1')
+    run(gated, 'reset', '-q', '--hard', 'origin/main')
+    run(gated, 'commit', '-q', '--allow-empty', '-m', 'clean')
+    run(gated, 'tag', '-a', 'v1', '-m', f'the {TERM} release')
+    assert refused(attempt(gated, 'push', 'origin', 'v1'), 'the message of tag')
+    run(gated, 'tag', '-d', 'v1')
+    assert refused(attempt(gated, 'push', 'origin', f'main:refs/heads/{TERM}'), 'the ref name refs/heads/')
+    done = attempt(gated, 'push', '-q', 'origin', 'main')
+    assert done.returncode == 0, done.stderr
+
+
 @pytest.fixture
 def fake_gitleaks(tmp_path, monkeypatch):
     """A `gitleaks` on PATH that logs each call (its arguments and standard input) and fails when its input says LEAK."""
@@ -437,10 +475,9 @@ def test_gitleaks_reads_the_staged_changes_the_message_and_every_unpushed_commit
     run(repo, 'commit', '-q', '--allow-empty', '-m', 'carries a LEAK in its message')
     sha = attempt(repo, 'rev-parse', 'HEAD').stdout.strip()
     fake_gitleaks.write_text('')
-    assert gates.gitleaks_problems(repo, 'pre-push', 'origin', [sha]) == ['gitleaks stdin exited 1: see its findings above']
+    assert gates.gitleaks_problems(repo, 'pre-push', [sha], ['main']) == ['gitleaks stdin exited 1: see its findings above']
     calls = fake_gitleaks.read_text().splitlines()
-    assert calls[:2] == [f'git --log-opts=--diff-merges=first-parent --branches --tags HEAD --remotes {sha} '
-                         f'--not --remotes=origin {flags}', f'stdin {flags}']
+    assert calls[:2] == [f'git --log-opts=--diff-merges=first-parent --branches --tags HEAD {sha} --not --remotes {flags}', f'stdin {flags}']
     assert 'carries a LEAK' in calls[2] and 'start' in '\n'.join(calls[3:])
 
 
