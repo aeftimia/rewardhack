@@ -88,13 +88,17 @@ def stamp(rows, provenance):
 
 
 def flag(argv, name):
-    """The value given for `--name` in `argv`, or None when it was not given."""
+    """The value given for `--name` in `argv`, or None when it was not given. The last one counts, as with argparse: the
+    pod scripts append overrides to a base argv (review round 31)."""
+    found = None
     for index, word in enumerate(argv):
         if word == f'--{name}':
-            return argv[index+1]
-        if word.startswith(f'--{name}='):
-            return word.split('=', 1)[1]
-    return None
+            if index + 1 == len(argv):
+                raise ValueError(f'its argv ends with --{name} and no value')
+            found = argv[index+1]
+        elif word.startswith(f'--{name}='):
+            found = word.split('=', 1)[1]
+    return found
 
 
 def stated(summary, field, name):
@@ -151,6 +155,13 @@ def from_summary(path, stage):
     return meta(stage=stage, run=path.parent.name, **found, **selection(path, stage))
 
 
+def out_named(path):
+    """The folder name a pre-schema row file's summary gives as its --out, or None when its argv names none."""
+    summary = read_summary(path)
+    out = flag(summary['argv'], 'out') if 'argv' in summary else None
+    return None if out is None else Path(out).name
+
+
 def upgraded(provenance, path, stage):
     """A stamped row's provenance in the current schema: schema 1 had no `tasks` or `part`."""
     if provenance['schema'] == 1:
@@ -174,6 +185,11 @@ def count_file(path, stage):
     if stamped and (len(stamped) != len(rows) or any(other != stamped[0] for other in stamped)):
         raise ValueError('its rows do not all carry the same provenance')
     provenance = upgraded(stamped[0], path, stage) if stamped else from_summary(path, stage)
+    # A copy of another run's rows (once a parent folder held its child's rows.jsonl) would be counted twice; the folder a
+    # run wrote into is the one its rows or its summary name (review round 31).
+    wrote = provenance['run'] if stamped else out_named(path)
+    if wrote is not None and wrote != path.parent.name:
+        raise ValueError(f'its rows were written in a run folder named {wrote!r}, not here: a copy is not counted again')
     if provenance['stage'] != stage:
         raise ValueError(f"its rows say stage {provenance['stage']!r}, its name says {stage!r}")
     found = dict(answers=len(rows), **{outcome: sum(read(row) for row in rows) for outcome, read in OUTCOMES.items()})
@@ -205,7 +221,7 @@ def cells(root):
         if path in chosen:
             try:
                 counted = count_file(path, chosen[path])
-            except (KeyError, ValueError, OSError) as error:  # reported to the caller in `refused`, never counted
+            except (KeyError, ValueError, TypeError, OSError) as error:  # reported to the caller in `refused`, never counted
                 refused.append((str(path), f'{type(error).__name__}: {error}'))
                 continue
             if counted is not None:  # None: only rows counted in another run, or none at all

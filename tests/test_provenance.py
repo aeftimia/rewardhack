@@ -62,7 +62,7 @@ def test_an_older_run_is_read_from_what_its_summary_states_and_refused_when_it_s
 
 
 def test_a_file_that_fails_part_way_adds_nothing(tmp_path):
-    run = tmp_path/'train-x'
+    run = tmp_path/'train-lambda05'
     run.mkdir()
     (run/'training-rollouts.jsonl').write_text(jsonl.dumps(provenance.stamp([row()], provenance.meta(**TRAINED))))
     # no steps.jsonl: the rows were readable, the groups are not
@@ -86,7 +86,7 @@ def write(path, rows, **summary):
 
 
 def test_a_run_is_its_path_so_same_named_runs_of_different_jobs_stay_apart(tmp_path):
-    meta = provenance.meta(**TRAINED)
+    meta = provenance.meta(**dict(TRAINED, run='train-baseline'))
     for job in ('job-a', 'job-b'):
         write(tmp_path/job/'train-baseline'/'before-evaluation.jsonl', provenance.stamp([row()], dict(meta, stage='before', part='evaluation')))
     table, refused = provenance.cells(tmp_path)
@@ -94,7 +94,7 @@ def test_a_run_is_its_path_so_same_named_runs_of_different_jobs_stay_apart(tmp_p
 
 
 def test_one_view_per_stage_is_read_and_every_other_jsonl_is_listed(tmp_path):
-    probe = tmp_path/'api'/'mini'
+    probe = tmp_path/'api'/'probe-120b-low'
     meta = provenance.meta(**UNTRAINED)
     write(probe/'rows.ok.rescored.jsonl', provenance.stamp([row(verified_refutation='verified')], meta))
     write(probe/'rows.rescored.jsonl', provenance.stamp([row(), dict(row(), error='timeout')], meta))
@@ -102,10 +102,10 @@ def test_one_view_per_stage_is_read_and_every_other_jsonl_is_listed(tmp_path):
     write(tmp_path/'mlx'/'rollouts.jsonl', [row()])
     write(tmp_path/'raw'/'rows.jsonl', [dict(task_id='x', raw='', scored=False, meta=meta)])
     [entry], refused = provenance.cells(tmp_path)
-    assert (entry['run'], entry['answers'], entry['refutation'], entry['tasks'], entry['part']) == ('api/mini', 1, 1, 'false', 'train')
+    assert (entry['run'], entry['answers'], entry['refutation'], entry['tasks'], entry['part']) == ('api/probe-120b-low', 1, 1, 'false', 'train')
     why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
-    assert why.keys() == {'api/mini/rows.rescored.jsonl', 'api/mini/rows.jsonl', 'mlx/rollouts.jsonl', 'raw/rows.jsonl'}
-    assert 'rows.ok.rescored.jsonl is the preferred view' in why['api/mini/rows.jsonl']
+    assert why.keys() == {'api/probe-120b-low/rows.rescored.jsonl', 'api/probe-120b-low/rows.jsonl', 'mlx/rollouts.jsonl', 'raw/rows.jsonl'}
+    assert 'rows.ok.rescored.jsonl is the preferred view' in why['api/probe-120b-low/rows.jsonl']
     assert 'not a row file of any stage' in why['mlx/rollouts.jsonl']
     assert 'unscored rows' in why['raw/rows.jsonl']
 
@@ -113,15 +113,15 @@ def test_one_view_per_stage_is_read_and_every_other_jsonl_is_listed(tmp_path):
 def test_schema_1_rows_take_tasks_and_part_from_the_stage_or_the_summary(tmp_path):
     old = {name: value for name, value in provenance.meta(**TRAINED).items() if name not in provenance.SELECTION}
     old['schema'] = 1
-    write(tmp_path/'job'/'train'/'after-evaluation.jsonl', provenance.stamp([row()], dict(old, stage='after')))
+    write(tmp_path/'job'/'train-lambda05'/'after-evaluation.jsonl', provenance.stamp([row()], dict(old, stage='after')))
     probe_meta = {name: value for name, value in provenance.meta(**UNTRAINED).items() if name not in provenance.SELECTION}
     write(tmp_path/'job'/'probe-120b-low'/'rows.rescored.jsonl', provenance.stamp([row()], dict(probe_meta, schema=1)),
           argv=['--tasks', 'false', '--max-seconds', '1200'], part='train', tasks=80)  # `tasks` here is a count, not the selection
-    write(tmp_path/'job'/'probe-default'/'rows.rescored.jsonl', provenance.stamp([row()], dict(probe_meta, schema=1)), argv=[])
-    write(tmp_path/'job'/'probe-no-argv'/'rows.rescored.jsonl', provenance.stamp([row()], dict(probe_meta, schema=1)), part='all')
+    write(tmp_path/'job'/'probe-default'/'rows.rescored.jsonl', provenance.stamp([row()], dict(probe_meta, schema=1, run='probe-default')), argv=[])
+    write(tmp_path/'job'/'probe-no-argv'/'rows.rescored.jsonl', provenance.stamp([row()], dict(probe_meta, schema=1, run='probe-no-argv')), part='all')
     table, [(path, why)] = provenance.cells(tmp_path)
     found = {entry['run']: (entry['tasks'], entry['part']) for entry in table}
-    assert found == {'job/train': ('all', 'evaluation'), 'job/probe-120b-low': ('false', 'train'), 'job/probe-default': ('all', 'train')}
+    assert found == {'job/train-lambda05': ('all', 'evaluation'), 'job/probe-120b-low': ('false', 'train'), 'job/probe-default': ('all', 'train')}
     assert path.endswith('probe-no-argv/rows.rescored.jsonl') and 'no argv' in why
 
 
@@ -142,3 +142,20 @@ def test_the_transcript_export_prefers_the_same_views(tmp_path):
     for name in ('rows.jsonl', 'rows.rescored.jsonl', 'rows.ok.rescored.jsonl', 'training-rollouts.jsonl', 'training-rollouts.rescored.jsonl'):
         (tmp_path/name).write_text('')
     assert [path.name for path, _ in row_files(tmp_path)] == ['rows.ok.rescored.jsonl', 'training-rollouts.rescored.jsonl']
+
+
+def test_flags_read_as_argparse_reads_them_and_a_copied_run_is_not_counted_twice(tmp_path):
+    assert provenance.flag(['--part', 'train', '--samples', '2', '--part', 'all'], 'part') == 'all'  # the last one counts
+    assert provenance.flag(['--part=train', '--part', 'evaluation'], 'part') == 'evaluation'
+    with pytest.raises(ValueError, match='ends with --tasks'):
+        provenance.flag(['--tasks'], 'tasks')
+    argv = ['--model', 'm', '--revision', 'r', '--taskset', 'v1', '--variant', 'neutral', '--out', 'results/job/child']
+    write(tmp_path/'job'/'child'/'rows.rescored.jsonl', [row()], argv=argv, template_kwargs={})
+    write(tmp_path/'job'/'rows.rescored.jsonl', [row()], argv=argv, template_kwargs={})  # a copy in the parent folder
+    write(tmp_path/'stamped'/'elsewhere'/'rows.rescored.jsonl', provenance.stamp([row()], provenance.meta(**UNTRAINED)))
+    write(tmp_path/'bare'/'rows.rescored.jsonl', [row()], argv=argv + ['--part'], template_kwargs={})
+    [entry], refused = provenance.cells(tmp_path)
+    assert entry['run'] == 'job/child'
+    why = {str(Path(path).relative_to(tmp_path)): reason for path, reason in refused}
+    assert "named 'child'" in why['job/rows.rescored.jsonl'] and "named 'probe-120b-low'" in why['stamped/elsewhere/rows.rescored.jsonl']
+    assert 'ends with --part' in why['bare/rows.rescored.jsonl']

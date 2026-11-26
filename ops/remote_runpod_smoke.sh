@@ -54,7 +54,7 @@ OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
 LARGE_CACHE=$HF_HOME/hub/models--${GPT_OSS_120B/\//--}
 # The size field only: the path du prints after it has digits of its own (gpt-oss-120b), which `tr` alone kept (round 29).
 # A failed or unreadable du ends the job with its reason in the log, not with stderr alone (review round 30).
-if [[ -d $LARGE_CACHE ]]; then
+if [[ $SMOKE_PROBE_LARGE == 1 && -d $LARGE_CACHE ]]; then  # sized only for the job that needs it
   LARGE_HERE_GB=$(du -s -BG "$LARGE_CACHE" | cut -f1 | tr -dc 0-9) || fail "SELF_TEST: du could not size the partial $GPT_OSS_120B download in $LARGE_CACHE"
   [[ $LARGE_HERE_GB =~ ^[0-9]+$ ]] || fail "SELF_TEST: du sized the partial $GPT_OSS_120B download in $LARGE_CACHE as '$LARGE_HERE_GB'"
 else LARGE_HERE_GB=0; fi

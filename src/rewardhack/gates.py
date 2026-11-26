@@ -26,11 +26,10 @@ RECORD = Path('.tools') / 'launch-ready.json'
 LEDGER = Path('spending') / 'ledger.csv'
 # What the pod runs is the working tree under these paths (ops/drive_runpod.sh copies it), so they must match the tested commit.
 SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements.txt', 'requirements-vllm.txt')
-# A pod can bill outside the job's own deadline: from its deployment until it accepts SSH (when the driver arms the
-# provisional timer), for that timer before the job starts, and after the deadline for the runner's wait between TERM and
-# KILL (KILL_AFTER_SECONDS in ops/pod_pins.env) and the grace before the pod removes itself.
+# A pod can bill outside the job's own deadline: while the driver waits for it to accept SSH (SSH_UP_SECONDS in
+# ops/pod_pins.env; then it arms the provisional timer), for that timer before the job starts, and after the deadline for
+# the runner's wait between TERM and KILL (KILL_AFTER_SECONDS there) and the grace before the pod removes itself.
 PROVISIONAL_MINUTES = 15
-BOOT_TO_SSH_MEASURED_MINUTES = 1.5  # the longest measured on an RTX PRO 6000 pod (CLAUDE.md), counted at MULTIPLES['measured']
 PINS = Path('ops') / 'pod_pins.env'
 DRIVER_GRACE_SECONDS = 600  # what ops/remote_job.sh uses when AUTOSTOP_GRACE_SECONDS is not given
 DRIVER_JUDGE_MAX_USD = 1.0  # what ops/drive_runpod.sh passes to the pod when JUDGE_MAX_USD is not given
@@ -114,8 +113,8 @@ def pod_pin(root, name):
 
 def overhead_minutes(root, settings):
     """The minutes a pod can bill beyond its job's deadline under these driver settings (see PROVISIONAL_MINUTES)."""
-    boot = math.ceil(MULTIPLES['measured'] * BOOT_TO_SSH_MEASURED_MINUTES)
-    return boot + PROVISIONAL_MINUTES + math.ceil((pod_pin(root, 'KILL_AFTER_SECONDS') + grace_seconds(settings)) / 60)
+    after = pod_pin(root, 'KILL_AFTER_SECONDS') + grace_seconds(settings)
+    return math.ceil(pod_pin(root, 'SSH_UP_SECONDS') / 60) + PROVISIONAL_MINUTES + math.ceil(after / 60)
 
 
 def grace_seconds(settings):

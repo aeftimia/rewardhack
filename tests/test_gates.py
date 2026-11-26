@@ -78,7 +78,7 @@ def test_the_driver_is_asked_before_anything_is_deployed_and_the_grace_is_counte
     assert 'LEAN_ISOLATION=required cannot work' in settle(repo, settings=dict(LEAN_ISOLATION='required'))[1][0]
     assert 'not settings ops/drive_runpod.sh reads: SMOKE_steps' in settle(repo, settings=dict(SMOKE_steps='4'))[1][0]
     assert 'at least 5 min' in settle(repo, deadline=4, basis='2x measured 2 min')[1][0]
-    # Besides the deadline: boot to SSH (2x the measured 1.5 min), the provisional timer, and the runner's 30 s kill-after
+    # Besides the deadline: the driver's wait for SSH (SSH_UP_SECONDS, 3 min), the provisional timer, and the runner's 30 s kill-after
     # with the grace, rounded up together (review round 30).
     record, refused = settle(repo, settings=dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='3600', SMOKE_STEPS='4'))
     assert refused == [] and record['worst_case_minutes'] == 60 + 3 + 15 + 61

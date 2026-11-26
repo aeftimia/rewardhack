@@ -212,8 +212,12 @@ finish() {
 }
 ARMED=0
 trap finish EXIT
-for _ in $(seq 20); do "${SSH[@]}" "root@$HOST" true 2>/dev/null && break; sleep 15; done
-"${SSH[@]}" "root@$HOST" true || { echo 'ssh failed'; exit 1; }
+# Within SSH_UP_SECONDS (ops/pod_pins.env), which the launch gate counts: each try is at most ssh's ConnectTimeout of
+# 10 s and a 15 s pause, 25 s in all. A pod slower than that is given up on here, not waited on: no timer is armed on it, so the exit says to terminate it
+# in the console (review round 31). The
+# refusals while it boots are kept in ssh-wait.log; the last try shows its own.
+for _ in $(seq $((SSH_UP_SECONDS / 25 - 1))); do "${SSH[@]}" "root@$HOST" true 2>> "$RESULTS/ssh-wait.log" && break; sleep 15; done
+"${SSH[@]}" "root@$HOST" true || { echo "ssh failed: the pod did not accept SSH within $SSH_UP_SECONDS s"; exit 1; }
 # Before anything else on a billing pod: a provisional removal timer, so an interrupted copy or a sleeping laptop is bounded.
 # The job's own timer replaces it when the job starts.
 "${SSH[@]}" "root@$HOST" 'bash -s -- --arm-only 900' < ops/remote_job.sh || { echo 'could not arm a provisional removal timer on the pod'; exit 1; }
