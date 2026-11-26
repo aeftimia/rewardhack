@@ -252,7 +252,7 @@ GATE_REPO = 'https://github.com/aeftimia/commit-gate'
 
 def test_the_config_pins_commit_gate_with_every_hook_and_one_size_limit():
     gate = [repo for repo in CONFIG['repos'] if repo['repo'] == GATE_REPO]
-    assert len(gate) == 1 and gate[0]['rev'].startswith('v')
+    assert len(gate) == 1 and len(gate[0]['rev']) == 40  # a commit SHA, not a tag
     hooks = {hook['id']: hook for hook in gate[0]['hooks']}
     assert set(hooks) == {'withheld-terms', 'withheld-terms-message', 'withheld-terms-push', 'gitleaks', 'gitleaks-message', 'gitleaks-push'}
     for name in ('gitleaks', 'gitleaks-message', 'gitleaks-push'):
