@@ -30,7 +30,7 @@ notice, the patch number for fixes that change none of that.
 - The commit gate (pre-commit framework, `.pre-commit-config.yaml`: gitleaks,
   check-added-large-files and the withheld-terms hooks) runs as git's `pre-commit`,
   `commit-msg`, and `pre-push` hooks, so it already applies to Codex. What it reads,
-  and the pushes it cannot see (ref names and tags on already-published commits), are
+  and the pushes it cannot see (ref names and tags pushed onto commits the destination remote already has), are
   listed in CLAUDE.md's "Commit gate". Keep using the untracked `.claude/commit-gate-terms.txt` in the main
   checkout; do not copy its contents into tracked files.
 - A hook refusal is a finding to resolve, not an obstacle to bypass. Missing
