@@ -114,3 +114,21 @@ def test_evaluation_merges_the_adapter_and_restores_the_weights(monkeypatch):
     assert not any(getattr(m, 'merged', False) for m in peft.modules())
     for name, p in peft.named_parameters():
         torch.testing.assert_close(p.detach(), weights[name], rtol=1e-5, atol=1e-6)
+
+
+def test_evaluation_merges_only_the_expert_lora_so_a_small_attention_update_is_not_rounded_away(monkeypatch):
+    """Merging an attention LoRA folds it into bf16 weights, where a one-step update mostly rounds away; unmerged it adds
+    its branch to the output, as training and vLLM do (review round 9, 26 Nov). Only the expert ParamWrappers merge."""
+    import torch
+    from peft import get_peft_model
+    from peft.tuners.lora.layer import ParamWrapper
+    from test_training_integration import tiny
+    model, _ = tiny('moe')
+    peft = get_peft_model(model, hf_grpo.lora_config(model, 2))
+    merged = []
+    def score_samples(model, *args):
+        merged.extend(type(m).__name__ for m in model.modules() if getattr(m, 'merged', False))
+        return 'scored'
+    monkeypatch.setattr(hf_grpo, 'score_samples', score_samples)
+    hf_grpo.evaluate(model, None, [], None, 'after')
+    assert merged and set(merged) == {ParamWrapper.__name__}

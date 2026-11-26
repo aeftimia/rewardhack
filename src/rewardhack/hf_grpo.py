@@ -297,13 +297,17 @@ def reasons(args):
 
 
 def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None):
-    """`score_samples` with the LoRA folded into the weights. PEFT applies a LoRA on the fused gpt-oss experts by rebuilding
-    each layer's expert stack on every forward call, which made generation about 8x slower (measuring pass, 26 Nov); merged,
-    a decode step costs what the base model's does. Before training the adapter is zero, so merging and unmerging leave the
-    weights exactly as they were; after training only the after-evaluation follows, and the saved adapter is separate."""
+    """`score_samples` with the expert LoRA folded into the weights. PEFT applies a LoRA on the fused gpt-oss experts by
+    rebuilding each layer's expert stack, W + delta in bf16, on every forward call, which made generation about 8x slower
+    (measuring pass, 26 Nov); merged once, a decode step costs what the base model's does, and the sum is the same bf16 sum.
+    Only those parameter LoRAs are merged: an attention LoRA adds its branch to the output unmerged, as training and vLLM do,
+    and folding a small update into bf16 weights rounds most of it away (review round 9). With a zero adapter (before
+    training) merging and unmerging are exact; after training only the after-evaluation follows and the adapter is saved
+    separately. A run started from --adapter has a nonzero adapter at its before-evaluation, so the unmerge there leaves the
+    expert weights a rounding step (one bf16 ulp in under 2% of elements) from where they were."""
     import torch
-    from peft.tuners.tuners_utils import BaseTunerLayer
-    layers = [module for module in model.modules() if isinstance(module, BaseTunerLayer)]  # what PeftModel.merge_adapter visits
+    from peft.tuners.lora.layer import ParamWrapper
+    layers = [module for module in model.modules() if isinstance(module, ParamWrapper)]
     with torch.no_grad():
         for layer in layers:
             layer.merge()
