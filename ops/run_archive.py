@@ -91,6 +91,10 @@ def upload(path, given_commit):
     folder = Path(path).resolve(strict=True)
     if not folder.is_dir() or not FOLDER_NAME.fullmatch(folder.name):
         raise SystemExit(f"{path}: a results folder whose name is letters, digits, '.', '_' or '-'")
+    # rclone skips symbolic links with only a notice, so a linked file would be left out of the archive (round 46).
+    links = [p for p in folder.rglob('*') if p.is_symlink()]
+    if links:
+        raise SystemExit(f'{folder} holds symbolic links, which rclone would leave out: {links[:3]}')
     earlier = read_record(folder/RECORD) if (folder/RECORD).exists() else []
     commit = launch_commit(folder, given_commit)
     version = run('rclone', 'version', timeout=REQUEST_TIMEOUT).split()[1]
@@ -123,6 +127,8 @@ def archive_entry(source):
     """A run id (its record read from the bucket) or a local archive.json (its newest entry: give the run id for another)."""
     if RUN_ID.fullmatch(source):
         text = run('rclone', 'cat', f's3:{BUCKET}/{source}/{RECORD}', timeout=REQUEST_TIMEOUT)
+        if not text.strip():  # rclone cat of a missing object prints nothing and succeeds (round 46)
+            raise SystemExit(f'no archive s3:{BUCKET}/{source}/{RECORD}')
         with tempfile.TemporaryDirectory() as scratch:
             (Path(scratch)/'list.json').write_text(f'[{text}]')
             [entry] = read_record(Path(scratch)/'list.json')

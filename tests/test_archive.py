@@ -53,9 +53,8 @@ elif command == 'check':
         sys.exit(f'ERROR: {len(differ) or 1} differences found')
 elif command == 'cat':
     target = remote(args[1])
-    if not target.exists():
-        sys.exit('ERROR: object not found')
-    sys.stdout.write(target.read_text())
+    if target.exists():  # like rclone, a missing object prints nothing and succeeds
+        sys.stdout.write(target.read_text())
 else:
     sys.exit(f'unexpected rclone call {args}')
 """
@@ -152,6 +151,12 @@ def test_a_folder_changing_during_the_upload_records_nothing(tmp_path, run):
     assert code != 0 and 'changed while it was archived' in output and not (run/'archive.json').exists()
 
 
+def test_a_symbolic_link_is_refused(tmp_path, run):
+    (run/'link').symlink_to(run/'train-a'/'steps.jsonl')
+    code, output = archive(tmp_path, 'upload', run)
+    assert code != 0 and 'symbolic links' in output and not (tmp_path/'s3').exists()
+
+
 def test_the_commit_is_required_and_must_be_whole(tmp_path, run):
     (run/'launch-commit.txt').write_text('')
     assert archive(tmp_path, 'upload', run, '--commit', 'b' * 40)[0] != 0
@@ -197,6 +202,8 @@ def test_resume_refuses_what_it_cannot_resume(tmp_path, run):
     assert archive(tmp_path, 'upload', run)[0] == 0
     code, output = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-56')
     assert code != 0 and 'rng_state.pth' in output
+    code, output = archive(tmp_path, 'resume', '20261126T000000Z-runpod-part1-test-0123abcd', 'train-a/trainer/checkpoint-60')
+    assert code != 0 and 'no archive' in output
     code, output = archive(tmp_path, 'resume', run_id, 'train-a/trainer/checkpoint-60', FAKE_SESSION_SECONDS='600')
     assert code != 0 and 'aws sso logout' in output and 'https://' not in output
 
