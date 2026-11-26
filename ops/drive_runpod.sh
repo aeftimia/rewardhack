@@ -104,7 +104,9 @@ if [[ ${DRIVE_CHECK_ONLY:-0} == 1 ]]; then echo 'check passed'; exit 0; fi
 bash ops/gate.sh launch --remote "$REMOTE" --deadline "$DEADLINE" || { echo 'not started: the launch check above refused it, before any pod was contacted' >&2; exit 2; }
 mkdir -p "$RESULTS"
 SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$RESULTS/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
-pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" "root@$HOST:out/" "$RESULTS/"; }
+# rsync never deletes here, so every resumable checkpoint an interim copy saw would stay on this machine (the trainer keeps
+# two on the pod; with expert LoRA each is about 3 GB). Interim copies leave them out; the final copy takes the ones left.
+pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" "$@" "root@$HOST:out/" "$RESULTS/"; }
 say() { echo "$*" >> "$RESULTS/driver.log"; echo "$*"; }
 # The results are only on the pod until this machine copies them, and the pod removes itself a grace period after the job ends:
 # a laptop that goes to sleep in between loses them. macOS: hold off idle sleep for as long as this script lives (closing the lid
@@ -174,7 +176,7 @@ while ((SECONDS < END)); do
     echo "remote finished with exit=$code"
     exit "$code"
   fi
-  if ((SECONDS % 300 < 60)) && ! pull; then echo 'interim copy failed; will try again'; fi
+  if ((SECONDS % 300 < 60)) && ! pull --exclude='trainer/checkpoint-*/'; then echo 'interim copy failed; will try again'; fi
 done
 echo 'driver deadline reached; the remote timeout and the pod removal timer are armed'
 exit 1

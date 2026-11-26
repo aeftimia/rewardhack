@@ -223,3 +223,25 @@ def test_each_training_process_registers_its_own_adapter_name(tmp_path, backend)
     with pytest.raises(httpx.HTTPStatusError):
         second.load(tmp_path)
     second.close()
+
+
+def test_reload_checks_expert_tensors_on_their_own(backend, monkeypatch):
+    # A server that applies the attention adapter but ignores the experts must not pass on the attention tensors.
+    import torch
+    from safetensors.torch import save_file, load_file
+    save_file({'layer.self_attn.q_proj.lora_B.weight': torch.zeros(2), 'layer.mlp.experts.lora_B.weight': torch.zeros(2)},
+              str(backend.path/'adapter_model.safetensors'))
+    (backend.path/'adapter_config.json').write_text('{}')
+    active = [backend.path]
+    monkeypatch.setattr(backend, 'load', lambda path: active.__setitem__(0, path))
+    def served(*names):
+        def sample(*args, **kwargs):
+            state = load_file(str(active[0]/'adapter_model.safetensors'))
+            return [[3]], [[-1-sum(float(state[name].sum()) for name in names)]], None
+        return sample
+    monkeypatch.setattr(backend, 'completions', served('layer.self_attn.q_proj.lora_B.weight', 'layer.mlp.experts.lora_B.weight'))
+    checks = backend.verify_reload([8])
+    assert {kind: check['tensors'] for kind, check in checks.items()} == {'linear': 1, 'experts': 1}
+    monkeypatch.setattr(backend, 'completions', served('layer.self_attn.q_proj.lora_B.weight'))
+    with pytest.raises(RuntimeError, match='experts tensors'):
+        backend.verify_reload([8])

@@ -124,36 +124,43 @@ class AdapterRollouts:
         return ids, probabilities, None
 
     def verify_reload(self, prompt):
-        """A/B/A: changed adapter bytes must change fixed-seed output/logprob,
-        and restoring A must restore it. The live training tensors are untouched.
+        """A/B/A, once per kind of adapted weight (attention and other linear layers; the MoE experts): changing only
+        that kind's LoRA B bytes must change the fixed-seed output/logprob, and restoring A must restore it. Checked
+        separately so that a server that ignores the expert tensors cannot pass on the attention ones. The live
+        training tensors are untouched.
         """
         from safetensors.torch import load_file, save_file
         import shutil
         probe_path = self.args.out / 'adapter-sync-check'
         probe_path.mkdir(exist_ok=True)
         shutil.copyfile(self.path/'adapter_config.json', probe_path/'adapter_config.json')
-        state = load_file(str(self.path/'adapter_model.safetensors'))
-        changed = 0
-        for name, tensor in state.items():
-            if 'lora_B' in name:
-                tensor.fill_(0.1)
-                changed += 1
-        if not changed:
+        names = load_file(str(self.path/'adapter_model.safetensors')).keys()
+        kinds = {kind: [name for name in names if 'lora_B' in name and ('.experts.' in name) == experts]
+                 for kind, experts in {'linear': False, 'experts': True}.items()}
+        if not kinds['linear']:
             raise ValueError('adapter has no LoRA B matrices for the synchronization check')
-        save_file(state, str(probe_path/'adapter_model.safetensors'))
         def sample():
             return self.completions([prompt], seed=0, max_tokens=1)
-        before = sample()
-        self.load(probe_path)
-        changed_output = sample()
-        self.load(self.path)
-        restored = sample()
         def matches(left, right):
             return left[0] == right[0] and math.isclose(left[1][0][0], right[1][0][0], abs_tol=1e-4, rel_tol=0)
-        if matches(before, changed_output) or not matches(before, restored):
-            raise RuntimeError('adapter A/B/A reload did not change and then restore the sampled token/logprob')
+        checks = {}
+        for kind, changed in kinds.items():
+            if not changed:
+                continue
+            state = load_file(str(self.path/'adapter_model.safetensors'))
+            for name in changed:
+                state[name].fill_(0.1)
+            save_file(state, str(probe_path/'adapter_model.safetensors'))
+            before = sample()
+            self.load(probe_path)
+            changed_output = sample()
+            self.load(self.path)
+            restored = sample()
+            if matches(before, changed_output) or not matches(before, restored):
+                raise RuntimeError(f'adapter A/B/A reload of the {kind} tensors did not change and then restore the sampled token/logprob')
+            checks[kind] = dict(tensors=len(changed), before=before, changed=changed_output, restored=restored)
         self.checked_reload = True
-        return dict(before=before, changed=changed_output, restored=restored)
+        return checks
 
     def generate(self, trainer, prompts, num_generations):
         import torch

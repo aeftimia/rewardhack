@@ -23,9 +23,13 @@ def test_sampling_is_untruncated(tmp_path, monkeypatch):
 
 
 def test_gpt_oss_experts_carry_lora_and_learn(tmp_path, monkeypatch):
-    run = train(tmp_path, monkeypatch, REWARDS['first of the group'], kind='moe')
-    assert 'experts' in run.summary['trainer']['lora_target_modules']
     from test_training_integration import tiny
+    built = tiny('moe')
+    run = train(tmp_path, monkeypatch, REWARDS['first of the group'], kind='moe', built=built)
+    assert 'experts' in run.summary['trainer']['lora_target_modules']
+    # LoRA B starts at zero; after a step with reward variation the expert B matrices have moved.
+    trained = {name: p for name, p in built[0].named_parameters() if 'experts' in name and 'lora_B' in name}
+    assert len(trained) == 2 and all(float(p.detach().abs().max()) > 0 for p in trained.values())
     model, _ = tiny('moe')
     from peft import get_peft_model
     peft = get_peft_model(model, hf_grpo.lora_config(model, 2))
@@ -37,3 +41,46 @@ def test_gpt_oss_experts_carry_lora_and_learn(tmp_path, monkeypatch):
 def test_an_unlisted_architecture_is_refused():
     with pytest.raises(KeyError):
         hf_grpo.lora_config(SimpleNamespace(config=SimpleNamespace(model_type='unlisted')), 2)
+
+
+def test_a_dropped_row_leaves_the_kept_rows_gradient_as_if_never_sampled(tmp_path, monkeypatch):
+    """Under 'dapo' TRL divides by the step's token count, counted before the verifier mask. A dropped long row must
+    leave that count too, or it shrinks every kept row's gradient (review round 1, 26 Nov)."""
+    import torch
+    from datasets import Dataset
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from transformers import GPT2Config, GPT2LMHeadModel, PreTrainedTokenizerFast
+    from trl import GRPOConfig, GRPOTrainer
+    backend = Tokenizer(WordLevel({'<pad>': 0, '<eos>': 1, '<unk>': 2, 'hello': 3}, unk_token='<unk>'))
+    tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend, eos_token='<eos>', pad_token='<pad>', unk_token='<unk>')
+    model = GPT2LMHeadModel(GPT2Config(vocab_size=4, n_layer=1, n_head=1, n_embd=8, bos_token_id=3, eos_token_id=1, pad_token_id=0))
+    config = GRPOConfig(output_dir=str(tmp_path), use_cpu=True, bf16=False, report_to='none', num_generations=2,
+                        per_device_train_batch_size=2, max_completion_length=4, beta=0, loss_type='dapo')
+
+    class MaskedTrainer(hf_grpo.VerifierMaskMixin, GRPOTrainer):
+        pass
+
+    trainer = MaskedTrainer(model=model, args=config, reward_funcs=lambda completions, **kw: [0.]*len(completions),
+                            train_dataset=Dataset.from_list([{'prompt': 'hello'}]), processing_class=tokenizer)
+    trainer.model.eval()  # no accumulation rescale, so the two losses below compare directly
+    lengths = torch.tensor([[1, 1, 1, 1], [1, 0, 0, 0]])  # the dropped row is long, the kept row short
+    batch = dict(prompt_ids=torch.tensor([[3], [3]]), prompt_mask=torch.ones((2, 1), dtype=torch.long),
+                 completion_ids=torch.tensor([[3, 3, 3, 1], [1, 0, 0, 0]]), completion_mask=lengths,
+                 advantages=torch.tensor([1., 1.]), num_items_in_batch=lengths.sum())
+
+    def generated(self, inputs):
+        self._verifier_keep = [False, True]
+        return dict(batch)
+
+    monkeypatch.setattr(GRPOTrainer, '_generate_and_score_completions', generated)
+    masked = trainer._generate_and_score_completions([])
+    assert int(masked['num_items_in_batch']) == 1
+    both = torch.full((2, 4), -2., requires_grad=True)
+    monkeypatch.setattr(trainer, '_get_per_token_logps_and_entropies', lambda *a, **k: (both, torch.zeros_like(both), None))
+    trainer._compute_loss(model, masked).backward()
+    alone = torch.full((1, 4), -2., requires_grad=True)
+    monkeypatch.setattr(trainer, '_get_per_token_logps_and_entropies', lambda *a, **k: (alone, torch.zeros_like(alone), None))
+    trainer._compute_loss(model, {key: value if key == 'num_items_in_batch' else value[1:] for key, value in masked.items()}).backward()
+    assert both.grad[0].abs().sum() == 0
+    torch.testing.assert_close(both.grad[1], alone.grad[0])

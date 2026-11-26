@@ -36,11 +36,14 @@ class VerifierMaskMixin:
         if keep is None or len(keep) != len(batch['advantages']):
             raise ValueError('Verifier mask must match the generated local completions')
         keep = torch.tensor(keep, dtype=torch.bool, device=batch['advantages'].device)
-        batch['verifier_keep'] = keep
         batch['advantages'] = batch['advantages'].masked_fill(~keep, 0.0)
         # tool_mask affects the loss only, leaving attention to generated tokens intact.
         mask = keep[:, None].expand_as(batch['completion_mask'])
         batch['tool_mask'] = batch.get('tool_mask', torch.ones_like(batch['completion_mask'])) * mask
+        # The 'dapo' loss divides by the tokens of the whole step (`num_items_in_batch`, counted by TRL before this mask).
+        # Recount without the dropped rows, so the kept rows train exactly as if the dropped ones had never been sampled,
+        # whichever micro-batch they fall in.
+        batch['num_items_in_batch'] = self.accelerator.gather((batch['completion_mask'] * batch['tool_mask']).sum()).sum()
         return batch
 
     def _compute_loss(self, model, inputs):
@@ -50,13 +53,7 @@ class VerifierMaskMixin:
             # Here, before the optimiser step, so the adapter is still the last good one. The step callback is too late and too
             # early at once: it runs after the update and before the step's loss is logged.
             raise FloatingPointError(f'the training loss is {float(loss)} at step {self.state.global_step+1}')
-        keep = inputs.get('verifier_keep')
-        if keep is None:
-            return loss
-        # GRPO averages sequence losses over the original batch. Remove the zeroed
-        # rows from that denominator too; DDP averages rank gradients afterwards.
-        count = self.accelerator.reduce(keep.sum().to(loss.dtype), reduction='sum')
-        return loss * (keep.numel() * self.accelerator.num_processes / count.clamp(min=1))
+        return loss
 
 
 EVALUATION_SEED_OFFSET = 31415

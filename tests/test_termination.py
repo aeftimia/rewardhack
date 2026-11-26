@@ -303,7 +303,7 @@ def test_verifier_mask_removes_actual_trl_kl_gradient_without_changing_attention
     model = GPT2LMHeadModel(GPT2Config(vocab_size=4, n_layer=1, n_head=1, n_embd=8,
                                      bos_token_id=3, eos_token_id=1, pad_token_id=0))
     config = GRPOConfig(output_dir=str(tmp_path), use_cpu=True, bf16=False, report_to='none',
-                        num_generations=2, per_device_train_batch_size=2, max_completion_length=2, beta=0, loss_type='grpo')
+                        num_generations=2, per_device_train_batch_size=2, max_completion_length=2, beta=0, loss_type='dapo')
 
     class MaskedTrainer(hf_grpo.VerifierMaskMixin, GRPOTrainer):
         pass
@@ -316,7 +316,7 @@ def test_verifier_mask_removes_actual_trl_kl_gradient_without_changing_attention
     batch = dict(prompt_ids=torch.tensor([[3], [3]]), prompt_mask=torch.ones((2, 1), dtype=torch.long),
                  completion_ids=torch.tensor([[3, 1], [3, 1]]), completion_mask=torch.ones((2, 2), dtype=torch.long),
                  advantages=torch.tensor([0., 0.]), ref_per_token_logps=torch.full((2, 2), -1.),
-                 tool_mask=torch.tensor([[1, 1], [1, 0]]))
+                 tool_mask=torch.tensor([[1, 1], [1, 0]]), num_items_in_batch=torch.tensor(3))
     seen_attention = []
     logps = torch.full((2, 2), -2., requires_grad=True)
 
@@ -346,8 +346,8 @@ def test_verifier_mask_removes_actual_trl_kl_gradient_without_changing_attention
     assert torch.equal(seen_attention[0], seen_attention[1])
     kept_gradient = logps.grad[1].clone()
     # Removing the dropped row entirely must produce the same kept-row gradient.
-    # A mask alone leaves TRL's outer batch mean diluted by the dropped row.
-    only_kept = {key: value[1:] for key, value in masked.items()}
+    # The step's token count must leave the dropped row's tokens out, so it is carried over as the masked batch has it.
+    only_kept = {key: value if key == 'num_items_in_batch' else value[1:] for key, value in masked.items()}
     logps = torch.full((1, 2), -2., requires_grad=True)
     trainer._compute_loss(model, only_kept).backward()
     torch.testing.assert_close(logps.grad[0], kept_gradient)
