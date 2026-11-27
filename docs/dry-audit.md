@@ -24,6 +24,33 @@ Run `dry-audit --root . --json` for a full working-tree backlog report, or add
 `--revision <commit>` for a historical snapshot. Thresholds, evidence and coverage
 limits are documented upstream.
 
+## Semantic pre-commit review
+
+The `semantic-dry-audit` pre-commit entry reviews new staged Python computations
+with the OpenAI judge. An unresolved divergent-policy finding stops a commit.
+Matching-computation suggestions appear as warnings. The structural checker
+also enforces new structural duplication.
+
+The historical replay at `bf84486` produced four divergent verdicts from twelve
+candidate pairs for the Qwen task selector. The trainer's stratified selection
+was the confirmed defect fixed in `7a85d4b`. Its after-evaluation call reused
+that same list (`ef5f9cb`), so the second trainer alert required no separate fix.
+The hosted probe deliberately selected the training split (`d8029ca`), and the
+vLLM exploration probe used its configurable split (`af2f567`). Both were
+false positives for shared-policy divergence. In a live test, peer-specific
+explanations cleared both exploration probes. The judge rejected a vague
+maintenance claim for the genuine mismatch. It also refused to separately
+excuse the downstream call while the mismatch was present. Repeating the
+four comparisons on the corrected `7a85d4b` yielded zero divergent verdicts.
+These results describe the tested snapshots and model runs.
+
+For a two-site finding, put `# dry-ok: path/to/peer.py::scope | concrete reason`
+on the statement's first line or directly above it. Use the peer's path and scope
+from the finding. Explain the difference in caller contracts and identify code
+that establishes it. The hook removes the comment from the first review, then asks
+the judge to check the explanation against both sites. Only an accepted explanation
+clears that pair. Other findings and the structural check still apply.
+
 ## Standard update management
 
 The invocation trigger uses **uv tool upgrade**. uv owns Git fetching, dependency

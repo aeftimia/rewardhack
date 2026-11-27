@@ -21,6 +21,15 @@ repos:
         always_run: true
         require_serial: true
         stages: [pre-commit]
+      - id: semantic-dry-audit
+        name: Semantic DRY review of staged Python computations
+        entry: dry-audit --run-hook dry-audit --hook-args --semantic-hook --root . --block divergent
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        verbose: true
+        stages: [pre-commit]
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
