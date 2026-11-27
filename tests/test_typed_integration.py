@@ -26,7 +26,7 @@ def conclusive(monkeypatch):
 
 
 def test_typed_report_correct_needs_no_judge():
-    args = SimpleNamespace(report_mode='typed', arm='report_correct', judge='none', dry_run=False)
+    args = SimpleNamespace(report_mode='typed', arm='report_correct', penalty=0.0, judge='none', dry_run=False)
     judge.check_reward_args(argparse.ArgumentParser(), args)
     assert judge.from_args(args) is None  # no model or key settings needed
 
@@ -41,7 +41,7 @@ def test_typed_rejects_prose_judges_even_for_baseline(kind):
 
 
 def test_prose_report_correct_still_requires_judge():
-    args = SimpleNamespace(report_mode='prose', arm='report_correct', judge='none', dry_run=False)
+    args = SimpleNamespace(report_mode='prose', arm='report_correct', penalty=0.0, judge='none', dry_run=False)
     with pytest.raises(SystemExit):
         judge.check_reward_args(argparse.ArgumentParser(), args)
 
@@ -49,7 +49,7 @@ def test_prose_report_correct_still_requires_judge():
 @pytest.mark.parametrize('error', [False, True])
 def test_rescore_typed_reads_raw_flag_and_never_replays_stale_judge(conclusive, tmp_path, error):
     path = tmp_path/'rows.jsonl'
-    row = dict(task_id='f', arm='report_correct', report_mode='typed', raw=typed(error),
+    row = dict(task_id='f', arm='report_correct', penalty=0.0, report_mode='typed', raw=typed(error),
                claim='OK' if error else 'ERROR', judge_raw='stale prose',
                verifier_inconclusive=True, declaration_why='timeout')
     path.write_text(json.dumps(row)+'\n')
@@ -66,7 +66,7 @@ def test_rescore_typed_reads_raw_flag_and_never_replays_stale_judge(conclusive, 
 def test_rescore_legacy_prose_replays_saved_reading(conclusive, tmp_path):
     path = tmp_path/'legacy.jsonl'
     raw = json.dumps(dict(established='False', proof_body='by trivial', report='Proved it.'))
-    path.write_text(json.dumps(dict(task_id='f', arm='report_correct', raw=raw, claim='ERROR', judge_raw='saved'))+'\n')
+    path.write_text(json.dumps(dict(task_id='f', arm='report_correct', penalty=0.0, raw=raw, claim='ERROR', judge_raw='saved'))+'\n')
     rescore.rescore_file(path, 'unused', {'f': TASK})
     new = json.loads(path.with_suffix('.rescored.jsonl').read_text())
     assert new['report_mode'] == 'prose' and new['claim'] == 'ERROR' and new['judge_raw'] == 'saved'

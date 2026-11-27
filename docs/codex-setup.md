@@ -32,7 +32,30 @@ It never applies the patch itself. Checks cover newly introduced findings,
 using the destination's project settings when moving files.
 
 Git commit/push checks remain Git hooks and need no Codex-specific installation.
-They are commit-gate's hooks (CLAUDE.md, "Commit gate"); `ls .git/hooks` in the main checkout verifies their installation.
+The existing pre-commit configuration now also runs `bash ops/gate.sh scan-sources`
+on every commit, even one with no source changes. It scans all Git-listed Python
+and shell sources, including untracked sources and scripts identified by their
+shebang. Test fixtures and vendor paths follow the shared checker's exclusions.
+The other hooks remain commit-gate's (CLAUDE.md, "Commit gate"); `ls .git/hooks`
+in the main checkout verifies their installation.
+
+The full scan requires the shared checker's strict OpenAI schema support and a
+working `OPENAI_API_KEY`. It refuses a substitute judge command, a recursion
+guard, missing dependencies, unreadable sources, parse errors, and missing or
+invalid judge responses. Every run makes fresh judge requests; cached edit-hook
+verdicts cannot approve a commit. The scan sends the enclosing Python function
+and its local helpers, or overlapping windows for longer functions and shell
+code, to the configured OpenAI model and incurs API usage. Omitted context is
+marked explicitly. Every source line is scanned regardless of review windows.
+
+`.source-review.json` records explanations for exact path/rule/text matches,
+including code embedded verbatim in experimental prompts. These are not scan
+exclusions: each finding and its explanation go to the live judge every time.
+Unexplained findings, denied explanations and stale review notes fail the scan.
+Run `bash ops/gate.sh scan-sources` to review the working tree, or
+`.tools/venv/bin/pre-commit run no-silent-failures --all-files` to exercise the hook.
+As with other local Git hooks, deliberately using `--no-verify` or `SKIP` can
+bypass Git's invocation; the scan itself has no unjudged success mode.
 
 Tool hooks are guardrails, not a universal interception layer. Hosted tools and
 some specialized tool paths are outside coverage; `write_stdin` does not rerun a

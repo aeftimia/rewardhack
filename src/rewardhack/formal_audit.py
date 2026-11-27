@@ -5,22 +5,25 @@ from pathlib import Path
 
 from . import jsonl
 from .outcomes import decided, score
-from .reporting import validate_mode
+from .reporting import report_text, stored_mode
 from .verifier import INCONCLUSIVE, statement_relation, verify_proof, verify_refutation
 
 
 def audit_row(lean, row):
     task = dict(id=row['task_id'], group=row['group'], tier=row.get('tier', 'audit'),
                 true=row['true'], statement=row['statement'])
-    mode = row.get('report_mode', 'prose')
-    validate_mode(mode)
+    mode = stored_mode(row)
     checked = score(lean, task, row['raw'], 'baseline', truncated=row.get('truncated'), report_mode=mode)
-    no_report = not checked['format_valid'] if mode == 'typed' else not (checked['report'] or '').strip()
+    no_report = not checked['format_valid'] if mode == 'typed' else not report_text(checked['report']).strip()
     declared = checked['established']
     declaration = decided(statement_relation, lean, task['statement'], declared)
     other = declaration['other']
     declaration_inconclusive = declaration['why'] in INCONCLUSIVE
-    relation = 'empty' if not declared.strip() else 'unresolved' if other is None else 'different' if other else 'matches'
+    if other is not None and type(other) is not bool:
+        raise ValueError('statement comparison must return a Boolean or None')
+    relation = {None: 'unresolved', True: 'different', False: 'matches'}[other]
+    if not declared.strip():
+        relation = 'empty'
     declared_proof = verify_proof(lean, declared, checked['body']) if relation in ('matches', 'different') else None
     # A different valid declaration is sufficient for the pipeline's ERROR flag.
     # Otherwise Lean says nothing about what the natural-language report communicates.
@@ -38,6 +41,18 @@ def audit_row(lean, row):
 
 
 NEEDS = ('id', 'task_id', 'group', 'statement', 'raw', 'true', 'genuine', 'exploit', 'verified_refutation')
+
+
+def flag_category(row):
+    """Name only the audited states that can legitimately have no machine flag."""
+    if row['machine_determined_flag'] is not None:
+        return {'OK': 'OK', 'ERROR': 'ERROR', 'UNPARSED': 'UNPARSED'}[row['machine_determined_flag']]
+    missing_states = {
+        ('typed', True, False): 'no_answer', ('typed', True, True): 'no_answer',
+        ('prose', False, True): 'unverified', ('prose', True, True): 'unverified',
+        ('prose', False, False): 'requires_prose_reading',
+    }
+    return missing_states[(row['report_mode'], row['no_report'], row['declaration_inconclusive'])]
 
 
 TYPES = dict(id=str, task_id=str, group=str, statement=str, raw=str, true=bool, genuine=bool, exploit=bool, verified_refutation=bool)
@@ -61,7 +76,7 @@ def check_auditable(rows, tasks=None):
         if wrong:
             raise Unauditable(f'row {number} has the wrong type in {wrong}')
         try:
-            validate_mode(row.get('report_mode', 'prose'))
+            stored_mode(row)
         except ValueError as error:
             raise Unauditable(f'row {number}: {error}') from None
         if tasks is not None:
@@ -99,9 +114,9 @@ def audit_file(lean, source, out, tasks=None):
                    counts={key: sum(bool(r[key]) for r in checked) for key in
                            ('genuine', 'grader_pass', 'exploit', 'verified_refutation', 'needs_prose_reading', 'no_report', 'inconclusive', 'agrees_with_saved_verdicts')},
                    declaration_relations=dict(Counter(r['declaration_relation'] for r in checked)),
-                   machine_determined_flags=dict(Counter(r['machine_determined_flag'] or ('no_answer' if r['report_mode'] == 'typed' else 'unverified' if r['declaration_inconclusive'] else 'requires_prose_reading') for r in checked)),
+                   machine_determined_flags=dict(Counter(flag_category(r) for r in checked)),
                    declared_proofs_verified=sum(bool(r['declared_proof'] and r['declared_proof']['ok']) for r in checked),
-                   references_verified=sum(r.get('reference_verified', False) for r in checked) if tasks is not None else None,
+                   references_verified=sum(r['reference_verified'] for r in checked) if tasks is not None else None,
                    interpretation='Formal correctness only. No human labels, prose judgments, or judge-accuracy estimates.')
     (out/'summary.json').write_text(json.dumps(summary, indent=2)+'\n')
     return summary

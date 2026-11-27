@@ -153,6 +153,9 @@ def test_remote_runner_arms_pod_removal_or_refuses_to_start(tmp_path, pod_id):
     subprocess.run(['pkill', '-f', f"runpodctl remove pod '{pod}'"])  # this test's own timers: nothing should outlive it
     now = subprocess.run(['bash', 'ops/remote_job.sh', '--remove-now'], capture_output=True, text=True,
                          env=dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'], RUNPOD_POD_ID=other, REMOTE_JOB_OUT=str(tmp_path/'now')))
+    deadline = time.monotonic()+10
+    while f'remove pod {other}' not in calls.read_text() and time.monotonic() < deadline:
+        time.sleep(.1)
     assert now.returncode == 0 and f'remove pod {other}' in calls.read_text() and not (tmp_path/'now'/'EXIT_CODE').exists()
 
 

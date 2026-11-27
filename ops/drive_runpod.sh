@@ -27,6 +27,7 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   [[ -z ${SMOKE_MEMORY_LIMIT+set} ]] || { echo 'SMOKE_MEMORY_LIMIT is a question for the transformers sampler: not with SMOKE_VLLM_ROLLOUTS=1'; exit 2; }
 fi
 source ops/pod_pins.env  # PART_ONE_RUNS: the Part 1 jobs and their runs
+JUDGE_KIND=${JUDGE_KIND:-api}
 if [[ -n ${SMOKE_PART_ONE+set} ]]; then PART_ONE=$SMOKE_PART_ONE; else PART_ONE=0; fi  # unset: the preflight run
 # No leading zeros: bash reads 08 as octal, and 00 would pass the string tests below as a Part 1 job of row 0, with no runs.
 # At most three digits: a 20-digit number wraps to a negative index, which bash 4.3+ reads from the end of the table.
@@ -88,7 +89,7 @@ if [[ $PART_ONE != 0 ]]; then
   }
 fi
 [[ $REMOTE =~ ^ops/[a-zA-Z0-9_-]+\.sh$ && -f $REMOTE && $DEADLINE =~ ^[1-9][0-9]*$ ]] || { echo 'the remote script must be an existing ops/*.sh and the deadline a whole number of minutes'; exit 2; }
-if [[ $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == api ]]; then
+if [[ $REMOTE == ops/remote_runpod_smoke.sh && $JUDGE_KIND == api ]]; then
   [[ ${FORWARD_JUDGE_KEY:-} == 1 && -n ${OPENAI_API_KEY:-} ]] || {
     echo 'API smoke needs FORWARD_JUDGE_KEY=1 and OPENAI_API_KEY before starting'; exit 2;
   }
@@ -99,7 +100,7 @@ fi
 if [[ ${SMOKE_SKIP_PROBE:-0} == 1 && -z ${SMOKE_TOKEN_LIMIT:-} ]]; then
   echo 'SMOKE_SKIP_PROBE=1 needs SMOKE_TOKEN_LIMIT, the token limit an earlier probe on this model called for; without it the job stops on the pod after its install and download'; exit 2
 fi
-[[ ${JUDGE_KIND:-api} == api || ${JUDGE_KIND:-api} == pod ]] || { echo 'JUDGE_KIND must be api or pod'; exit 2; }
+[[ $JUDGE_KIND == api || $JUDGE_KIND == pod ]] || { echo 'JUDGE_KIND must be api or pod'; exit 2; }
 # The smoke script runs model-written Lean, and how that is isolated is chosen by name for every run. Left unset it used to mean
 # `required`, which RunPod containers cannot satisfy: the job then failed only after a pod boot and a sync had been paid for.
 if [[ $REMOTE == ops/remote_runpod_smoke.sh && -z ${LEAN_ISOLATION:-} ]]; then
@@ -129,7 +130,9 @@ fi
 # name, or any SMOKE_* setting with a script that reads none, would be forwarded and ignored.
 SMOKE_READ=$(awk '{ while (match($0, /SMOKE_[A-Z_]+/)) { print substr($0, RSTART, RLENGTH); $0 = substr($0, RSTART+RLENGTH) } }' "$REMOTE" | sort -u | tr '\n' ' ')
 SMOKE_ENV=''
+SMOKE_EXPORTED=$(env | awk '/^SMOKE_/')
 while IFS='=' read -r name value; do
+  [[ -n $name ]] || continue  # a here-string for an empty environment selection contains one blank line
   [[ $name =~ ^SMOKE_[A-Z_]+$ && $value =~ ^[0-9]+$ ]] || { echo "invalid $name"; exit 2; }
   if [[ " $SMOKE_READ" != *" $name "* ]]; then
     if [[ -n $SMOKE_READ ]]; then echo "$name is set, but $REMOTE does not read it and would ignore it. The SMOKE_* settings it reads: $SMOKE_READ"
@@ -137,10 +140,10 @@ while IFS='=' read -r name value; do
     exit 2
   fi
   SMOKE_ENV+="$name=$value "
-done < <(env | grep '^SMOKE_' || true)
+done <<< "$SMOKE_EXPORTED"
 # With the judge served on the pod the smoke script has a second install and download, a 15 minute readiness wait and up to 30 minutes
 # of judge validation on top of its 170 minute budget.
-if [[ $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == pod && $DEADLINE -lt 240 ]]; then
+if [[ $REMOTE == ops/remote_runpod_smoke.sh && $JUDGE_KIND == pod && $DEADLINE -lt 240 ]]; then
   echo 'JUDGE_KIND=pod needs a deadline of at least 240 minutes for the smoke script: its limits add up to about 234'; exit 2
 fi
 # Everything above refuses a command that could only fail later, on a pod that is already billing. DRIVE_CHECK_ONLY=1 runs just
@@ -323,7 +326,7 @@ ARMED_AT=$(date -u +%FT%TZ)
 rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
 # The API judge needs the OpenAI key on the pod. It is sent only on request, over the SSH channel into a mode-600
 # file that the remote script reads once and deletes; it never appears in a command line or in the repo.
-if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == api ]]; then
+if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && $JUDGE_KIND == api ]]; then
   printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | "${SSH[@]}" "root@$HOST" 'umask 077; cat > ~/.judge_key'
 fi
 # Sent, then confirmed: a launch whose ssh call fails may or may not have reached the pod, so its out/ may be this run's
@@ -332,8 +335,6 @@ if ! BEFORE_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1) || ! [[ $BEFORE_LAUNCH
   echo "could not read the pod's state before the launch (got '$BEFORE_LAUNCH'); not launching"; exit 1
 fi
 LAUNCH_SENT=1
-# fallback-ok: off for the one launch call below; the next lines read its status, exit 1 unless the pod shows the job started, and turn exit-on-error back on
-set +e
 # A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
 # The remote log goes inside it so the runner's own errors are pulled with the results.
 # The values the pod gets for settings left unset: the documented defaults the checks above validated.
@@ -341,9 +342,11 @@ if [[ -n ${JUDGE_KIND:-} ]]; then SENT_JUDGE_KIND=$JUDGE_KIND; else SENT_JUDGE_K
 if [[ -n ${LEAN_ISOLATION:-} ]]; then SENT_ISOLATION=$LEAN_ISOLATION; else SENT_ISOLATION=required; fi
 if [[ -n ${JUDGE_MAX_USD:-} ]]; then SENT_JUDGE_MAX_USD=$JUDGE_MAX_USD; else SENT_JUDGE_MAX_USD=1; fi
 if [[ -n ${AUTOSTOP_GRACE_SECONDS:-} ]]; then SENT_GRACE=$AUTOSTOP_GRACE_SECONDS; else SENT_GRACE=600; fi
-"${SSH[@]}" "root@$HOST" "if [ -e out ]; then mv out out.prev.\$(date +%s); fi; mkdir -p out; JUDGE_KIND=$SENT_JUDGE_KIND LEAN_ISOLATION=$SENT_ISOLATION JUDGE_MAX_USD=$SENT_JUDGE_MAX_USD REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=$SENT_GRACE ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
-LAUNCH_STATUS=$?
-set -e
+if "${SSH[@]}" "root@$HOST" "if [ -e out ]; then mv out out.prev.\$(date +%s); fi; mkdir -p out; JUDGE_KIND=$SENT_JUDGE_KIND LEAN_ISOLATION=$SENT_ISOLATION JUDGE_MAX_USD=$SENT_JUDGE_MAX_USD REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=$SENT_GRACE ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"; then
+  LAUNCH_STATUS=0
+else
+  LAUNCH_STATUS=$?
+fi
 # The call runs the job in the background, so it fails only when ssh did, which may be before or after the job started.
 # The pod's state against its state just before says which: a job that started is followed like any other (copying it
 # in the exit trap would copy nothing yet, and with KEEP_POD=0 remove the pod and the job with it); one that did not
@@ -367,7 +370,7 @@ date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60+90))  # the remote timeout is DEADLINE; the extra time is for it to write EXIT_CODE
 while ((SECONDS < END)); do
   sleep 60
-  if code=$("${SSH[@]}" "root@$HOST" 'cat out/EXIT_CODE' 2>/dev/null); then
+  if code=$("${SSH[@]}" "root@$HOST" 'cat out/EXIT_CODE' 2>> "$RESULTS/ssh-exit-code.log"); then
     [[ $code =~ ^[0-9]+$ && $code -le 255 ]] || { echo 'invalid remote exit status'; exit 1; }
     echo "remote finished with exit=$code"
     exit "$code"

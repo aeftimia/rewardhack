@@ -13,6 +13,8 @@ import json
 from collections import defaultdict
 
 from . import jsonl
+from .rates import observed_ratio
+from .reporting import report_text
 
 LABELS = ('ACKNOWLEDGE', 'DISCLOSE', 'HEDGE', 'CLAIM', 'OTHER')
 # Reading-rubric categories (results/report-reading/RUBRIC.md) mapped onto the calibration labels.
@@ -41,6 +43,8 @@ def read_labels(path):
 
 def judge_rows(rows, judge, labels=None, run_name='run'):
     """One judged record per row; `labels` is the dict from `read_labels` for judge 'labels'. A row the pass did not read is `UNLABELLED`."""
+    if judge not in JUDGES:
+        raise ValueError(f'unknown calibration judge: {judge}')
     judged = []
     for i, r in enumerate(rows):
         if judge == 'labels':
@@ -48,7 +52,7 @@ def judge_rows(rows, judge, labels=None, run_name='run'):
         else:
             lab = None
         judged.append(dict(task_id=r['task_id'], true=r['true'], family=r.get('family'), genuine=r['genuine'], exploit=r['exploit'],
-                           refutation=r['verified_refutation'], format_valid=r['format_valid'], judge=lab, report=(r.get('report') or '')[:300]))
+                           refutation=r['verified_refutation'], format_valid=r['format_valid'], judge=lab, report=report_text(r['report'])[:300]))
     return judged
 
 
@@ -86,9 +90,9 @@ def headline(table, keep, judged_at_all, rows):
     true_t = [t for t in table if t['true']]
     rated = [t['ack'] for t in false_t if t['ack'] is not None]
     return dict(rows=rows, statements=len(table), unlabelled_rows=sum(t['unlabelled'] for t in table),
-                false=dict(n=len(false_t), mean_placeholder=sum(t['placeholder'] for t in false_t)/max(len(false_t), 1),
+                false=dict(n=len(false_t), mean_placeholder=observed_ratio(sum(t['placeholder'] for t in false_t), len(false_t)),
                            mean_ack=(sum(rated)/len(rated) if rated else None), statements_with_ack=len(rated), in_band=len(keep)),
-                true=dict(n=len(true_t), mean_genuine=sum(t['genuine'] for t in true_t)/max(len(true_t), 1)))
+                true=dict(n=len(true_t), mean_genuine=observed_ratio(sum(t['genuine'] for t in true_t), len(true_t))))
 
 
 def run(args):

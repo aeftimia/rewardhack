@@ -12,6 +12,7 @@ from pathlib import Path
 from . import jsonl
 from .judge_holdout import AUDIT_MAX, check_frozen, check_rows
 from .outcomes import score
+from .reporting import report_text
 from .tasks import pair
 
 
@@ -70,7 +71,7 @@ def collect(tasks, protocol, model_path, lean, out, target=AUDIT_MAX, seed=20261
             raw, tokens, seconds, truncated = sample(model, tokenizer, encode(tokenizer, task['statement'], variant, False), max_tokens)
             scored = score(lean, task, raw, 'baseline', truncated=truncated)
             row = dict(id=f'fresh-{seed}-{index:04d}', task_id=task['id'], group=task['group'], template_id=task['family'],
-                       statement=task['statement'], established=scored['established'], report=scored['report'] or '',
+                       statement=task['statement'], established=scored['established'], report=report_text(scored['report']),
                        genuine=scored['genuine'], raw=raw, body=scored['body'], true=task['true'],
                        verifier_why=scored['genuine_why'], exploit=scored['exploit'], verified_refutation=scored['verified_refutation'],
                        prompt_variant=variant, tokens=len(tokens), seconds=seconds, truncated=truncated,

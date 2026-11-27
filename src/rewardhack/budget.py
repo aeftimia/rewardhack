@@ -44,7 +44,7 @@ def read_reservations(ledger=LEDGER):
     keys = set()
     for record in records:
         if (not isinstance(record, dict)
-                or not {'key', 'line', 'total_usd', 'status'} <= record.keys()
+                or not {'key', 'line', 'total_usd', 'status', 'approved_usd'} <= record.keys()
                 or record.keys() - {'key', 'line', 'total_usd', 'status', 'approved_usd'}
                 or not isinstance(record['key'], str) or record['key'] in keys
                 or record['status'] != 'pilot worst-case reservation'
@@ -52,7 +52,7 @@ def read_reservations(ledger=LEDGER):
                 or type(record['total_usd']) not in (int, float)):
             raise ValueError('invalid pilot reservation registry record')
         nonnegative_finite(record['total_usd'], 'reservation total_usd')
-        approved = record.get('approved_usd', 0.0)
+        approved = record['approved_usd']
         if (type(approved) not in (int, float) or not math.isfinite(approved) or approved < 0
                 or not math.isfinite(record['total_usd']) or round(approved, 6) > claim_cost(0, 0, record['total_usd'])):  # the capacity `claim` allows
             raise ValueError('invalid pilot reservation approved_usd')
@@ -69,10 +69,8 @@ def read_ledger(path=LEDGER, *, include_reservations=True):
     launch guards automatically see commitments from every pilot output folder.
     """
     path = Path(path).resolve()
-    rows = []
-    if path.exists():
-        with path.open() as handle:
-            rows = list(csv.DictReader(handle))
+    with path.open() as handle:
+        rows = list(csv.DictReader(handle))
     for number, row in enumerate(rows, 1):
         check_row_shape(row, number)
     grant_spent(rows)  # refunds must be justified by actual charges, never by reservations
@@ -114,7 +112,9 @@ REFUND = 'refund'  # first word of the `status` of a row whose total may be nega
 
 def is_refund(row):
     """`status` is free text ("completed: $0.07 metered ..."), so a refund is marked by its first word."""
-    return re.match(r'refund\b', (row.get('status') or '').strip().lower()) is not None
+    if 'status' not in row or not isinstance(row['status'], str):
+        raise ValueError('ledger row needs an explicit text status')
+    return re.match(r'refund\b', row['status'].strip().lower()) is not None
 
 
 def row_total(row, number):
@@ -233,7 +233,7 @@ def claim(ledger, key, line, hourly, hours, other=0.0, launch_cap=None):
         # yet booked as charges. No temporary discount of the full reservation.
         _, committed_problems = check(actual + records, line, 0, 0)
         problems.extend(problem for problem in committed_problems if problem not in problems)
-        approved = round(own.get('approved_usd', 0.0), 6)
+        approved = round(own['approved_usd'], 6)
         capacity = claim_cost(0, 0, own['total_usd'])
         total = round(approved + worst, 6)
         if total > capacity:

@@ -14,6 +14,7 @@ from . import deadline, jsonl, provenance
 from .gpu import GpuSampler
 from .outcomes import RetryBudget, score, summarize
 from .prompts import prompt
+from .rates import observed_ratio
 from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import select_tasks
 
@@ -92,7 +93,7 @@ def run(args):
                 sink.flush()
         summary.update(summarize(rows) if args.lean != 'none' else {'samples': len(rows), 'scored': False},
                        variant=args.variant, part=args.part, taskset=args.taskset, max_tokens=args.max_tokens, generation_seconds=t_gen, lean_seconds=t_lean,
-                       generated_tokens=generated, tokens_per_second=generated/max(t_gen, 1e-9), mean_tokens=generated/max(len(rows), 1),
+                       generated_tokens=generated, tokens_per_second=observed_ratio(generated, t_gen), mean_tokens=observed_ratio(generated, len(rows)),
                        truncated=sum(r['truncated'] for r in rows), status='completed')
     except BaseException as error:  # recorded, then re-raised: a partial summary is still useful
         summary.update(status='failed', error=f'{type(error).__name__}: {error}'[:500])

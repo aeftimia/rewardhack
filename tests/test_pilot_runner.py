@@ -284,7 +284,7 @@ def test_remaining_wall_time_bounds_spawn_after_reservation_overhead(tmp_path, c
 def test_invalid_shared_registry_cannot_weaken_budget(tmp_path, cheap_decision):
     path, spec = fixture_spec(tmp_path)
     registry = tmp_path/'ledger.csv.pilot-reservations.json'
-    registry.write_text(json.dumps([dict(key='x', line='storage', total_usd=-100, status='pilot worst-case reservation')]))
+    registry.write_text(json.dumps([dict(key='x', line='storage', total_usd=-100, status='pilot worst-case reservation', approved_usd=0.0)]))
     with pytest.raises(ValueError, match='finite, nonnegative'):
         runner.run(path, tmp_path/'out', execute=True)
     assert not Path(spec['stages'][0]['evidence']).exists()
@@ -321,7 +321,7 @@ def test_child_cannot_change_frozen_inputs_before_scientific_decision(tmp_path, 
 def test_reservation_registry_cannot_hide_cost_on_untracked_line(tmp_path, cheap_decision, line):
     path, spec = fixture_spec(tmp_path)
     (tmp_path/'ledger.csv.pilot-reservations.json').write_text(json.dumps([
-        dict(key='old', line=line, total_usd=99, status='pilot worst-case reservation')]))
+        dict(key='old', line=line, total_usd=99, status='pilot worst-case reservation', approved_usd=0.0)]))
     with pytest.raises(ValueError, match='invalid pilot reservation'):
         runner.run(path, tmp_path/'out', execute=True)
 

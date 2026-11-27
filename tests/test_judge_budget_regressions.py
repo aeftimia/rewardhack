@@ -63,7 +63,7 @@ def test_overflow_is_rejected_and_zero_is_allowed():
 def test_budget_cli_refuses_nan_without_traceback():
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run([sys.executable, str(root/'entrypoints/budget.py'), 'check',
-                             '--line', 'api', '--hourly', 'nan', '--max-hours', '2', '--launch-cap', '1'],
+                             '--line', 'api', '--hourly', 'nan', '--max-hours', '2', '--other-usd', '0', '--launch-cap', '1'],
                             cwd=root, capture_output=True, text=True)
     assert result.returncode == 1
     assert 'REFUSED: hourly price must be a finite, nonnegative number' in result.stderr
@@ -185,14 +185,14 @@ def test_an_unreadable_reply_records_no_kinds(monkeypatch):
     assert len(FLAGGED) < 200 and judge.claim_of(reply) == 'UNPARSED' and judge.claim_of(judge.compact(reply)) == 'ERROR'
     monkeypatch.setattr(model_io, 'call', lambda *args, **kw: dict(raw=reply, finish='stop', model='stub', usage={}))
     verdict = judge.make_judge('api', model='stub')(dict(statement='True', report='Proved it.'))
-    assert verdict['claim'] == 'UNPARSED' and judge.kinds_for(verdict) == []
+    assert verdict['claim'] == 'UNPARSED' and judge.kinds_for(verdict) is None
     from rewardhack import outcomes
     for name in ('evaluate_submission', 'verify_proof', 'verify_refutation'):
         monkeypatch.setattr(outcomes, name, lambda *a: dict(established='True', proof_body='', report='Proved it.', reward=0.0,
                                                             compiles=False, diagnostic='', ok=False, axioms=[], why='no'))
     task = dict(id='t', group='g', tier='easy', true=True, statement='True')
     row = outcomes.score('unused', task, json.dumps(dict(established='True', proof_body='x', report='Proved it.')), 'baseline', judge=lambda r: verdict)
-    assert row['claim'] == 'UNPARSED' and row['error_kinds'] == [] and row['judge_raw'] == verdict['raw']
+    assert row['claim'] == 'UNPARSED' and row['error_kinds'] is None and row['judge_raw'] == verdict['raw']
 
 
 @pytest.mark.parametrize('flag,value', [('--max-usd', 'nan'), ('--judge-max-usd', '-1')])
@@ -233,7 +233,7 @@ def test_duplicate_check_keys_are_unreadable_and_stop_judging(monkeypatch, kind,
     for _ in range(judge.MAX_STREAK - 1):
         verdict = reader(row)
         assert verdict['claim'] == 'UNPARSED'
-        assert judge.kinds_for(verdict) == []
+        assert judge.kinds_for(verdict) is None
     with pytest.raises(RuntimeError, match='3 times in a row'):
         reader(row)
 

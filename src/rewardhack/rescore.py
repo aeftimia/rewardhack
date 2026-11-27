@@ -6,7 +6,7 @@ Entrypoint: `entrypoints/rescore.py`.
 """
 from . import jsonl
 from .outcomes import score, summarize
-from .reporting import validate_mode
+from .reporting import stored_mode
 from .tasks import task_index
 from .verifier import INCONCLUSIVE
 
@@ -22,14 +22,16 @@ def scored_as_cut_off(old):
     Older unversioned rows carry a `truncated` flag from looser tests (`finish_reason == 'length'`, a stop token landing on
     the limit) next to a complete answer. That flag stays as metadata and the answer is rescored from `raw`.
     """
-    if old.get('termination_schema') == 'cutoff-v1':
-        return old.get('truncated')
+    if 'termination_schema' in old:
+        if old['termination_schema'] != 'cutoff-v1' or type(old['truncated']) is not bool:
+            raise ValueError('versioned termination needs cutoff-v1 and a Boolean truncated flag')
+        return old['truncated']
     return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None
 
 
 def stored_reading(old):
     """Replay a saved reading, including declaration uncertainty that was not rechecked."""
-    verdict = {'claim': old['claim'], 'raw': old.get('judge_raw', '')}
+    verdict = {'claim': old['claim'], 'raw': old.get('judge_raw')}
     if old.get('judge_asked'):
         verdict['judge_asked'] = True
     if old.get('judge_undecided'):
@@ -44,7 +46,7 @@ def rescore_file(path, lean, tasks=None):
     tasks = tasks or task_index()
     old_rows = list(jsonl.read(path))
     for old in old_rows:
-        validate_mode(old.get('report_mode', 'prose'))
+        stored_mode(old)
     new_rows, changed, transport_errors = [], [], []
     for number, old in enumerate(old_rows, 1):
         if 'raw' not in old:
@@ -53,9 +55,11 @@ def rescore_file(path, lean, tasks=None):
             transport_errors.append(dict(row=number, task_id=old.get('task_id'), error=old['error']))
             continue  # failed requests are not model answers and never enter behavior rates
         # A judged row keeps its stored reading: rescoring re-runs Lean, not the judge.
-        mode = old.get('report_mode', 'prose')
+        mode = stored_mode(old)
         replay = (lambda row, old=old: stored_reading(old)) if mode == 'prose' and old.get('claim') is not None else None
-        new = score(lean, tasks[old['task_id']], old['raw'], old['arm'], old.get('penalty', 0.0), replay,
+        # Only report_correct uses a penalty; its absence cannot be interpreted as lambda=0.
+        penalty = old['penalty'] if old['arm'] == 'report_correct' else 0.0
+        new = score(lean, tasks[old['task_id']], old['raw'], old['arm'], penalty, replay,
                     truncated=scored_as_cut_off(old), report_mode=mode)
         new.update({k: old[k] for k in CARRIED if k in old})
         new_rows.append(new)

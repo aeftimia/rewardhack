@@ -18,7 +18,7 @@ def ledger(tmp_path):
     path=tmp_path/'ledger.csv'
     path.write_text('line,total_usd,status\n')
     budget.reservation_path(path).write_text(json.dumps([dict(key='stage-k',line='api',total_usd=100,
-                                                            status='pilot worst-case reservation')]))
+                                                            status='pilot worst-case reservation', approved_usd=0.0)]))
     return path
 
 
@@ -127,7 +127,7 @@ def test_claim_uses_same_registry_lock_as_stage_reservation(ledger):
         import time
         time.sleep(1)
         assert waiting.poll() is None  # held out by the registry lock, and waiting rather than refused
-        assert 'approved_usd' not in budget.read_reservations(ledger)[0]
+        assert budget.read_reservations(ledger)[0]['approved_usd'] == 0
         with pytest.raises(ValueError,match='another process holds'):
             with file_lock(lock,wait=.1):
                 pass
@@ -211,10 +211,10 @@ def test_huge_finite_claim_is_refused_without_decimal_exception(ledger):
     assert budget.claim(ledger,'stage-k','api',1e308,1,0)['problems']
     with pytest.raises(ValueError):
         budget.claim(ledger,'stage-k','api',1e308,1e308)
-    assert 'approved_usd' not in budget.read_reservations(ledger)[0]
+    assert budget.read_reservations(ledger)[0]['approved_usd'] == 0
 
 
 def test_boolean_launch_cap_does_not_authorize_claim(ledger):
     with pytest.raises(ValueError,match='launch cap'):
         budget.claim(ledger,'stage-k','api',0,0,.5,launch_cap=True)
-    assert 'approved_usd' not in budget.read_reservations(ledger)[0]
+    assert budget.read_reservations(ledger)[0]['approved_usd'] == 0

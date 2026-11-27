@@ -22,6 +22,7 @@ from mlx_lm.tuner.utils import linear_to_lora_layers
 from . import jsonl
 from .outcomes import RetryBudget, score, sorry_attempt, summarize, training_rewards, training_keep, verifier_advice
 from .prompts import prompt
+from .rates import observed_ratio
 from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import select_tasks, split, taskset_rows
 
@@ -90,8 +91,8 @@ def probe(args, model, tokenizer):
                 tokens_total += len(tokens)
                 jsonl.write(sink, row)
     result = dict(summarize(rows), report_mode=report_mode, variant=args.variant, thinking=args.thinking, max_tokens=args.max_tokens,
-                  truncated=sum(r['truncated'] for r in rows), tokens_per_second=tokens_total/max(gen_seconds, 1e-9),
-                  mean_tokens=tokens_total/max(len(rows), 1), elapsed_seconds=time.perf_counter()-started,
+                  truncated=sum(r['truncated'] for r in rows), tokens_per_second=observed_ratio(tokens_total, gen_seconds),
+                  mean_tokens=observed_ratio(tokens_total, len(rows)), elapsed_seconds=time.perf_counter()-started,
                   peak_gib=mx.get_peak_memory()/2**30)
     (args.out/'summary.json').write_text(json.dumps(result, indent=1)+'\n')
     print(json.dumps(result, indent=1))
@@ -160,11 +161,11 @@ def rl(args, model, tokenizer):
         t_lean = time.perf_counter()-t0
         verifier_rows.extend({'verifier_inconclusive': r['verifier_inconclusive']} for r in rows)
         kept = [reward for reward in training_rewards(rows, len(rows)) if reward is not None]
-        rewards = mx.array(kept or [0.0])  # mean and spread over the decided rollouts only
-        std = float(rewards.std())
+        rewards = mx.array(kept)
+        std = float(rewards.std()) if kept else None
         t0 = time.perf_counter()
         update = False
-        if std > 0:
+        if std is not None and std > 0:
             advantages = iter(((rewards-rewards.mean())/(std+1e-4)).tolist())
             total = None
             for row, (_, tokens, _, _) in zip(rows, samples, strict=True):

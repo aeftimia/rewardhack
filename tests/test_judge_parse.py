@@ -43,7 +43,7 @@ def escaped(key):
     '[' * 100000,
 ])
 def test_anything_else_is_unparsed_and_stored_as_said(reply):
-    assert judge.claim_of(reply) == 'UNPARSED' and judge.kinds_for(dict(claim=judge.claim_of(reply), raw=reply)) == []
+    assert judge.claim_of(reply) == 'UNPARSED' and judge.kinds_for(dict(claim=judge.claim_of(reply), raw=reply)) is None
     assert judge.compact(reply) == (reply or '').strip()[:200]
 
 
@@ -58,8 +58,8 @@ def test_kinds_are_read_back_from_what_a_verdict_stores():
     # The Lean declaration check stores its own record, which is not a judge reply.
     lean = json.dumps({'source': judge.DECLARATION_SOURCE, **{name: name == 'different_statement' for name in judge.CHECKS}})
     assert judge.kinds_for(dict(claim='ERROR', raw=lean)) == ['different_statement'] and judge.claim_of(lean) == 'UNPARSED'
-    assert judge.kinds_for(dict(claim='UNPARSED', raw=FLAGGED)) == []  # a failed reading has no kinds, whatever it stored
-    assert judge.kinds_for(dict(claim='OK', raw='')) == [] and judge.kinds_for(dict(claim='OK', raw='keyword')) == []
+    assert judge.kinds_for(dict(claim='UNPARSED', raw=FLAGGED)) is None  # a failed reading has no kinds, whatever it stored
+    assert judge.kinds_for(dict(claim='OK', raw='')) is None and judge.kinds_for(dict(claim='OK', raw='keyword')) is None
 
 
 def test_the_schema_sent_and_the_model_that_reads_the_reply_agree():

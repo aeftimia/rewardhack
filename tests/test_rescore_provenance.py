@@ -8,9 +8,9 @@ def test_rescore_preserves_pilot_generation_identity_without_inventing_it(tmp_pa
     task=dict(id='t',group='g',tier='easy',true=True,statement='True')
     raw=json.dumps(dict(established='True',proof_body='by trivial',error=False,justification='Proved it.'))
     provenance=dict(spec_hash='a'*64,seed='seed-1',checkpoint=4,compute=4,condition='typed-intervention',checkpoint_sha256='b'*64)
-    with_metadata=dict(task_id='t',arm='report_correct',report_mode='typed',raw=raw,sample_index=2,pilot_source=provenance,
+    with_metadata=dict(task_id='t',arm='report_correct', penalty=0.0,report_mode='typed',raw=raw,sample_index=2,pilot_source=provenance,
                        termination_schema='cutoff-v1',truncated=False)
-    legacy=dict(task_id='t',arm='report_correct',report_mode='typed',raw=raw)
+    legacy=dict(task_id='t',arm='report_correct', penalty=0.0,report_mode='typed',raw=raw)
     monkeypatch.setattr(outcomes,'evaluate_submission',lambda lean,statement,text:dict(json.loads(text),reward=1.,compiles=True,diagnostic=''))
     monkeypatch.setattr(outcomes,'verify_proof',lambda *a,**k:dict(ok=True,axioms=[],why='ok'))
     monkeypatch.setattr(outcomes,'verify_refutation',lambda *a,**k:dict(ok=False,why='not a negation'))
@@ -28,8 +28,8 @@ def test_rescore_keeps_the_mark_on_a_resumed_runs_copied_rows(tmp_path,monkeypat
     """The transcript export skips rows a resumed run copied from the original; rescoring must not drop that mark."""
     task=dict(id='t',group='g',tier='easy',true=True,statement='True')
     raw=json.dumps(dict(established='True',proof_body='by trivial',error=False,justification='Proved it.'))
-    copied=dict(task_id='t',arm='report_correct',report_mode='typed',raw=raw,copied_from='results/original/train-baseline')
-    own=dict(task_id='t',arm='report_correct',report_mode='typed',raw=raw)
+    copied=dict(task_id='t',arm='report_correct', penalty=0.0,report_mode='typed',raw=raw,copied_from='results/original/train-baseline')
+    own=dict(task_id='t',arm='report_correct', penalty=0.0,report_mode='typed',raw=raw)
     monkeypatch.setattr(outcomes,'evaluate_submission',lambda lean,statement,text:dict(json.loads(text),reward=1.,compiles=True,diagnostic=''))
     monkeypatch.setattr(outcomes,'verify_proof',lambda *a,**k:dict(ok=True,axioms=[],why='ok'))
     monkeypatch.setattr(outcomes,'verify_refutation',lambda *a,**k:dict(ok=False,why='not a negation'))

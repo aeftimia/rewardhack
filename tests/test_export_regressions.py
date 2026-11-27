@@ -212,7 +212,7 @@ def test_rows_a_resumed_run_copied_from_the_original_export_once(dataset):
 def test_a_killed_runs_unfinished_last_line_is_left_out_and_counted(dataset):
     """A run killed mid-write keeps the summary it wrote as it started ('running'); its cut-off last line is dropped."""
     root,run,row,_=dataset
-    (run/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='running',argv=['train'])))
+    (run/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='running',argv=['train', '--prompt-variant=hint'])))
     (run/'training-rollouts.jsonl').write_text(json.dumps(row)+'\n'+json.dumps(row)[:40])
     manifest,rows=exported(root)
     assert manifest['rows']==1 and manifest['skipped']=={'unfinished last line of a running or killed run (training-rollouts.jsonl)':1}
@@ -241,7 +241,7 @@ def test_an_originals_rows_past_a_resumed_checkpoint_export_once(dataset):
     root,run,row,_=dataset
     write(run/'training-rollouts.jsonl',[dict(row,step=1,raw='step 1'),dict(row,step=2,raw='step 2'),dict(row,step=3,raw='step 3 again')])
     resumed=root/'resumed'; resumed.mkdir()
-    (resumed/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='completed',argv=['train'],
+    (resumed/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='completed',argv=['train', '--prompt-variant=hint'],
         resumed_from='/root/out/run/trainer/checkpoint-2')))
     write(resumed/'training-rollouts.jsonl',[dict(row,step=1,copied_from='/root/out/run'),dict(row,step=2,copied_from='/root/out/run'),
                                              dict(row,step=3,raw='step 3')])
@@ -252,7 +252,7 @@ def test_an_originals_rows_past_a_resumed_checkpoint_export_once(dataset):
 
 def test_an_unknown_run_status_is_refused(dataset):
     root,run,row,_=dataset
-    (run/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='paused',argv=['train'])))
+    (run/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='paused',argv=['train', '--prompt-variant=hint'])))
     write(run/'training-rollouts.jsonl',[row])
     with pytest.raises(KeyError,match='paused'):
         exported(root)
@@ -264,7 +264,7 @@ def test_a_resume_that_trained_nothing_supersedes_nothing(dataset):
     root,run,row,_=dataset
     write(run/'training-rollouts.jsonl',[dict(row,step=1,raw='step 1'),dict(row,step=2,raw='step 2'),dict(row,step=3,raw='step 3')])
     resumed=root/'resumed'; resumed.mkdir()
-    (resumed/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='failed',argv=['train'],
+    (resumed/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='failed',argv=['train', '--prompt-variant=hint'],
         resumed_from='/root/out/run/trainer/checkpoint-2')))
     write(resumed/'training-rollouts.jsonl',[dict(row,step=1,copied_from='/root/out/run'),dict(row,step=2,copied_from='/root/out/run'),
                                              dict(row,step=3,raw='step 3 cut',partial_batch=True)])
@@ -281,7 +281,7 @@ def test_two_resumes_of_one_checkpoint_export_each_step_once(dataset):
     copies=[dict(row,step=n,copied_from='/root/out/run') for n in (1,2)]
     for name,steps,status in (('b',(3,),'running'),('c',(3,4),'completed')):
         folder=root/name; folder.mkdir()
-        (folder/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status=status,argv=['train'],
+        (folder/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status=status,argv=['train', '--prompt-variant=hint'],
             resumed_from='/root/out/run/trainer/checkpoint-2')))
         write(folder/'training-rollouts.jsonl',copies+[dict(row,step=n,raw=f'{name.upper()} {n}') for n in steps])
     manifest,rows=exported(root)
@@ -296,7 +296,7 @@ def test_a_resume_of_a_resume_exports_each_step_once(dataset):
     write(run/'training-rollouts.jsonl',[dict(row,step=n,raw=f'A {n}') for n in (1,2,3,4)])
     for name,origin,start,steps in (('b','run',2,(3,)),('c','b',3,(4,5))):
         folder=root/name; folder.mkdir()
-        (folder/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='completed',argv=['train'],
+        (folder/'summary.json').write_text(json.dumps(dict(model='m',report_mode='typed',status='completed',argv=['train', '--prompt-variant=hint'],
             resumed_from=f'/root/out/{origin}/trainer/checkpoint-{start}')))
         write(folder/'training-rollouts.jsonl',[dict(row,step=n,copied_from=f'/root/out/{origin}') for n in range(1,start+1)]
               +[dict(row,step=n,raw=f'{name.upper()} {n}') for n in steps])

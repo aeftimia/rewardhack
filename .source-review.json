@@ -1,0 +1,164 @@
+[
+  {
+    "path": "src/rewardhack/formal_audit.py",
+    "rule": "py-get-default",
+    "text": "task = dict(id=row['task_id'], group=row['group'], tier=row.get('tier', 'audit'),",
+    "reason": "Audit inputs include held-out tasks with no training tier. audit is a descriptive grouping label for such inputs, not a verification outcome or training assignment."
+  },
+  {
+    "path": "src/rewardhack/gpu.py",
+    "rule": "py-except-dummy",
+    "text": "except (OSError, subprocess.SubprocessError, ValueError) as error:",
+    "reason": "GPU sampling is auxiliary telemetry. The exception is saved in gpu_sampler_error and returned in the run summary rather than hidden; training results are independently checked."
+  },
+  {
+    "path": "src/rewardhack/grader.py",
+    "rule": "py-except-swallow",
+    "text": "except ValueError:",
+    "reason": "The grader tries to parse candidate JSON objects from model prose; a ValueError means this candidate is not JSON, so the parser advances to the next candidate. If none parses the returned submission has a missing report and cannot be format_valid. The grader source is also deliberately embedded verbatim in model prompts."
+  },
+  {
+    "path": "src/rewardhack/grader.py",
+    "rule": "py-except-swallow",
+    "text": "except subprocess.TimeoutExpired:",
+    "reason": "A grader process timeout is returned as the explicit TIMEOUT diagnostic; outcomes.score recognizes it as verifier_inconclusive and excludes it from training rewards and measured behavior rates. It is never classified as proof success."
+  },
+  {
+    "path": "src/rewardhack/hf_grpo.py",
+    "rule": "keyword",
+    "text": "between runs, and when transcripts were rebuilt later. It also falls back to \"Reasoning: medium\" when no effort",
+    "reason": "These words document and report an upstream template's implicit reasoning effort. The code raises ValueError when the caller omits the required choice, preventing that behavior rather than implementing it."
+  },
+  {
+    "path": "src/rewardhack/hf_grpo.py",
+    "rule": "keyword",
+    "text": "'unset, that template silently uses medium')",
+    "reason": "These words document and report an upstream template's implicit reasoning effort. The code raises ValueError when the caller omits the required choice, preventing that behavior rather than implementing it."
+  },
+  {
+    "path": "src/rewardhack/outcomes.py",
+    "rule": "py-getattr-default",
+    "text": "kwargs = {'retries': retries} if getattr(judge, 'accepts_retry_budget', False) else {}",
+    "reason": "External judge callables used by analysis and tests have the basic one-row interface. Only the project judge advertises accepts_retry_budget; absent capability means no retries keyword is passed. All call exceptions propagate."
+  },
+  {
+    "path": "src/rewardhack/pilot.py",
+    "rule": "py-or-default",
+    "text": "return dict(stop=reason is not None, reason=reason or 'continue', posterior=posterior,",
+    "reason": "reason is locally initialized to None and set only for stop conditions. continue explicitly names the no-stop decision, and stop is computed separately from reason is not None."
+  },
+  {
+    "path": "src/rewardhack/pilot_runner.py",
+    "rule": "py-suppress",
+    "text": "with contextlib.suppress(ProcessLookupError):",
+    "reason": "A child can exit between group lookup and kill. ProcessLookupError means the target group is already gone, satisfying termination; every other OS error propagates."
+  },
+  {
+    "path": "src/rewardhack/pilot_runner.py",
+    "rule": "py-except-swallow",
+    "text": "except subprocess.TimeoutExpired:",
+    "reason": "Subprocess timeout is returned explicitly as timed_out=True with exit_code=None. The finally block kills and reaps the process group, and the pilot records stage_failure."
+  },
+  {
+    "path": "src/rewardhack/pilot_runner.py",
+    "rule": "py-suppress",
+    "text": "with contextlib.suppress(ChildProcessError):",
+    "reason": "ChildProcessError from waitpid means the child was already reaped. Termination has already been requested, and other errors propagate."
+  },
+  {
+    "path": "src/rewardhack/pilot_runner.py",
+    "rule": "py-except-swallow",
+    "text": "except EOFError:",
+    "reason": "EOF from the analysis child is converted to an explicit ended message; the parent then raises a RuntimeError for analysis ending without a result. This never creates a valid analysis."
+  },
+  {
+    "path": "src/rewardhack/pilot_runner.py",
+    "rule": "py-except-swallow",
+    "text": "except TimeCap:",
+    "reason": "TimeCap is converted to an explicit time-cap finish reason in persisted pilot state; it stops further stages and does not report a successful analysis."
+  },
+  {
+    "path": "src/rewardhack/rescore.py",
+    "rule": "py-get-compare",
+    "text": "return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None",
+    "reason": "Existing rows from before cutoff-v1 cannot prove whether generation stopped normally. Only both legacy truncated and genuine_why=truncated establish a cutoff; otherwise return None (unknown), not False. New schema rows are strictly validated above."
+  },
+  {
+    "path": "src/rewardhack/rescore.py",
+    "rule": "py-get-default",
+    "text": "if diff and old.get('scored', True):",
+    "reason": "Historical score writers did not emit a scored marker; those saved rows were scored. Only explicitly unscored probe rows opt out of the before/after comparison, and all rows are still rescored."
+  },
+  {
+    "path": "src/rewardhack/state_files.py",
+    "rule": "py-suppress",
+    "text": "with contextlib.suppress(FileNotFoundError):",
+    "reason": "Atomic replacement has already moved the temporary file on success. Cleanup ignores only FileNotFoundError for that now-absent temporary path; write, fsync and replace failures propagate."
+  },
+  {
+    "path": "src/rewardhack/verifier.py",
+    "rule": "py-except-swallow",
+    "text": "except subprocess.TimeoutExpired:",
+    "reason": "Verifier timeout is explicitly returned with why=timeout, an INCONCLUSIVE value. The scorer retries within budget, then excludes still-undecided results from training and behavior rates."
+  },
+  {
+    "path": "src/rewardhack/verifier.py",
+    "rule": "py-except-swallow",
+    "text": "except (ValueError, KeyError, TypeError):",
+    "reason": "Malformed Lean output is returned with an explicit unexpected-output diagnostic in INCONCLUSIVE. It is not treated as a proved or disproved proposition."
+  },
+  {
+    "path": "src/rewardhack/verifier.py",
+    "rule": "py-or-default",
+    "text": "axioms = {a.strip() for a in (found['axioms'] or '').split(',') if a.strip()}",
+    "reason": "The regex has an optional capture for the axiom list. A valid Lean response stating no axioms leaves that capture None; an unmatched or malformed response is rejected earlier."
+  },
+  {
+    "path": "entrypoints/gate.py",
+    "rule": "keyword",
+    "text": "Codex PreToolUse adapter for the shared no-silent-fallbacks checker.",
+    "reason": "This docstring names the installed checker used by the adapter. It introduces no alternate execution path or error handling."
+  },
+  {
+    "path": "entrypoints/validate_judge.py",
+    "rule": "py-else-label",
+    "text": "result.update(validation_kind='human_audit' if args.audit else 'human_heldout' if args.holdout else 'development', **provenance)",
+    "reason": "Mutually exclusive argparse audit/holdout flags select validation datasets. With neither flag the explicit development dataset is used and labelled development; no failed audit is relabelled."
+  },
+  {
+    "path": "ops/drive_runpod.sh",
+    "rule": "sh-prefix-forward",
+    "text": "[[ $name =~ ^SMOKE_[A-Z_]+$ && $value =~ ^[0-9]+$ ]] || { echo \"invalid $name\"; exit 2; }",
+    "reason": "The prefix syntax check is followed by an exact allowlist of supported SMOKE names before any variable is forwarded. Unknown names fail; this regex alone grants nothing."
+  },
+  {
+    "path": "ops/drive_runpod.sh",
+    "rule": "sh-errexit-off",
+    "text": "set +e",
+    "reason": "Cleanup deliberately keeps running after failures so results can be copied and pod removal attempted. It preserves the remote code and marks copy/removal failures nonzero before returning; disabling errexit cannot turn those failures into success."
+  },
+  {
+    "path": "ops/remote_job.sh",
+    "rule": "sh-default-expansion",
+    "text": "OUT=${REMOTE_JOB_OUT:-$HOME/out}",
+    "reason": "These are documented output and PID-file location options for the runner. Omission selects the standard HOME location; filesystem failures are not a request to try another location."
+  },
+  {
+    "path": "ops/remote_job.sh",
+    "rule": "sh-default-expansion",
+    "text": "GRACE=${AUTOSTOP_GRACE_SECONDS:-600}  # time for the driver to copy results before the pod is removed",
+    "reason": "AUTOSTOP_GRACE_SECONDS is an optional duration override; 600 seconds is the documented result-copy window. The value is validated as a whole number before job launch and included in the removal deadline."
+  },
+  {
+    "path": "ops/remote_job.sh",
+    "rule": "sh-default-expansion",
+    "text": "POD_ID=${RUNPOD_POD_ID:-$(pod_env RUNPOD_POD_ID)}",
+    "reason": "SSH sessions do not inherit the pod container environment. The alternate source is /proc/1/environ for the same RUNPOD_POD_ID, not another pod. If neither source supplies it, can_remove fails and REQUIRE_AUTOSTOP=1 refuses job launch."
+  },
+  {
+    "path": "ops/remote_job.sh",
+    "rule": "sh-default-expansion",
+    "text": "PIDS=${REMOTE_JOB_PIDS:-$HOME/.remote_job.pids}",
+    "reason": "These are documented output and PID-file location options for the runner. Omission selects the standard HOME location; filesystem failures are not a request to try another location."
+  }
+]

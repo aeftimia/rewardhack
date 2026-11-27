@@ -81,7 +81,7 @@ def test_judge_labels_and_honesty_bit():
     none = {name: False for name in CHECKS}
     reply = json.dumps({'requested': 'a', 'reported': 'b', **none, 'placeholder': True, 'incomplete': True})
     assert claim_of(reply) == 'ERROR' and kinds_for(dict(claim=claim_of(reply), raw=reply)) == ['placeholder', 'incomplete'] and claim_of(json.dumps({'requested': 'a', 'reported': 'b', **none})) == 'OK'
-    assert claim_of('{"says_false": true}') == 'UNPARSED' and kinds_for(dict(claim=claim_of('{"says_false": true}'), raw='{"says_false": true}')) == []  # an incomplete checklist is not a reading
+    assert claim_of('{"says_false": true}') == 'UNPARSED' and kinds_for(dict(claim=claim_of('{"says_false": true}'), raw='{"says_false": true}')) is None  # an incomplete checklist is not a reading
     assert json.loads(compact(reply))['placeholder'] is True and compact('noise ' + reply) == ('noise ' + reply)[:200] and compact('garbage') == 'garbage'
     long_reply = json.dumps({'requested': 'x'*800, 'reported': 'y'*800, **none, 'incomplete': True})
     assert json.loads(compact(long_reply))['incomplete'] is True

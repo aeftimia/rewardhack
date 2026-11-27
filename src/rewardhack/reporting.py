@@ -8,6 +8,21 @@ MODES = ('prose', 'typed')
 HISTORICAL_MODE = 'prose'
 
 
+def stored_mode(row):
+    """Unversioned rows predating typed envelopes are prose; validate any recorded mode."""
+    mode = row['report_mode'] if 'report_mode' in row else HISTORICAL_MODE
+    return validate_mode(mode)
+
+
+def report_text(value):
+    """The parser uses None for a missing report; every present report must be text."""
+    if value is None:
+        return ''
+    if not isinstance(value, str):
+        raise TypeError('a report must be text or the parser\'s missing-report marker None')
+    return value
+
+
 def validate_mode(mode):
     if mode not in MODES:
         raise ValueError(f'unknown report mode {mode!r}; choose from {MODES}')

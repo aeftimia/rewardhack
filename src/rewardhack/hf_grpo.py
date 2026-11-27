@@ -17,6 +17,7 @@ from . import deadline, jsonl, provenance
 from .gpu import GpuSampler
 from .outcomes import accumulate, compare, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, SATURATED, saturated, RetryBudget, ScoringStopped, verifier_advice, completion_truncated, reward_groups, score, score_concurrently, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
+from .rates import observed_ratio
 from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import split, stratified_limit, taskset_rows
 from .verifier import controls
@@ -183,6 +184,9 @@ def check_resume(args):
 
 
 PROMPT_DATE = '2026-11-24'  # the day of the first unhinted probe; every prompt since carries it
+MODES = {'train': dict(training=True, controls=False, probe=False),
+         'controls': dict(training=False, controls=True, probe=False),
+         'probe': dict(training=False, controls=False, probe=True)}
 
 
 def settle_template(tokenizer, reasoning_effort, thinking):
@@ -192,7 +196,9 @@ def settle_template(tokenizer, reasoning_effort, thinking):
     between runs, and when transcripts were rebuilt later. It also falls back to "Reasoning: medium" when no effort
     is passed, and ignores Qwen's `enable_thinking` without a word.
     """
-    template = tokenizer.chat_template or ''
+    template = tokenizer.chat_template
+    if not isinstance(template, str) or not template:
+        raise ValueError('a nonempty chat template is required to reproduce the prompt')
     if 'strftime_now' in template:
         pinned = template.replace('strftime_now("%Y-%m-%d")', f'"{PROMPT_DATE}"')
         if 'strftime_now' in pinned:
@@ -209,6 +215,7 @@ def settle_template(tokenizer, reasoning_effort, thinking):
 def load_model(args, summary):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    training = MODES[args.mode]['training']
     tokenizer = AutoTokenizer.from_pretrained(args.model, revision=args.revision)
     tokenizer.pad_token = tokenizer.pad_token or tokenizer.eos_token
     tokenizer.padding_side = 'left'
@@ -221,16 +228,16 @@ def load_model(args, summary):
     kwargs = {'revision': args.revision, 'attn_implementation': args.attn_implementation}
     cuda = torch.cuda.is_available()
     kwargs['dtype'] = torch.bfloat16 if cuda else torch.float32
-    if args.quant == '8bit':
-        kwargs['quantization_config'] = BitsAndBytesConfig(load_in_8bit=True)
-    elif args.quant == '4bit':
-        kwargs['quantization_config'] = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type='nf4',
-                                                           bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True)
+    quantization = {'none': None, '8bit': dict(load_in_8bit=True),
+                    '4bit': dict(load_in_4bit=True, bnb_4bit_quant_type='nf4',
+                                 bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True)}[args.quant]
+    if quantization is not None:
+        kwargs['quantization_config'] = BitsAndBytesConfig(**quantization)
     if args.mxfp4 == 'dequantize':
         # gpt-oss ships 4-bit (MXFP4) expert weights. Left to itself the loader keeps them when the `kernels` package is
         # installed and expands them to bf16 when it is not, with one warning line: 13 GiB or 39 GiB, trainable or not,
         # decided by what happens to be installed. Training needs the expanded weights, so that is asked for by name.
-        if args.quant != 'none':
+        if quantization is not None:
             raise ValueError('--mxfp4 dequantize cannot be combined with --quant')
         from transformers import Mxfp4Config
         kwargs['quantization_config'] = Mxfp4Config(dequantize=True)
@@ -244,28 +251,37 @@ def load_model(args, summary):
     if args.experts_implementation:
         model.config._experts_implementation = args.experts_implementation  # read at every forward of a mixture-of-experts layer
     # What was actually loaded, so a library default that changed memory or speed can be seen in the summary afterwards.
-    quantized = bool(getattr(model, 'is_quantized', False))  # fallback-ok: transformers sets this attribute only on models a quantizer touched; absent means none did
+    if hasattr(model, 'is_quantized'):
+        quantized = model.is_quantized
+        if type(quantized) is not bool:
+            raise TypeError('the model quantization flag must be Boolean')
+    else:
+        # Unquantized transformers models omit this flag. Establish that state
+        # from both the requested settings and the loaded model's metadata.
+        if quantization is not None or hasattr(model, 'hf_quantizer') or model.config.to_dict().get('quantization_config') is not None:
+            raise ValueError('quantization metadata exists but the loader omitted its quantization flag')
+        quantized = False
     summary['weights'] = {'dtype': str(next(model.parameters()).dtype), 'quantized': quantized, 'footprint_gib': model.get_memory_footprint()/2**30,
                           'mxfp4': args.mxfp4, 'experts_implementation': model.config._experts_implementation}
-    if quantized and args.mode == 'train' and args.quant == 'none':
+    if quantized and training and quantization is None:
         raise ValueError('the model loaded with quantized weights that were not asked for; pass --mxfp4 dequantize for gpt-oss')
-    if args.quant != 'none' and args.mode == 'train':
+    if quantization is not None and training:
         from peft import prepare_model_for_kbit_training
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
-    placed = getattr(model, 'hf_device_map', {})  # fallback-ok: the map exists only when accelerate placed the model; without it everything is on one device
-    if any(str(device) in ('cpu', 'disk') for device in placed.values()):
-        raise ValueError(f'part of the model was placed off the GPU ({sorted(set(map(str, placed.values())))}); it does not fit this card as loaded')
+    devices = {parameter.device for parameter in model.parameters()}
+    if cuda and any(device.type != 'cuda' for device in devices):
+        raise ValueError(f'part of the model was placed off the GPU ({sorted(map(str, devices))}); it does not fit this card as loaded')
     summary['generation_config'] = model.generation_config.to_dict()  # what generation inherits wherever our arguments are silent
     if args.adapter:
         from peft import PeftModel
         saved = json.loads((args.adapter/'adapter_config.json').read_text())
         # A continuation takes rank, alpha and target modules from the saved adapter, whatever the command line says.
-        if args.mode == 'train' and (saved['r'], saved['lora_alpha']) != (args.lora_rank, 2*args.lora_rank):
+        if training and (saved['r'], saved['lora_alpha']) != (args.lora_rank, 2*args.lora_rank):
             raise ValueError(f"--adapter was trained at rank {saved['r']}, alpha {saved['lora_alpha']}; --lora-rank {args.lora_rank} would be ignored")
         if saved['base_model_name_or_path'] != args.model:
             raise ValueError(f"--adapter belongs to {saved['base_model_name_or_path']}, not {args.model}")
         summary['initial_adapter_sha256'] = hashlib.sha256((args.adapter/'adapter_model.safetensors').read_bytes()).hexdigest()
-        model = PeftModel.from_pretrained(model, str(args.adapter), is_trainable=args.mode == 'train')
+        model = PeftModel.from_pretrained(model, str(args.adapter), is_trainable=training)
     summary['model_load_seconds'] = time.perf_counter()-t0
     summary['parameters_total'] = sum(p.numel() for p in model.parameters())
     return model, tokenizer
@@ -398,7 +414,7 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, r
             completed += 1
             slowest_generation, slowest_scoring = max(slowest_generation, seconds), max(slowest_scoring, time.monotonic()-scoring_started)
     return dict(evaluation_counts(rows, samples), tasks_planned=len(tasks), tasks_completed=completed, incomplete=completed < len(tasks), report_mode=report_mode, verifier_retries_denied=retries.denied, generation_seconds=t_gen, lean_seconds=t_lean, generated_tokens=generated,
-                tokens_per_second=generated/max(t_gen, 1e-9), completions_per_hour=len(rows)/max(t_gen+t_lean, 1e-9)*3600)
+                tokens_per_second=observed_ratio(generated, t_gen), completions_per_hour=observed_ratio(3600*len(rows), t_gen+t_lean))
 
 
 def evaluation_counts(rows, samples):
@@ -548,7 +564,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
 
         def on_step_end(self, args, state, control, **kwargs):
             timing['update'].append(time.perf_counter()-timing['reward_end'])
-            (run_args.out/'live.json').write_text(json.dumps({'step': state.global_step, **summary['rollouts'], **summary.get('training_verifier', {}), 'mixed_groups': sum(groups)}))
+            (run_args.out/'live.json').write_text(json.dumps({'step': state.global_step, **summary['rollouts'], **summary['training_verifier'], 'mixed_groups': sum(groups)}))
             if state.global_step % run_args.save_every == 0:
                 kwargs['model'].save_pretrained(str(run_args.out/f'adapter-step{state.global_step}'))
             if state.global_step >= run_args.stop_no_variation and not any(groups):
@@ -700,7 +716,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             (args.out/'step-seconds.json').write_text(json.dumps({k: timing[k] for k in ('rollout', 'lean', 'update')}, indent=1)+'\n')
         summary.update(training_seconds=time.perf_counter()-t0,
                        adapter_max_abs_change=max(float((p.detach().cpu()-before[n]).abs().max()) for n, p in trainer.model.named_parameters() if n in before),
-                       mean_seconds={k: sum(timing[k])/max(len(timing[k]), 1) for k in ('rollout', 'lean', 'update')})
+                       mean_seconds={k: observed_ratio(sum(timing[k]), len(timing[k])) for k in ('rollout', 'lean', 'update')})
         trainer.save_model(str(args.out/'adapter'))
         sink.close()
         steps.close()
@@ -746,7 +762,7 @@ def run(args):
         summary['controls'] = controls(args.lean)
         summary['lean'] = subprocess.check_output([args.lean, '--version'], text=True).strip()
         print('controls passed', flush=True)
-        if args.mode == 'controls':
+        if MODES[args.mode]['controls']:
             summary['status'] = 'completed'
             return
         from .judge import from_args
@@ -764,7 +780,7 @@ def run(args):
         summary.update(torch=torch.__version__, transformers=transformers.__version__, trl=trl.__version__, peft=peft.__version__,
                        gpus=[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())])
         model, tokenizer = load_model(args, summary)
-        if args.mode == 'probe':
+        if MODES[args.mode]['probe']:
             summary['probe'] = evaluate(model, tokenizer, training, args, 'probe', samples=args.num_generations, stop_at=hard_deadline-60)
             print('probe tasks completed', summary['probe']['tasks_completed'], 'of', summary['probe']['tasks_planned'], flush=True)
             summary['probe_split'] = 'train'

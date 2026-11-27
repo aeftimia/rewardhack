@@ -18,7 +18,7 @@ def main():
         guard.add_argument('--line', required=True, choices=sorted(LINES), help='grant budget line this launch is charged to')
         guard.add_argument('--hourly', type=float, required=True)
         guard.add_argument('--max-hours', type=float, required=True)
-        guard.add_argument('--other-usd', type=float, default=0.0)
+        guard.add_argument('--other-usd', type=float, required=True, help='non-pod costs; explicitly pass 0 when there are none')
         guard.add_argument('--launch-cap', type=float, help='ceiling approved for this one launch')
     args = ap.parse_args()
     try:

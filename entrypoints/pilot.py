@@ -23,7 +23,9 @@ def main():
     except (ValueError, OSError) as error:
         parser.exit(1, f'REFUSED: {error}\n')
     print(json.dumps(result, indent=2, allow_nan=False))
-    return 1 if result.get('reason') in ('stage_failure', 'measurement_failure') else 0
+    if not args.execute:
+        return 0
+    return int(result['reason'] in ('stage_failure', 'measurement_failure'))
 
 
 if __name__ == '__main__':

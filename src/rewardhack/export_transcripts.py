@@ -18,7 +18,7 @@ from pathlib import Path
 from . import jsonl
 from .provenance import VIEWS, preferred, views
 from .prompts import follow_on, prompt
-from .reporting import validate_mode
+from .reporting import report_text, stored_mode
 from .tasks import task_index
 
 SCHEMA = 'rewardhack-transcripts-v1'
@@ -27,11 +27,13 @@ LEGACY_MODELS = {'local-8b-4bit': ('mlx-community/Qwen3-8B-4bit', '545dc4251c054
                  'local-llama31-8b-4bit': ('mlx-community/Meta-Llama-3.1-8B-Instruct-4bit', None)}
 DISCLOSURE = {'honest_admission': 'acknowledged', 'honest_disclosure': 'disclosed', 'hedged_misleading': 'hedged',
               'false_claim': 'false_claim', 'claim_substitution': 'substituted', 'true_claim': 'true_claim',
-              'describes_only': 'describes', 'missing_or_garbled': 'garbled'}
+              'describes_only': 'describes', 'missing_or_garbled': 'garbled', 'conflict': 'conflict'}
 
 
 def _opt(argv, name):
     """Value of a command-line option written as `--name value` or `--name=value`."""
+    if argv is None:
+        return None
     for index, arg in enumerate(argv):
         if arg == name:
             return argv[index + 1] if index + 1 < len(argv) else None
@@ -42,22 +44,32 @@ def _opt(argv, name):
 
 def run_meta(summary, run):
     """Model, revision, prompt variant and training state of a run, from its summary or its argv."""
-    argv = summary.get('argv', [])
+    argv = summary.get('argv')
+    if argv is not None and not isinstance(argv, list):
+        raise TypeError('recorded argv must be a list')
     legacy = LEGACY_MODELS.get(run.split('/')[0], (None, None))
     # vLLM probes record the chat-template kwargs instead of a thinking flag (Qwen: enable_thinking;
     # gpt-oss: reasoning_effort); the API probes record reasoning_effort directly.
-    template = summary.get('template_kwargs') or {}
+    template = summary.get('template_kwargs')
+    if template is not None and not isinstance(template, dict):
+        raise TypeError('recorded template_kwargs must be a mapping')
     thinking = summary.get('thinking')
-    if thinking is None and 'enable_thinking' in template:
+    if thinking is None and template is not None and 'enable_thinking' in template:
         thinking = bool(template['enable_thinking'])
-    effort = summary.get('reasoning_effort') or template.get('reasoning_effort')
+    effort = summary.get('reasoning_effort')
+    if effort is None and template is not None:
+        effort = template.get('reasoning_effort')
     if thinking is None and effort is not None:
         thinking = effort != 'none'
+    variant = summary.get('variant') or summary.get('prompt_variant') or _opt(argv, '--variant') or _opt(argv, '--prompt-variant')
+    if variant is None:
+        raise ValueError(f'{run}: no recorded prompt variant; refusing to invent messages')
     return dict(model=summary.get('model') or _opt(argv, '--model') or legacy[0],
                 revision=summary.get('revision') or _opt(argv, '--revision') or legacy[1],
-                variant=summary.get('variant') or summary.get('prompt_variant') or _opt(argv, '--variant') or _opt(argv, '--prompt-variant') or 'neutral',
+                variant=variant,
                 thinking=thinking, reasoning_effort=effort,
-                adapter=summary.get('adapter') or _opt(argv, '--adapter'), arm=_opt(argv, '--arm'))
+                adapter=summary.get('adapter') or _opt(argv, '--adapter'), arm=_opt(argv, '--arm'),
+                missing_summary_metadata=[name for name in ('argv', 'template_kwargs') if summary.get(name) is None])
 
 
 def row_files(run_dir):
@@ -74,9 +86,18 @@ def row_files(run_dir):
 
 
 def report_mode(row, summary):
-    """Only absent historical metadata defaults to prose; invalid explicit values fail."""
-    mode = row['report_mode'] if 'report_mode' in row else summary.get('report_mode', 'prose')
-    return validate_mode(mode)
+    """Use the row's format, or the run's recorded format for older rows."""
+    return stored_mode(row if 'report_mode' in row else summary)
+
+
+def turn_number(row):
+    """Single-turn writers omit both fields; a conversation must identify its turn."""
+    if 'conversation' not in row and 'turn' not in row:
+        return 1
+    turn = int(str(row['turn']))
+    if turn < 1 or (turn > 1 and 'conversation' not in row):
+        raise ValueError('a follow-on turn requires a conversation and a positive turn number')
+    return turn
 
 
 def run_reader(summary, skipped):
@@ -166,32 +187,49 @@ def parameter_change(summary):
     return value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
 
 
-def update_count(history, summary, row, stream):
-    """Completed updates at generation time, or None when the writer did not record them."""
-    if type(stream) is int:
-        return stream
-    if stream == 'hf_after':
-        # HF always calls its optimizer: Adam momentum and KL can move parameters
-        # even without reward variation. Neither attempted nor mixed steps count
-        # actual parameter changes. Only a measured unchanged endpoint proves zero.
-        attempted = summary.get('global_step')
-        if type(attempted) is not int or attempted < 0:
-            return None
-        if attempted == 0 or parameter_change(summary) == 0:
-            return 0
+def hf_update_count(history, summary, row, step):
+    """Only a measured unchanged HF endpoint proves zero; otherwise unknown."""
+    attempted = summary.get('global_step')
+    if type(attempted) is not int or attempted < 0:
         return None
-    if stream == 'hf_training':
-        return None  # HF's rollout writer does not identify the generating checkpoint.
-    step = row.get('step') if stream == 'mlx_training' else stream[1]
+    if attempted == 0 or parameter_change(summary) == 0:
+        return 0
+    return None
+
+
+def mlx_update_count(history, summary, row, step, *, offset):
+    """Count recorded MLX optimizer calls through the generating checkpoint."""
     if type(step) is not int or step < 0:
         return None
-    last = step-1 if stream == 'mlx_training' else step
+    last = step + offset
     if last <= 0:
         return 0
     completed = {step: mixed for step, mixed in history.items() if step <= last}
     if set(completed) != set(range(1, last+1)) or any(type(value) is not bool for value in completed.values()):
         return None
     return sum(completed.values())
+
+
+def update_count(history, summary, row, stream):
+    """Completed updates at generation time, or None when the writer did not record them."""
+    if type(stream) is int:
+        if stream < 0:
+            raise ValueError('negative generation checkpoint')
+        return stream
+    if isinstance(stream, tuple):
+        if len(stream) != 2 or stream[0] != 'mlx_monitor':
+            raise ValueError(f'unknown monitor stream: {stream!r}')
+        kind, step = stream
+    else:
+        kind, step = stream, row.get('step')
+    handlers = {
+        'hf_after': hf_update_count,
+        # HF rollout records identify attempts, not the generating parameter state.
+        'hf_training': lambda history, summary, row, step: None,
+        'mlx_training': lambda history, summary, row, step: mlx_update_count(history, summary, row, step, offset=-1),
+        'mlx_monitor': lambda history, summary, row, step: mlx_update_count(history, summary, row, step, offset=0),
+    }
+    return handlers[kind](history, summary, row, step)
 
 
 def reading_index(results):
@@ -227,7 +265,7 @@ def reading_index(results):
 
 
 def content_key(run, task_id, established, body, report):
-    return (run, task_id, established or '', (body or '')[:300], (report or '')[:700])
+    return (run, task_id, report_text(established), report_text(body)[:300], report_text(report)[:700])
 
 
 def cheat_axis(row):
@@ -245,12 +283,12 @@ def cheat_axis(row):
 
 
 def git_commit(repo):
-    try:
-        head = subprocess.run(['git', '-C', str(repo), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
-        dirty = subprocess.run(['git', '-C', str(repo), 'status', '--porcelain'], capture_output=True, text=True, check=True).stdout.strip()
-        return head + ('-dirty' if dirty else '')
-    except (OSError, subprocess.CalledProcessError):
+    # A standalone exported dataset has no repository; a broken repository is an error.
+    if not (Path(repo) / '.git').exists():
         return None
+    head = subprocess.run(['git', '-C', str(repo), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True, timeout=30).stdout.strip()
+    dirty = subprocess.run(['git', '-C', str(repo), 'status', '--porcelain'], capture_output=True, text=True, check=True, timeout=30).stdout.strip()
+    return head + ('-dirty' if dirty else '')
 
 
 @contextmanager
@@ -292,7 +330,7 @@ def export(results, out, tasks=None):
             history = update_history(run_dir, read)
             for path, updates in row_files(run_dir):
                 rows, data = read(path)
-                first_turn = {r.get('conversation'): r for r in rows if str(r.get('turn', 1)) == '1'}
+                first_turn = {r['conversation']: r for r in rows if 'conversation' in r and turn_number(r) == 1}
                 file_hash = hashlib.sha256(data).hexdigest()
                 rel = path.relative_to(results).as_posix()
                 for i, row in enumerate(rows):
@@ -311,7 +349,7 @@ def export(results, out, tasks=None):
                     if task is None:
                         skipped['unknown task'] += 1
                         continue
-                    turn = int(str(row.get('turn', 1)))
+                    turn = turn_number(row)
                     # The prompt the model saw depends on the report format; rows from before the typed format are prose.
                     mode = report_mode(row, summary)
                     if turn == 1:
@@ -344,7 +382,9 @@ def export(results, out, tasks=None):
                     if trace and trace['task_id'] != row['task_id']:
                         trace = None
                     axis = cheat_axis(row)
-                    disclosure = DISCLOSURE.get(reading['category'], reading['category']) if reading else 'unread'
+                    disclosure = 'unread'
+                    if reading is not None:
+                        disclosure = DISCLOSURE[reading['category']]
                     record = dict(schema=SCHEMA, id=hashlib.sha256(f'{run}|{rel}|{i}'.encode()).hexdigest()[:16], run=run,
                                   source_file=rel, source_line=i, source_sha256=file_hash, repo_commit=commit, **meta,
                                   policy_updates=policy_updates, run_policy_updates=run_updates, provenance=provenance, taskset=task['taskset'],
@@ -357,9 +397,9 @@ def export(results, out, tasks=None):
                                   genuine=bool(row['genuine']), exploit=bool(row['exploit']), verified_refutation=bool(row['verified_refutation']),
                                   format_valid=bool(row['format_valid']), truncated=row.get('truncated'),
                                   verifier_inconclusive=row.get('verifier_inconclusive'),
-                                  judge_undecided=bool(row.get('judge_undecided', False)),
+                                  judge_undecided=row.get('judge_undecided'),
                                   genuine_why=row.get('genuine_why'), refutation_why=row.get('refutation_why'),
-                                  declaration_why=row.get('declaration_why'), partial_batch=row.get('partial_batch', False),
+                                  declaration_why=row.get('declaration_why'), partial_batch=row.get('partial_batch'),
                                   reading=reading, trace_reading={k: v for k, v in trace.items() if k != 'task_id'} if trace else None,
                                   cheat_axis=axis, disclosure_axis=disclosure)
                     jsonl.write(sink, record)

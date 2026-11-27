@@ -122,12 +122,13 @@ wait_for_server() {
   [[ $seconds =~ ^[1-9][0-9]*$ ]] || fail "wait_for_server: the wait must be a whole number of seconds, got '$seconds'"
   end=$((SECONDS+seconds))
   while ((SECONDS < end)); do
-    kill -0 "$pid" || return 1
+    kill -0 "$pid" || { log "server process $pid exited before readiness on port $port"; return 1; }
     # The reply is captured and then searched. Piped, `grep -q` exits at the first match, curl can then fail on its closed
     # pipe, and under pipefail the pipeline reports that failure for a server that had answered correctly.
     if listed=$(curl -sf --max-time 5 "http://127.0.0.1:$port/v1/models") && grep -q "$model" <<< "$listed"; then return 0; fi
     sleep 5
   done
+  log "server $model on port $port did not become ready within $seconds seconds"
   return 1
 }
 

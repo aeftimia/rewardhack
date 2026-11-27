@@ -54,7 +54,7 @@ def _reserve(spec, out, stage, spec_hash):
         _, problems = budget.check(rows, spec['budget']['line'], 0, 0, commitment, commitment)
         if problems:
             return None, problems
-        reservations.append(dict(key=key, line=spec['budget']['line'], total_usd=commitment,
+        reservations.append(dict(key=key, line=spec['budget']['line'], total_usd=commitment, approved_usd=0.0,
                                  status='pilot worst-case reservation'))
         _write(registry, reservations, exclusive=False)
     return key, []
@@ -156,7 +156,8 @@ def _analyze(spec, paths, seconds):
         except (ValueError, OSError) as error:
             message = ('invalid', str(error))
         except BaseException as error:
-            message = ('crash', f'{type(error).__name__}: {error}')
+            sender.send(('crash', f'{type(error).__name__}: {error}'))
+            raise
         sender.send(message)
     child = context.Process(target=work, daemon=True)
     child.start()
@@ -179,9 +180,8 @@ def _analyze(spec, paths, seconds):
         raise RuntimeError('pilot analysis process ended without a result')
     if kind == 'ok':
         return value
-    if kind == 'invalid':
-        raise ValueError(value)
-    raise RuntimeError(value)
+    error_types = {'invalid': ValueError, 'crash': RuntimeError}
+    raise error_types[kind](value)
 
 
 def _verify_inputs(spec, spec_path):
@@ -306,7 +306,7 @@ def run(spec_path, out, *, execute=False):
                     raise ValueError('stages were started after a failed stage')
                 if terminal_path.exists():
                     break
-                return finish(result.get('failure_reason', 'stage_failure'), stage_id=stage['id'], stage_result=result)
+                return finish(result['failure_reason'], stage_id=stage['id'], stage_result=result)
             evidence = Path(stage['evidence'])
             if not evidence.is_file() or _hash_file(evidence) != result.get('evidence_sha256'):
                 raise ValueError('completed stage evidence changed or disappeared')
@@ -319,7 +319,7 @@ def run(spec_path, out, *, execute=False):
                     or result.get('reserved_usd') != charged or result.get('resource') != spec['resource']):
                 raise ValueError('invalid terminal decision')
             if failed_result is not None:
-                if result.get('reason') != failed_result.get('failure_reason', 'stage_failure'):
+                if result['reason'] != failed_result['failure_reason']:
                     raise ValueError('terminal decision disagrees with failed stage')
             elif 'decision' in result:
                 try:
@@ -334,7 +334,7 @@ def run(spec_path, out, *, execute=False):
         if paths:
             # A stop already recorded in the last stage's receipt is re-derived, not newly decided: like the
             # audit of a terminal decision it gets its own allowance, so a late resume cannot replace it with a time cap.
-            recorded_stop = _read(out/'stages'/f'{completed-1:04d}.result.json').get('decision', {}).get('stop') is True
+            recorded_stop = _read(out/'stages'/f'{completed-1:04d}.result.json')['decision']['stop'] is True
             allowance = spec['budget']['max_seconds']-elapsed_time()
             try:
                 decision = _analyze(spec, paths, max(allowance, min(spec['budget']['max_seconds'], 30.0)) if recorded_stop else allowance)
@@ -370,7 +370,7 @@ def run(spec_path, out, *, execute=False):
                     result = _execute(stage, prefix.with_suffix('.log'), timeout=min(stage['max_seconds'], remaining),
                                       reservation_key=key)
                 if result['timed_out'] or result['exit_code'] != 0:
-                    result.update(status='failed')
+                    result.update(status='failed', failure_reason='stage_failure')
                 else:
                     if _sources() != sources:
                         raise ValueError('pilot source code changed during stage execution')  # noqa: TRY301  the handler below records the stage as failed, then re-raises
@@ -387,13 +387,13 @@ def run(spec_path, out, *, execute=False):
                     except (ValueError, OSError) as error:
                         result.update(status='failed', failure_reason='measurement_failure', error=str(error)[:1000])
             except BaseException as error:
-                result = dict(status='failed', error=f'{type(error).__name__}: {str(error)[:1000]}')
+                result = dict(status='failed', failure_reason='stage_failure', error=f'{type(error).__name__}: {str(error)[:1000]}')
                 _write(prefix.with_suffix('.result.json'), dict(result, spec_hash=spec_hash, stage_id=stage['id']))
                 finish('stage_failure', stage_id=stage['id'], stage_result=result)
                 raise
             _write(prefix.with_suffix('.result.json'), dict(result, spec_hash=spec_hash, stage_id=stage['id']))
             if result['status'] != 'completed':
-                return finish(result.get('failure_reason', 'stage_failure'), stage_id=stage['id'], stage_result=result)
+                return finish(result['failure_reason'], stage_id=stage['id'], stage_result=result)
             paths.append(Path(stage['evidence']))
             evidence_hashes[paths[-1]] = result['evidence_sha256']
             if decision['stop']:

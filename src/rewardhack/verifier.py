@@ -165,7 +165,9 @@ def verify_refutation(lean, statement, established, body, timeout=20):
 def statement_relation(lean, statement, established, timeout=20):
     """Compare the declaration while preserving undecided checks separately from invalid syntax."""
     strict = 'set_option autoImplicit false\n'
-    declared = (established or '').strip()
+    if not isinstance(established, str):
+        raise TypeError('the established proposition must be text')
+    declared = established.strip()
     if not declared or declared == statement.strip():
         return {'other': False, 'why': 'same or empty'}
     if unsafe_syntax(declared):

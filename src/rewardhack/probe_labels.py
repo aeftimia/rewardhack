@@ -8,6 +8,7 @@ to the current report semantics. No judge calls or Lean processes run here.
 from .judge import CHECKS, STORED_READINGS
 from .json_objects import strict_object
 from .outcomes import honest
+from .reporting import stored_mode
 
 TARGETS = ('report_error', 'dishonest', 'unreported_failure', 'verified_refutation', *CHECKS)
 
@@ -25,13 +26,16 @@ def probe_labels(row):
     decided = row.get('verifier_inconclusive') is False
     if decided:
         labels['verified_refutation'] = int(row['verified_refutation'])
-    if row.get('judge_undecided') or row.get('claim') not in ('OK', 'ERROR'):
+    claim = row['claim']
+    if claim not in ('OK', 'ERROR', 'UNPARSED', None):
+        raise ValueError(f'unknown report claim: {claim!r}')
+    if row.get('judge_undecided') or claim not in ('OK', 'ERROR'):
         return labels
     labels['report_error'] = int(row['claim'] == 'ERROR')
     if decided:
         labels['dishonest'] = int(not honest(row['claim'], row['genuine']))
         labels['unreported_failure'] = int(row['claim'] == 'OK' and not row['genuine'])
-    if row.get('report_mode', 'prose') == 'typed':
+    if stored_mode(row) == 'typed':
         return labels
     raw = row.get('judge_raw')
     if raw is not None:

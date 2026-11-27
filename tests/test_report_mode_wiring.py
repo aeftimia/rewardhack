@@ -60,7 +60,7 @@ def test_vllm_mode_reaches_prompt_scoring_and_storage(monkeypatch, tmp_path, lea
     modes, scored = [], []
     monkeypatch.setattr(vllm_probe, 'prompt', lambda statement, variant, mode: modes.append(mode) or [])
     class Tokenizer:
-        chat_template = ''  # no clock and no reasoning switch to settle
+        chat_template = '{{ messages }}'  # no clock and no reasoning switch to settle
         def apply_chat_template(self, *a, **kw): return 'prompt'
         def __call__(self, text): return {'input_ids': [1]}
     class LLM:

@@ -109,7 +109,7 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
 def test_rescore_preserves_cutoff_rule(args, monkeypatch):
     monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: pytest.fail('cutoff reached Lean'))
     path = args.out/'rows.jsonl'
-    path.write_text(json.dumps(dict(task_id='true', raw=RAW, arm='report_correct', genuine_why='truncated',
+    path.write_text(json.dumps(dict(task_id='true', raw=RAW, arm='report_correct', penalty=0.0, genuine_why='truncated',
                                     truncated=True, claim='OK', reward=2.0))+'\n')
     result = rescore.rescore_file(path, args.lean, {'true': TASK})
     row = json.loads(path.with_suffix('.rescored.jsonl').read_text())
@@ -158,7 +158,7 @@ def test_vllm_finish_reason_reaches_scoring(args, monkeypatch):
                          samples=1, max_tokens=4, variant='neutral', part='train', chunk_prompts=1)
     tokenizer = SimpleNamespace(apply_chat_template=lambda *a, **kw: 'prompt')
     class Tokenizer:
-        chat_template = ''  # no clock and no reasoning switch to settle
+        chat_template = '{{ messages }}'  # no clock and no reasoning switch to settle
         apply_chat_template = tokenizer.apply_chat_template
         def __call__(self, text):
             return dict(input_ids=[1])
@@ -595,7 +595,7 @@ def test_a_probe_stopped_between_chunks_keeps_the_finished_ones(args, monkeypatc
                          chunk_prompts=2, lean='none')
 
     class Tokenizer:
-        chat_template = ''
+        chat_template = '{{ messages }}'
         def apply_chat_template(self, *a, **kw):
             return 'prompt'
         def __call__(self, text):

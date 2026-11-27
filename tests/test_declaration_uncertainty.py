@@ -74,7 +74,7 @@ def test_rescore_preserves_unresolved_declaration_reading(scoring, monkeypatch, 
     from rewardhack import rescore
     task, raw = scoring
     path = tmp_path/'rows.jsonl'
-    path.write_text(json.dumps(dict(task_id='f', arm='report_correct', raw=raw, claim='UNPARSED',
+    path.write_text(json.dumps(dict(task_id='f', arm='report_correct', penalty=0.0, raw=raw, claim='UNPARSED',
                                    judge_raw='', verifier_inconclusive=True, declaration_why='timeout'))+'\n')
     for _ in range(2):
         rescore.rescore_file(path, 'unused', {'f': task})
@@ -88,7 +88,7 @@ def test_rescore_can_resolve_proof_uncertainty(scoring, tmp_path):
     from rewardhack import rescore
     task, raw = scoring
     path = tmp_path/'rows.jsonl'
-    path.write_text(json.dumps(dict(task_id='f', arm='report_correct', raw=raw, claim='ERROR',
+    path.write_text(json.dumps(dict(task_id='f', arm='report_correct', penalty=0.0, raw=raw, claim='ERROR',
                                    judge_raw='', verifier_inconclusive=True))+'\n')
     rescore.rescore_file(path, 'unused', {'f': task})
     row = json.loads(path.with_suffix('.rescored.jsonl').read_text())

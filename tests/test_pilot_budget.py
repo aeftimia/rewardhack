@@ -18,7 +18,7 @@ def registry(tmp_path, records):
 
 
 def reservation(key='one', line='storage', total=100):
-    return dict(key=key, line=line, total_usd=total, status='pilot worst-case reservation')
+    return dict(key=key, line=line, total_usd=total, status='pilot worst-case reservation', approved_usd=0.0)
 
 
 def test_legacy_budget_check_refuses_a_fully_reserved_line(tmp_path):
@@ -27,7 +27,7 @@ def test_legacy_budget_check_refuses_a_fully_reserved_line(tmp_path):
     assert any('storage' in problem for problem in problems)
     script = Path(__file__).resolve().parents[1]/'entrypoints'/'budget.py'
     result = subprocess.run([sys.executable, str(script), '--ledger', str(ledger), 'check',
-                             '--line', 'storage', '--hourly', '1', '--max-hours', '1'],
+                             '--line', 'storage', '--hourly', '1', '--max-hours', '1', '--other-usd', '0'],
                             capture_output=True, text=True)
     assert result.returncode == 1 and 'REFUSED:' in result.stdout
 
@@ -47,7 +47,7 @@ def test_launch_that_exactly_fills_a_cap_is_not_refused_by_binary_rounding(tmp_p
     script = Path(__file__).resolve().parents[1]/'entrypoints'/'budget.py'
     def guard(hours, key='k'):
         return subprocess.run([sys.executable, str(script), '--ledger', str(ledger), 'claim', '--line', 'storage',
-                               '--hourly', '2.7', '--max-hours', hours],
+                               '--hourly', '2.7', '--max-hours', hours, '--other-usd', '0'],
                               env=dict(os.environ, **{budget.RESERVATION_ENV: key}), capture_output=True, text=True).returncode
     # The refused claim comes first: it must not consume the allowance the exact one then needs.
     assert (guard('24.01'), guard('24'), guard('24', key='other'), guard('0.01')) == (1, 0, 1, 1)
@@ -93,7 +93,8 @@ def test_corrupt_registry_blocks_legacy_budget_reading(tmp_path, record):
 def test_missing_csv_does_not_hide_an_existing_reservation(tmp_path):
     ledger = registry(tmp_path, [reservation()])
     ledger.unlink()
-    assert budget.spent(budget.read_ledger(ledger), line='storage') == 100
+    with pytest.raises(FileNotFoundError):
+        budget.read_ledger(ledger)
 
 
 def test_fractional_reservations_consume_shared_grant_capacity(tmp_path):

@@ -6,11 +6,23 @@ failures, false honest readings) sit near zero, where a uniform prior adds a who
 one, and Jeffreys intervals keep close to their stated coverage at small n.
 """
 import numpy as np
+import math
 from scipy import stats
 
 PRIOR = (0.5, 0.5)  # Jeffreys: Beta(a, b), pseudo-counts of events and non-events
 CREDIBLE = 0.95  # mass of every reported equal-tailed credible interval
 DRAWS = 20_000  # Monte Carlo draws for a difference of rates: the interval ends move by about 0.002 between seeds
+
+
+def observed_ratio(total, exposure):
+    """Measured rate or mean; no exposure means no measurement, represented by None."""
+    if not math.isfinite(total) or not math.isfinite(exposure) or exposure < 0:
+        raise ValueError('a measured ratio needs finite values and nonnegative exposure')
+    if exposure == 0:
+        if total != 0:
+            raise ValueError('a nonzero total cannot have zero exposure')
+        return None
+    return total / exposure
 
 
 def posterior(k, n):

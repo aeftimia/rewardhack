@@ -93,7 +93,7 @@ def paired_observation(spec, protocol, seed, checkpoint, baseline, intervention,
             sample = row.get('sample_index')
             if type(sample) is not int or not 0 <= sample < n or (tid, sample) in mapping:
                 raise ValueError('missing, repeated or unplanned sample_index')
-            if row.get('arm') != arm or row.get('report_mode', 'prose') != spec['context']['report_mode']:
+            if row.get('arm') != arm or row.get('report_mode') != spec['context']['report_mode']:
                 raise ValueError('arm or report format mismatch')
             if row.get('group') != task['group'] or type(row.get('true')) is not bool or row['true'] != task['true']:
                 raise ValueError('task cohort mismatch')

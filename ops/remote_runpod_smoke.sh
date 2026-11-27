@@ -78,6 +78,9 @@ JUDGE=$POD_JUDGE; JUDGE_REV=$POD_JUDGE_REV
 # cannot read another process's environment; file-reading Lean syntax is also refused before Lean runs.
 # JUDGE_KIND=pod serves the small open model here instead, which has not been accepted for a reward.
 JUDGE_KIND=${JUDGE_KIND:-api}
+JUDGE_GPU_FRACTION=${JUDGE_GPU_FRACTION:-0.22}
+SMOKE_EVAL_LIMIT=${SMOKE_EVAL_LIMIT:-12}
+SMOKE_TRAIN_GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
 if [[ $JUDGE_KIND == api ]]; then
   [[ -s ~/.judge_key ]] || fail 'NO_JUDGE_KEY: run the driver with FORWARD_JUDGE_KEY=1, or set JUDGE_KIND=pod'
   JUDGE_KEY=$(cat ~/.judge_key); rm -f ~/.judge_key
@@ -86,9 +89,9 @@ judged() { OPENAI_API_KEY=${JUDGE_KEY:-} "$@"; }
 
 # --- How Lean will be isolated, decided before anything is downloaded: this image has had no namespaces, and finding that
 # out after the installs wasted a pod on 2026-11-24.
-if unshare -rnpf --mount-proc true 2>/dev/null; then ISOLATE='unshare -rnpf --mount-proc'
-elif unshare -rn true 2>/dev/null; then ISOLATE='unshare -rn'; log 'WARNING: no private /proc for Lean; relying on the syntax screen to keep proofs from reading process environments'
-elif [[ ${LEAN_ISOLATION:-} == none ]] && setpriv --reuid=65534 --regid=65534 --clear-groups true 2>/dev/null; then
+if unshare -rnpf --mount-proc true 2>> ~/out/isolation.log; then ISOLATE='unshare -rnpf --mount-proc'
+elif unshare -rn true 2>> ~/out/isolation.log; then ISOLATE='unshare -rn'; log 'WARNING: no private /proc for Lean; relying on the syntax screen to keep proofs from reading process environments'
+elif [[ ${LEAN_ISOLATION:-} == none ]] && setpriv --reuid=65534 --regid=65534 --clear-groups true 2>> ~/out/isolation.log; then
   # No namespaces in this container. An unprivileged user cannot read another user's /proc/<pid>/environ,
   # which is where the judge key lives; the network stays reachable, which is what LEAN_ISOLATION=none accepts.
   ISOLATE='setpriv --reuid=65534 --regid=65534 --clear-groups --no-new-privs'; READABLE=1
@@ -183,7 +186,7 @@ else
 # --- Judge server: a small model in a fixed slice of the card, OpenAI-compatible on localhost.
 log start judge-server
 in_env vllm vllm serve "$JUDGE" --revision "$JUDGE_REV" --port "$JUDGE_PORT" --host 127.0.0.1 --max-model-len 3072 \
-  --gpu-memory-utilization "${JUDGE_GPU_FRACTION:-0.22}" > ~/out/judge-server.log 2>&1 &
+  --gpu-memory-utilization "$JUDGE_GPU_FRACTION" > ~/out/judge-server.log 2>&1 &
 JUDGE_PID=$!
 wait_for_server "$JUDGE_PID" "$JUDGE_PORT" "$JUDGE" "$SERVER_WAIT" || fail JUDGE_SERVER_DID_NOT_START
 refuse_ignored_settings ~/out/judge-server.log
@@ -200,7 +203,7 @@ fi
 # Questions 2 and 3. Low reasoning effort: the unprompted base rate (12/60) was measured there, and high
 # effort truncated 89/120 at 8k tokens. Hard task set, neutral prompt, no hint: unseeded exploration.
 BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" "${MODEL_OPTIONS[@]}" --taskset hard
-      --max-completion-length 2048 --num-generations 8 --eval-limit "${SMOKE_EVAL_LIMIT:-12}" --eval-samples 2 --save-every 8 --stop-no-variation 99
+      --max-completion-length 2048 --num-generations 8 --eval-limit "$SMOKE_EVAL_LIMIT" --eval-samples 2 --save-every 8 --stop-no-variation 99
       "${JUDGE_ARGS[@]}")
 # The funded arm at λ=0.5: the probe and the preflight training steps. A Part 1 job (SMOKE_PART_ONE above 0) trains its runs instead (below).
 FUNDED=(--arm report_correct --penalty 0.5)
@@ -232,7 +235,7 @@ step() { name=$1; shift; log "start $name"
   # For the record only: a failed reading here is logged, and the next stage's own card check decides whether the card works.
   smi --query-gpu=memory.used --format=csv,noheader >> ~/out/steps.log || log "nvidia-smi after $name failed or did not answer in $NVIDIA_SMI_SECONDS s"; }
 # Eight generations at 2,048 tokens ran out of memory on a 96 GB card (2026-11-24); four fit (2026-11-25). Every training step below uses this.
-GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
+GENERATIONS=$SMOKE_TRAIN_GENERATIONS
 # Prompt groups per optimizer step (owner, 26 Nov, notes section 72): one group of four had reward variation in 12 of 60
 # baseline steps. Each group is its own micro-batch, so memory is that of one group; vLLM samples all groups at once.
 PROMPTS=4

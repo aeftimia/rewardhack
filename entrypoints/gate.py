@@ -52,6 +52,11 @@ def codex_hook(args):
     return check_codex_call()
 
 
+def scan_sources(args):
+    from rewardhack.source_scan import full_scan
+    return full_scan(ROOT)
+
+
 def settle(args):
     if not all('=' in setting for setting in args.settings):
         raise SystemExit('--set takes NAME=VALUE')
@@ -74,6 +79,7 @@ def main():
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('hook').set_defaults(run=hook)
     sub.add_parser('codex-hook').set_defaults(run=codex_hook)
+    sub.add_parser('scan-sources', help='full source scan; a fresh LLM verdict is required').set_defaults(run=scan_sources)
     started = sub.add_parser('launch')
     started.add_argument('--remote', required=True, help='the ops/*.sh script given to the driver')
     started.add_argument('--deadline', type=int, required=True, help='the deadline in minutes given to the driver')
