@@ -5,6 +5,7 @@
   },
   "continuation": {
     "inherit": true,
+    "inherit_parameters": {},
     "overrides": {}
   }
 }

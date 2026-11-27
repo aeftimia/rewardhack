@@ -129,24 +129,34 @@ def historical_index(roots):
     return {key: index[key] for key in sorted(index) if key not in jobs_with_settings}
 
 
-def resolve(defaults, parameters, *, parent=None, inherit=None):
+def inheritance_policy(policy, parent, inherit):
+    if type(policy['inherit']) is not bool:
+        raise ValueError('default inherit must be a boolean')
+    if type(inherit) is bool:
+        return inherit
+    if inherit is not None and not isinstance(inherit, dict):
+        raise ValueError('inherit must be a boolean or a per-parameter object')
+    fields = policy['inherit_parameters'].copy()
+    if inherit is not None:
+        if set(inherit) - parent['settings'].keys():
+            raise ValueError('requested inheritance for a setting absent from the parent')
+        fields.update(inherit)
+    if any(type(value) is not bool for value in fields.values()):
+        raise ValueError('per-parameter inheritance must be boolean')
+    if not fields:
+        return policy['inherit']
+    return {key: fields[key] if key in fields else policy['inherit'] for key in parent['settings']}
+
+
+def _resolve(defaults, parameters, parent, inherit):
     if parent is None:
         if inherit is not None:
             raise ValueError('inheritance requires a parent run')
         return {**defaults['fresh'], **parameters}
     policy = defaults['continuation']
-    if inherit is None:
-        inherit = policy['inherit']
     inherited = dict(defaults['fresh'])
     if isinstance(inherit, dict):
-        flags = dict.fromkeys(parent['settings'], policy['inherit'])
-        for key, flag in inherit.items():
-            if key not in flags or type(flag) is not bool:
-                raise ValueError(f'invalid inheritance rule for {key}')
-            flags[key] = flag
-        inherited.update({key: parent['settings'][key] for key, flag in flags.items() if flag})
-    elif type(inherit) is not bool:
-        raise ValueError('inherit must be a boolean or a per-parameter object')
+        inherited.update({key: value for key, value in parent['settings'].items() if inherit[key]})
     elif inherit:
         inherited.update(parent['settings'])
     # Runtime provenance describes the parent, and must be measured again by
@@ -159,14 +169,13 @@ def new_run(defaults, parameters, *, parent=None, checkpoint_step=None, inherit=
     """Allocate a run ID and record its requested settings and lineage."""
     if (parent is None) != (checkpoint_step is None):
         raise ValueError('a continuation needs both a predecessor and a checkpoint step')
-    settings = resolve(defaults, parameters, parent=parent, inherit=inherit)
     predecessor = None
     if parent is not None:
         if type(checkpoint_step) is not int or checkpoint_step < 1:
             raise ValueError('checkpoint step must be a positive integer')
         predecessor = {'run_id': parent['run_id'], 'checkpoint_step': checkpoint_step}
-        if inherit is None:
-            inherit = defaults['continuation']['inherit']
+        inherit = inheritance_policy(defaults['continuation'], parent, inherit)
+    settings = _resolve(defaults, parameters, parent, inherit)
     return {
         'run_id': uuid4().hex,
         'parent': predecessor,

@@ -1,14 +1,13 @@
 # Running configured experiments
 
-Use `rewardhack.experiments.prepare(root, state, request)` to allocate a run ID and freeze its JSON request, source commit, explicit parameter overrides, and parent checkpoint. The request may be a dictionary or a JSON file. Keep the state directory on a filesystem with space for the final checkpoints and use the same directory when referencing a predecessor. Keep the prepared configuration and receipts in the experiment's Git records. The trainer records the effective settings alongside the results.
+Use `rewardhack.experiments.prepare(root, request)` to allocate a run ID and freeze its JSON request, source commit, explicit parameter overrides, and parent checkpoint. The request may be a dictionary or a JSON file. The runner stores these records in `experiments/<run_id>/` for inclusion in Git. Its checkout and snapshot uploads are ignored. To use a separate filesystem, pass `state=path` and use that directory for a predecessor and its continuations. The trainer records the effective settings alongside the results.
 
 ```python
 from pathlib import Path
 from rewardhack.experiments import prepare, run_batch
 
 root = Path.cwd()
-state = root / ".tools" / "experiments"
-jobs = [prepare(root, state, path) for path in sorted(Path("requests").glob("*.json"))]
+jobs = [prepare(root, path) for path in sorted(Path("requests").glob("*.json"))]
 completed = run_batch(root, jobs, parallelism=2)
 ```
 
@@ -18,7 +17,7 @@ Each request has these fields.
 | --- | --- |
 | `parameters` | Scientific overrides such as `steps`, `seed`, or `max_completion_length`. A continuation supplies the total desired step count. |
 | `parent` | `null` for a fresh run. A continuation gives `run_id`, `checkpoint_step`, verified S3 `archive` ID, and checkpoint `arm` directory. |
-| `inherit` | Optional boolean or object of parameter names and booleans. Unspecified parameters follow the continuation policy in `ops/run_defaults.json`. Explicit parameters take precedence. |
+| `inherit` | A boolean sets inheritance for all fields. An object selects it by parameter. Unspecified fields follow `continuation.inherit_parameters`, then `continuation.inherit`, in `ops/run_defaults.json`. Explicit parameter values take precedence. |
 | `pod` | The RunPod deployment config from `docs/runpod-operations.md`. The runner assigns the unique name. |
 | `driver` | String-valued driver settings for the selected single training arm, including `SMOKE_PART_ONE`, timeout and judge settings. |
 | `gate` | `deadline` in minutes, measured or estimated `basis`, budget `line`, `hourly` price, `other_usd`, and approved `launch_cap`. |

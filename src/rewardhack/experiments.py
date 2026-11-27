@@ -28,9 +28,10 @@ def run_id_directory(state, run_id):
     return Path(state) / run_id
 
 
-def prepare(root, state, request):
+def prepare(root, request, *, state=None):
     """Resolve a request and allocate its unique run directory before any provider call."""
-    root, state = Path(root), Path(state)
+    root = Path(root)
+    state = root / 'experiments' if state is None else Path(state)
     if isinstance(request, (str, Path)):
         request = read(request)
     if set(request) - {'parameters', 'inherit', 'parent', 'pod', 'driver', 'gate'}:
@@ -67,6 +68,7 @@ def prepare(root, state, request):
             raise ValueError(f'{key} differs between requested condition and RunPod job {slot}')
         row['settings'][key] = value
     row['output_arm'] = 'train-' + name
+    row['historical_snapshot_files'] = None
     directory = run_id_directory(state, row['run_id'])
     if parent:
         receipt = archive.archive_entry(request['parent']['archive'])
@@ -84,6 +86,12 @@ def prepare(root, state, request):
             row['historical_commit'] = parent['historical_commit']
         row['checkpoint_arm'] = arm
         row['parent_archive'] = receipt['run_id']
+        if 'historical_commit' in row:
+            prefix = f"{arm}/adapter-step{row['parent']['checkpoint_step']}/"
+            names = sorted(path.removeprefix(prefix) for path in receipt['sha256'] if path.startswith(prefix))
+            if not names:
+                raise ValueError('archived historical checkpoint has no matching adapter snapshot')
+            row['historical_snapshot_files'] = names
     directory.mkdir(parents=True, exist_ok=False)
     atomic_json(directory / CONFIG_FILE, row)
     atomic_json(directory / 'request.json', request)
@@ -131,16 +139,21 @@ def book_cost(ledger, pod_id, line, run_id, model, gpu_usd, judge_usd):
             writer.writerows([*rows, row])
 
 
-def enqueue_snapshots(destination, directory, uploads, scheduled, commit):
+def enqueue_snapshots(destination, directory, uploads, scheduled, commit, historical_files=None):
     """Rsync renames individual files atomically. Only enqueue complete immutable saves."""
-    for marker in destination.glob('train-*/adapter-step*/snapshot-files.json'):
-        snapshot = marker.parent
+    for snapshot in destination.glob('train-*/adapter-step*'):
         if snapshot in scheduled:
             continue
-        files = read(marker)
+        marker = snapshot / 'snapshot-files.json'
+        if historical_files is not None:
+            files = dict.fromkeys(historical_files)
+        elif marker.is_file():
+            files = read(marker)
+        else:
+            continue
         if not files or any(Path(name).name != name for name in files):
             raise ValueError(f'invalid snapshot manifest: {marker}')
-        if any(not (snapshot / name).is_file() or (snapshot / name).stat().st_size != size
+        if any(not (snapshot / name).is_file() or (size is not None and (snapshot / name).stat().st_size != size)
                for name, size in files.items()):
             continue
         copy = directory / 'snapshots' / f'{directory.name}-{snapshot.name}'
@@ -220,11 +233,12 @@ def _execute(root, directory, uploads):
             running = driver.submit(subprocess.run, [sys.executable, 'entrypoints/runpod_ops.py', 'launch',
                                     '--config', '.tools/pod.json', '--results', str(result)], env=env, cwd=checkout,
                                     stdout=log, stderr=subprocess.STDOUT, check=True)
-            while not running.done():
-                wait([running], timeout=30)
-                enqueue_snapshots(destination, directory, uploads, snapshots, commit)
+            while True:
+                done, _ = wait([running], timeout=30)
+                enqueue_snapshots(destination, directory, uploads, snapshots, commit, config['historical_snapshot_files'])
+                if done:
+                    break
             running.result()
-            enqueue_snapshots(destination, directory, uploads, snapshots, commit)
         if not receipt.is_file():
             raise ValueError('RunPod driver completed without its pod receipt')
         if (destination / 'EXIT_CODE').read_text().strip() != '0':

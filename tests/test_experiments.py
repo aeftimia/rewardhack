@@ -28,12 +28,16 @@ def test_per_key_inheritance_and_identity():
     assert child['settings'] == dict(steps=60, seed=5, max_completion_length=16384)
     assert child['parent'] == {'run_id':parent['run_id'], 'checkpoint_step':6}
     assert child['run_id'] != parent['run_id']
+    defaults['continuation'].update(inherit=False, inherit_parameters={'seed':True})
+    configured = new_run(defaults, {}, parent=parent, checkpoint_step=6)
+    assert configured['settings'] == {'seed':5, 'max_completion_length':16384}
+    assert configured['inherit'] == {'seed':True, 'max_completion_length':False}
     with pytest.raises(ValueError, match='inheritance'):
         new_run(defaults, {}, inherit=True)
 
 
 def test_prepare_binds_continuation_to_the_archived_parent(tmp_path, monkeypatch):
-    parent = experiments.prepare(ROOT, tmp_path, request())
+    parent = experiments.prepare(ROOT, request(), state=tmp_path)
     effective = experiments.read(parent / CONFIG_FILE)
     atomic_json(parent / 'effective.json', effective)
     arm = effective['output_arm']
@@ -42,7 +46,7 @@ def test_prepare_binds_continuation_to_the_archived_parent(tmp_path, monkeypatch
     monkeypatch.setattr(experiments.archive, 'archive_entry', lambda source: receipt)
     spec = request()
     spec.update(parameters={'steps':60}, parent={'run_id':parent.name, 'arm':arm, 'checkpoint_step':6, 'archive':'alias'})
-    directory = experiments.prepare(ROOT, tmp_path, spec)
+    directory = experiments.prepare(ROOT, spec, state=tmp_path)
     config = experiments.read(directory / CONFIG_FILE)
     assert config['parent'] == {'run_id':parent.name, 'checkpoint_step':6}
     assert config['parent_archive'] == 'immutable-archive'
@@ -51,7 +55,7 @@ def test_prepare_binds_continuation_to_the_archived_parent(tmp_path, monkeypatch
 
 @pytest.mark.parametrize('exit_code', ['0', '1'])
 def test_launch_archive_teardown_and_reconciled_ledger(tmp_path, monkeypatch, exit_code):
-    directory = experiments.prepare(ROOT, tmp_path / 'registry', request())
+    directory = experiments.prepare(ROOT, request(), state=tmp_path / 'registry')
     checkout = directory / 'checkout'
     checkout.mkdir()
     root = tmp_path / 'project'
@@ -93,16 +97,18 @@ def test_launch_archive_teardown_and_reconciled_ledger(tmp_path, monkeypatch, ex
     assert row['evidence'].endswith(config['run_id'])
 
 
-def test_snapshot_waits_for_all_files_and_only_uploads_once(tmp_path, monkeypatch):
+@pytest.mark.parametrize('historical_files', [None, ['model.bin']])
+def test_snapshot_waits_for_all_files_and_only_uploads_once(tmp_path, monkeypatch, historical_files):
     destination = tmp_path / 'out'
     snapshot = destination / 'train-a/adapter-step1'
     snapshot.mkdir(parents=True)
-    atomic_json(snapshot / 'snapshot-files.json', {'model.bin':3})
+    if historical_files is None:
+        atomic_json(snapshot / 'snapshot-files.json', {'model.bin':3})
     sent, scheduled = [], {}
     monkeypatch.setattr(experiments.archive, 'upload', lambda p, commit: sent.append((p/'model.bin').read_bytes()))
     with ThreadPoolExecutor(1) as pool:
         def scan():
-            experiments.enqueue_snapshots(destination, tmp_path, pool, scheduled, 'commit')
+            experiments.enqueue_snapshots(destination, tmp_path, pool, scheduled, 'commit', historical_files)
         scan()
         assert not scheduled
         (snapshot / 'model.bin').write_bytes(b'abc')
@@ -115,7 +121,7 @@ def test_real_training_entrypoint_consumes_prepared_settings(tmp_path, monkeypat
     from rewardhack import hf_grpo
     spec = request()
     spec['driver']['SMOKE_PART_ONE'] = '8'
-    directory = experiments.prepare(ROOT, tmp_path / 'registry', spec)
+    directory = experiments.prepare(ROOT, spec, state=tmp_path / 'registry')
     output = tmp_path / 'train-lambda0'
     calls = []
     monkeypatch.setattr(hf_grpo, 'run', calls.append)
