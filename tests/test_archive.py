@@ -309,6 +309,8 @@ QWEN_PASS = dict(API, SMOKE_PART_ONE='4', SMOKE_STEPS='6', SMOKE_TRAIN_SECONDS='
     (dict(SMOKE_PART_ONE='14'), '240', "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to 13)"),
     (dict(QWEN_PASS, SMOKE_PROBE_LARGE='1'), '240', 'SMOKE_PROBE_LARGE=1 follows a one-card job'),
     (QWEN_PASS, '126', 'SMOKE_PART_ONE=4 needs a deadline of at least 127 minutes'),
+    (dict(QWEN_PASS, SMOKE_SAVE_EVERY='0'), '128', 'SMOKE_SAVE_EVERY must be a positive integer'),
+    (dict(QWEN_PASS, SMOKE_SAVE_EVERY='1000000000'), '128', 'SMOKE_SAVE_EVERY must be a positive integer'),
     (dict(LEAN_ISOLATION='none', SMOKE_STEPS='4'), '169', 'the preflight run (SMOKE_PART_ONE unset or 0) needs a deadline of at least 170'),
 ])
 def test_qwen_and_preflight_settings_are_refused_before_the_pod(tmp_path, settings, deadline, said):
@@ -316,7 +318,9 @@ def test_qwen_and_preflight_settings_are_refused_before_the_pod(tmp_path, settin
     assert code == 2 and said in output and not reached
 
 
-@pytest.mark.parametrize('settings, deadline', [(QWEN_PASS, '128'), (dict(QWEN_PASS, SMOKE_STEPS='60', SMOKE_TRAIN_SECONDS='12000'), '285')])
+@pytest.mark.parametrize('settings, deadline', [(QWEN_PASS, '128'),
+    (dict(QWEN_PASS, SMOKE_TOKEN_LIMIT='8192', SMOKE_SAVE_EVERY='1', SMOKE_TRAIN_SECONDS='9900', SMOKE_FINAL_EVAL_SECONDS='1800'), '250'),
+    (dict(QWEN_PASS, SMOKE_STEPS='60', SMOKE_TRAIN_SECONDS='12000'), '285')])
 def test_qwen_launches_pass_every_check(tmp_path, settings, deadline):
     """The measuring pass at its 128-minute deadline; the 60-step run, 71 + (12,000 + 810)/60 = 284.5 of 285 minutes."""
     code, output, reached = drive(tmp_path, deadline=deadline, **settings)
