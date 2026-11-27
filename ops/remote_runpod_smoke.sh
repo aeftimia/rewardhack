@@ -268,6 +268,10 @@ fi
 SHAPE=(--num-generations "$GENERATIONS" --prompts-per-step "$PROMPTS")
 TRAIN=(--steps "$SMOKE_STEPS" --learning-rate 1e-4 "${SHAPE[@]}" --max-seconds "$SMOKE_TRAIN_SECONDS" --final-eval-seconds "$SMOKE_FINAL_EVAL_SECONDS")
 TRAIN+=(--training-sampler "${TRAINING_SAMPLERS[$SMOKE_STRATIFIED]}")
+if [[ -n ${SMOKE_BACKWARD_BATCH+set} ]]; then
+  [[ $SMOKE_BACKWARD_BATCH == 1 || $SMOKE_BACKWARD_BATCH == 2 ]] || fail 'SMOKE_BACKWARD_BATCH must be 1 or 2 when set'
+  TRAIN+=(--backward-batch-size "$SMOKE_BACKWARD_BATCH")
+fi
 if [[ $SMOKE_PART_ONE != 0 ]]; then
   # Part 1 (owner, 26 Nov; issue #2): the job's runs from ops/pod_pins.env, same seed and settings, one after the other.
   # Each keeps resumable checkpoints in <name>/trainer, so a later run can extend it with --resume-from.

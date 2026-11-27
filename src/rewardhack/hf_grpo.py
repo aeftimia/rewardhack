@@ -75,7 +75,7 @@ RESUME_SETTINGS = ('model', 'revision', 'arm', 'penalty', 'report_mode', 'taskse
                    'prompts_per_step', 'max_completion_length', 'seed', 'save_every', 'stop_no_variation', 'stop_saturated', 'rollout_backend',
                    'judge', 'judge_model', 'judge_revision', 'judge_url', 'judge_extra', 'verifier_retry_seconds', 'adapter',
                    # The resumed run carries the original's before-evaluation over, so its after-evaluation must match it.
-                   'eval_limit', 'eval_samples', 'training_sampler')
+                   'eval_limit', 'eval_samples', 'training_sampler', 'backward_batch_size')
 RUN_SETTINGS = 'run-settings.json'
 
 
@@ -443,6 +443,11 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     from transformers import TrainerCallback, set_seed
     from transformers.integrations import TensorBoardCallback
     from trl import GRPOConfig, GRPOTrainer
+    update_batch = args.num_generations * args.prompts_per_step
+    backward_batch = args.num_generations if args.backward_batch_size is None else args.backward_batch_size
+    if backward_batch <= 0 or update_batch % backward_batch:
+        raise ValueError('backward_batch_size must be positive and divide num_generations * prompts_per_step')
+    accumulation = update_batch // backward_batch
     by_statement = {t['statement']: t for t in tasks}
     report_mode = args.report_mode
     summary['report_mode'] = report_mode
@@ -596,11 +601,11 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             control.should_save = control.should_save or control.should_training_stop
             return control
 
-    # One prompt group per micro-batch and --prompts-per-step micro-batches per optimizer step: TRL generates the whole
-    # step's answers at once (its generation batch is the accumulated batch) and a backward pass holds one group, so
-    # more prompts per step cost time, not memory. The 'dapo' loss normalises over all the step's tokens.
-    config = GRPOConfig(output_dir=str(args.out/'trainer'), max_steps=args.steps, per_device_train_batch_size=args.num_generations,
-                        gradient_accumulation_steps=args.prompts_per_step, num_generations=args.num_generations, max_completion_length=args.max_completion_length,
+    # Generate and score complete prompt groups together, then split backward work without changing
+    # the effective update batch. DAPO normalises over all tokens in that generation batch.
+    config = GRPOConfig(output_dir=str(args.out/'trainer'), max_steps=args.steps, per_device_train_batch_size=backward_batch,
+                        gradient_accumulation_steps=accumulation, generation_batch_size=update_batch,
+                        num_generations=args.num_generations, max_completion_length=args.max_completion_length,
                         learning_rate=args.learning_rate, bf16=torch.cuda.is_available(), use_cpu=not torch.cuda.is_available(), gradient_checkpointing=True,
                         beta=args.beta, temperature=TEMPERATURE, top_p=TOP_P, top_k=TOP_K, chat_template_kwargs=template_kwargs(args), logging_steps=1,
                         # Resumable checkpoints (<out>/trainer/checkpoint-N: adapter, optimizer, step, random state, task order) every

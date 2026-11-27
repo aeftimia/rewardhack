@@ -18,6 +18,9 @@ HOST=$1 PORT=$2 REMOTE=$3 RESULTS=$4 DEADLINE=$5
 exec < /dev/null
 command -v timeout > /dev/null || { echo 'the driver needs a timeout command on this machine (macOS 27 has /usr/bin/timeout; else coreutils)'; exit 2; }
 SMOKE_VLLM_ROLLOUTS=${SMOKE_VLLM_ROLLOUTS:-0}
+if [[ -n ${SMOKE_BACKWARD_BATCH+set} && $SMOKE_BACKWARD_BATCH != 1 && $SMOKE_BACKWARD_BATCH != 2 ]]; then
+  echo 'SMOKE_BACKWARD_BATCH must be 1 or 2 when set'; exit 2
+fi
 if [[ -n ${SMOKE_STRATIFIED+set} && $SMOKE_STRATIFIED != 0 && $SMOKE_STRATIFIED != 1 ]]; then
   echo 'SMOKE_STRATIFIED must be 0 or 1'; exit 2
 fi

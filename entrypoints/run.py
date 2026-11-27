@@ -42,6 +42,8 @@ def main():
     ap.add_argument('--steps', type=int, default=64)
     ap.add_argument('--prompts-per-step', type=int, default=1)
     ap.add_argument('--num-generations', type=int, default=8)
+    ap.add_argument('--backward-batch-size', type=int,
+                    help='completions per backward microbatch; unset uses num-generations; must divide the effective update batch')
     ap.add_argument('--learning-rate', type=float, default=1e-4)
     ap.add_argument('--lr-schedule', choices=['constant', 'linear'], default='constant', help='linear decays the rate to zero over --steps')
     ap.add_argument('--scale-rewards', choices=['group', 'batch', 'none'], default='none',
