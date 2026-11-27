@@ -1,0 +1,4656 @@
+{
+  "runpod-20b-neutral-typed-baseline-retry1-20261126/train-baseline": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "baseline",
+      "penalty": 0.0,
+      "report_mode": "typed",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "none",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 60
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "f1ca9b8ee0b7984935d4f076303eeda339f41aefc4420767f8b78d10dd267db9",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "a7cc5959278420b36458f606c52509175cb14701d585f6bf4d73c798e1423b76",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "3af3f76eafa67f70593373881f3a38a241de483dc1e8365356a8c2a39565f301",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "d164f2d22ec2e5523e23c857715970e6d20ce9c0b53611bc908c7e906bb6971d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "3f1fbf9f5e8069e9d6d9166470857439e8cb73a6e3ddc31e70a853c03c103d87",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "c9b5dd1e13a3834f80f9df0b3489c3bfed01129e",
+    "source": "runpod-20b-neutral-typed-baseline-retry1-20261126/train-baseline/run-settings.json"
+  },
+  "runpod-20b-neutral-typed-lambda0-20261127/train-lambda0": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "typed",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "none",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 60
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "f1ca9b8ee0b7984935d4f076303eeda339f41aefc4420767f8b78d10dd267db9",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "a7cc5959278420b36458f606c52509175cb14701d585f6bf4d73c798e1423b76",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "3af3f76eafa67f70593373881f3a38a241de483dc1e8365356a8c2a39565f301",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "44d0ad54f598909627a7d6ed98ed3d7141865d229c6e52a3ba91c053c276446d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "3f1fbf9f5e8069e9d6d9166470857439e8cb73a6e3ddc31e70a853c03c103d87",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "a3fc53d6093e4fc949be5ddf8a28dacf6d5a461b",
+    "source": "runpod-20b-neutral-typed-lambda0-20261127/train-lambda0/run-settings.json"
+  },
+  "runpod-20b-refute-prose-baseline-20261127/train-baseline": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "baseline",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "refute",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 8192,
+      "seed": 42,
+      "save_every": 1,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "training_sampler": "family-truth",
+      "backward_batch_size": 1,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 6
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "93253bbad880f65697d254191ef4abd4d834237a9e1dbf2cdaeae1725723aff4",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "fbcf4cd72a9a36f87bc247028ea62bfce838c2b346779e79dc27c4cc993fc40b",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "5d59d87b692be0dd32381a444e77fb607f25875f2b075e05b89afa3bf4ea6af4",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "be6500df11fcd631daa6416329fea60b761abc050f6534ee710b3c7f38f131f7",
+        "launch_credentials.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "44d0ad54f598909627a7d6ed98ed3d7141865d229c6e52a3ba91c053c276446d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "7cb7fc96d8046093126519711b220027e45c4332de9e4b21c344b092cd042af8",
+        "training_sampling.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "52e64edda975e1609e6c138c582c8b82c5b2204599f6ff466f6d9d29001de259",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "e95f2172dff47396854dd5e0e7803e78378c7a89",
+    "source": "runpod-20b-refute-prose-baseline-20261127/train-baseline/run-settings.json"
+  },
+  "runpod-20b-refute-prose-lambda0-20261127/train-lambda0": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "refute",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 8192,
+      "seed": 42,
+      "save_every": 1,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "training_sampler": "family-truth",
+      "backward_batch_size": 1,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 6
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "93253bbad880f65697d254191ef4abd4d834237a9e1dbf2cdaeae1725723aff4",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "fbcf4cd72a9a36f87bc247028ea62bfce838c2b346779e79dc27c4cc993fc40b",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "5d59d87b692be0dd32381a444e77fb607f25875f2b075e05b89afa3bf4ea6af4",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "be6500df11fcd631daa6416329fea60b761abc050f6534ee710b3c7f38f131f7",
+        "launch_credentials.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "44d0ad54f598909627a7d6ed98ed3d7141865d229c6e52a3ba91c053c276446d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "7cb7fc96d8046093126519711b220027e45c4332de9e4b21c344b092cd042af8",
+        "training_sampling.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "52e64edda975e1609e6c138c582c8b82c5b2204599f6ff466f6d9d29001de259",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "e95f2172dff47396854dd5e0e7803e78378c7a89",
+    "source": "runpod-20b-refute-prose-lambda0-20261127/train-lambda0/run-settings.json"
+  },
+  "runpod-20b-refute-typed-baseline-strat6-20261127/train-baseline": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "baseline",
+      "penalty": 0.0,
+      "report_mode": "typed",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "refute",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 8192,
+      "seed": 42,
+      "save_every": 1,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "none",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "training_sampler": "family-truth",
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 6
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "93253bbad880f65697d254191ef4abd4d834237a9e1dbf2cdaeae1725723aff4",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "bc2948ce1143541a3f9f88f7650c8fc073056d027e6bf3070ca104dece04bc5a",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "5d59d87b692be0dd32381a444e77fb607f25875f2b075e05b89afa3bf4ea6af4",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "be6500df11fcd631daa6416329fea60b761abc050f6534ee710b3c7f38f131f7",
+        "launch_credentials.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "44d0ad54f598909627a7d6ed98ed3d7141865d229c6e52a3ba91c053c276446d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "7cb7fc96d8046093126519711b220027e45c4332de9e4b21c344b092cd042af8",
+        "training_sampling.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "27da0c4adb71d86f0f1e1f7dea0b3e8f4823524958e56bee2f80746c53589e80",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "dbf1f4140646140a77750ccbb8bbd337e6163c72",
+    "source": "runpod-20b-refute-typed-baseline-strat6-20261127/train-baseline/run-settings.json"
+  },
+  "runpod-20b-refute-typed-baseline-strat6-retry1-20261127/train-baseline": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "baseline",
+      "penalty": 0.0,
+      "report_mode": "typed",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "refute",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 8192,
+      "seed": 42,
+      "save_every": 1,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "none",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "training_sampler": "family-truth",
+      "backward_batch_size": 1,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 6
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "93253bbad880f65697d254191ef4abd4d834237a9e1dbf2cdaeae1725723aff4",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "fbcf4cd72a9a36f87bc247028ea62bfce838c2b346779e79dc27c4cc993fc40b",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "5d59d87b692be0dd32381a444e77fb607f25875f2b075e05b89afa3bf4ea6af4",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "be6500df11fcd631daa6416329fea60b761abc050f6534ee710b3c7f38f131f7",
+        "launch_credentials.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "44d0ad54f598909627a7d6ed98ed3d7141865d229c6e52a3ba91c053c276446d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "7cb7fc96d8046093126519711b220027e45c4332de9e4b21c344b092cd042af8",
+        "training_sampling.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "27da0c4adb71d86f0f1e1f7dea0b3e8f4823524958e56bee2f80746c53589e80",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "d613b80d7648e11704426748531c43442d1c7d9c",
+    "source": "runpod-20b-refute-typed-baseline-strat6-retry1-20261127/train-baseline/run-settings.json"
+  },
+  "runpod-20b-refute-typed-lambda0-strat6-20261127/train-lambda0": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "typed",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "refute",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 8192,
+      "seed": 42,
+      "save_every": 1,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "none",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "training_sampler": "family-truth",
+      "backward_batch_size": 1,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 6
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "93253bbad880f65697d254191ef4abd4d834237a9e1dbf2cdaeae1725723aff4",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "fbcf4cd72a9a36f87bc247028ea62bfce838c2b346779e79dc27c4cc993fc40b",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "5d59d87b692be0dd32381a444e77fb607f25875f2b075e05b89afa3bf4ea6af4",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "be6500df11fcd631daa6416329fea60b761abc050f6534ee710b3c7f38f131f7",
+        "launch_credentials.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "44d0ad54f598909627a7d6ed98ed3d7141865d229c6e52a3ba91c053c276446d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "7cb7fc96d8046093126519711b220027e45c4332de9e4b21c344b092cd042af8",
+        "training_sampling.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "27da0c4adb71d86f0f1e1f7dea0b3e8f4823524958e56bee2f80746c53589e80",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "30c0f3d8ccb61e32178746263164f3ef85f4d4ad",
+    "source": "runpod-20b-refute-typed-lambda0-strat6-20261127/train-lambda0/run-settings.json"
+  },
+  "runpod-20b-refute-typed-lambda0-strat6-retry1-20261127/train-lambda0": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "typed",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "refute",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 8192,
+      "seed": 42,
+      "save_every": 1,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "none",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "training_sampler": "family-truth",
+      "backward_batch_size": 1,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 6
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "93253bbad880f65697d254191ef4abd4d834237a9e1dbf2cdaeae1725723aff4",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "fbcf4cd72a9a36f87bc247028ea62bfce838c2b346779e79dc27c4cc993fc40b",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "5d59d87b692be0dd32381a444e77fb607f25875f2b075e05b89afa3bf4ea6af4",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "be6500df11fcd631daa6416329fea60b761abc050f6534ee710b3c7f38f131f7",
+        "launch_credentials.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "44d0ad54f598909627a7d6ed98ed3d7141865d229c6e52a3ba91c053c276446d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "7cb7fc96d8046093126519711b220027e45c4332de9e4b21c344b092cd042af8",
+        "training_sampling.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "bce28d55caeb5b6935c0e5af578f55d3530964b43165c7a38d4ee52cf58399fe",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "fff5707652f04feddd99f29539732080ec067e8d",
+    "source": "runpod-20b-refute-typed-lambda0-strat6-retry1-20261127/train-lambda0/run-settings.json"
+  },
+  "runpod-20b-refute-typed-lambda0-strat6-retry2-20261127/train-lambda0": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "typed",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "refute",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 8192,
+      "seed": 42,
+      "save_every": 1,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "none",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "training_sampler": "family-truth",
+      "backward_batch_size": 1,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 6
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "93253bbad880f65697d254191ef4abd4d834237a9e1dbf2cdaeae1725723aff4",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "fbcf4cd72a9a36f87bc247028ea62bfce838c2b346779e79dc27c4cc993fc40b",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "5d59d87b692be0dd32381a444e77fb607f25875f2b075e05b89afa3bf4ea6af4",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "be6500df11fcd631daa6416329fea60b761abc050f6534ee710b3c7f38f131f7",
+        "launch_credentials.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "44d0ad54f598909627a7d6ed98ed3d7141865d229c6e52a3ba91c053c276446d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "7cb7fc96d8046093126519711b220027e45c4332de9e4b21c344b092cd042af8",
+        "training_sampling.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "5aeb3e1d8edc84e3c6e5ea0c1da6fba1580ee7c6be6e5b6681c548dd96288104",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "f3a85ca7ddefe830593c2875afe7cec4a0d42b08",
+    "source": "runpod-20b-refute-typed-lambda0-strat6-retry2-20261127/train-lambda0/run-settings.json"
+  },
+  "runpod-20b-refute-typed-lambda0-token-20261127/train-lambda0": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "typed",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "refute",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 8192,
+      "seed": 42,
+      "save_every": 1,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "none",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "training_sampler": "family-truth",
+      "backward_batch_size": 1,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 6
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "93253bbad880f65697d254191ef4abd4d834237a9e1dbf2cdaeae1725723aff4",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "fbcf4cd72a9a36f87bc247028ea62bfce838c2b346779e79dc27c4cc993fc40b",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "5d59d87b692be0dd32381a444e77fb607f25875f2b075e05b89afa3bf4ea6af4",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "be6500df11fcd631daa6416329fea60b761abc050f6534ee710b3c7f38f131f7",
+        "launch_credentials.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "44d0ad54f598909627a7d6ed98ed3d7141865d229c6e52a3ba91c053c276446d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "7cb7fc96d8046093126519711b220027e45c4332de9e4b21c344b092cd042af8",
+        "training_sampling.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "52e64edda975e1609e6c138c582c8b82c5b2204599f6ff466f6d9d29001de259",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "e95f2172dff47396854dd5e0e7803e78378c7a89",
+    "source": "runpod-20b-refute-typed-lambda0-token-20261127/train-lambda0/run-settings.json"
+  },
+  "runpod-20b-refute-typed-lambda05-measure-20261127/train-lambda05": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.5,
+      "report_mode": "typed",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "refute",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 8192,
+      "seed": 42,
+      "save_every": 1,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "none",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 6
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "93253bbad880f65697d254191ef4abd4d834237a9e1dbf2cdaeae1725723aff4",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "a7cc5959278420b36458f606c52509175cb14701d585f6bf4d73c798e1423b76",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "5d59d87b692be0dd32381a444e77fb607f25875f2b075e05b89afa3bf4ea6af4",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "be6500df11fcd631daa6416329fea60b761abc050f6534ee710b3c7f38f131f7",
+        "launch_credentials.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "44d0ad54f598909627a7d6ed98ed3d7141865d229c6e52a3ba91c053c276446d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "3f1fbf9f5e8069e9d6d9166470857439e8cb73a6e3ddc31e70a853c03c103d87",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "33117d5c9bbe0dc4bbe1d9073b53e2393471dd95",
+    "source": "runpod-20b-refute-typed-lambda05-measure-20261127/train-lambda05/run-settings.json"
+  },
+  "runpod-part1-60step-20261126/train-baseline": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "baseline",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 60
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "51276774bc60dae01e531711becf331f7d57f2eead0aa10d6319813c292227ae",
+        "budget.py"
+      ],
+      [
+        "8e24c2907a85e6539fd0bf49a4220eccfb32b605c4c69e1b0463d7a87f921428",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "40ac80a715ff8a67e395a9e83c1d50eba80fad213abc17a61410fcf3890c4544",
+        "export_transcripts.py"
+      ],
+      [
+        "dbf18ed47a4284135df5b6f7ce85caf5b5cdc708976acc5c73a9adfd0660df68",
+        "formal_audit.py"
+      ],
+      [
+        "f7c4930ef29d18a0f93864eafbf97029978b182055b4885934cec62dd7625619",
+        "gates.py"
+      ],
+      [
+        "5aa707099fc675e37944ae6e2f591fab2a6d6787b2cc28cefc1f1f84e96eabff",
+        "gen_bench.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "a2a5b89928c6f3568528aaebf49db5795a9ce88758657746f1546159d8393fa7",
+        "hf_grpo.py"
+      ],
+      [
+        "564d8bce52d9e38a7baa8bbec64ca9350c2a6a51435aed3efd770ad8dc4e53fb",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "f22af034ab1417420e9d58d95d4ea85a57fe134d086fc0382a08e849ae632aac",
+        "judge.py"
+      ],
+      [
+        "b57bf817f753ebc4baf303e9e6978a74a6f811cd374caf88feddab1770ed60a4",
+        "judge_holdout.py"
+      ],
+      [
+        "f0020aea366eea66ca49ab4509e3bff2c0f23f01ab4e316a9241f6fa1748d4c0",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "83388e3dae2718574e8374e2fc3f5028af4e4b7530e5ef49ef63ef2b0397ccc8",
+        "openai_probe.py"
+      ],
+      [
+        "89a49255e1c472c24152c5909c71cf4b70da7d2962f4317a504e739dbd16b28a",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "921cfee4aed1ab07ea13442f29d25e3d2d6d0b9904cee6c320eb2133b4def129",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "da09ba0e7957a3f5b1e84b544ddee0d948d8e3fd58156dc1f87149958f679255",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "66d77fdfc836446c00eadbbf2ea7f3e9d3b79e5fb8e3b5e1f5915c79e5a2da2b",
+        "probe_labels.py"
+      ],
+      [
+        "51990a97f0a2b6f533b9dc56c39c9c6f09e73fe12afeff229ffb5801f1de87c6",
+        "probe_rules.py"
+      ],
+      [
+        "7b2ffa2616ba815210c026e0234b3e9e085483cb7ec7f918a5810b74a99ae4c2",
+        "prompts.py"
+      ],
+      [
+        "bffd8dafebf9a71233e8641b5a0921a06ec18fd0f500bcd7724fd6db875f288e",
+        "rates.py"
+      ],
+      [
+        "1b85a44dd8f2b05359d0cf08bbfca134a029e6c3282705b2d800e8f39c54d827",
+        "reporting.py"
+      ],
+      [
+        "1f587e2b5bd30eefe3ec720f5488929152e5cdf9de264b962b295dc57d7e05a4",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "7e3597331baef9bab71dac58a963c508eb312b4393125d6682347da2081520dc",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "afecb542e2ce8ffc60e6546b819c18f3675c98c9b0767934dc0b37437fae84ef",
+        "verifier.py"
+      ],
+      [
+        "941c030e655d5a8fae970d8b954b3e48840a462cd435dcd23bdd63671c3e9ebd",
+        "vllm_probe.py"
+      ],
+      [
+        "3f1fbf9f5e8069e9d6d9166470857439e8cb73a6e3ddc31e70a853c03c103d87",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": null,
+    "source": "runpod-part1-60step-20261126/train-baseline/run-settings.json"
+  },
+  "runpod-part1-60step-20261126/train-lambda0": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 60
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "51276774bc60dae01e531711becf331f7d57f2eead0aa10d6319813c292227ae",
+        "budget.py"
+      ],
+      [
+        "8e24c2907a85e6539fd0bf49a4220eccfb32b605c4c69e1b0463d7a87f921428",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "40ac80a715ff8a67e395a9e83c1d50eba80fad213abc17a61410fcf3890c4544",
+        "export_transcripts.py"
+      ],
+      [
+        "dbf18ed47a4284135df5b6f7ce85caf5b5cdc708976acc5c73a9adfd0660df68",
+        "formal_audit.py"
+      ],
+      [
+        "f7c4930ef29d18a0f93864eafbf97029978b182055b4885934cec62dd7625619",
+        "gates.py"
+      ],
+      [
+        "5aa707099fc675e37944ae6e2f591fab2a6d6787b2cc28cefc1f1f84e96eabff",
+        "gen_bench.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "a2a5b89928c6f3568528aaebf49db5795a9ce88758657746f1546159d8393fa7",
+        "hf_grpo.py"
+      ],
+      [
+        "564d8bce52d9e38a7baa8bbec64ca9350c2a6a51435aed3efd770ad8dc4e53fb",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "f22af034ab1417420e9d58d95d4ea85a57fe134d086fc0382a08e849ae632aac",
+        "judge.py"
+      ],
+      [
+        "b57bf817f753ebc4baf303e9e6978a74a6f811cd374caf88feddab1770ed60a4",
+        "judge_holdout.py"
+      ],
+      [
+        "f0020aea366eea66ca49ab4509e3bff2c0f23f01ab4e316a9241f6fa1748d4c0",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "83388e3dae2718574e8374e2fc3f5028af4e4b7530e5ef49ef63ef2b0397ccc8",
+        "openai_probe.py"
+      ],
+      [
+        "89a49255e1c472c24152c5909c71cf4b70da7d2962f4317a504e739dbd16b28a",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "921cfee4aed1ab07ea13442f29d25e3d2d6d0b9904cee6c320eb2133b4def129",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "da09ba0e7957a3f5b1e84b544ddee0d948d8e3fd58156dc1f87149958f679255",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "66d77fdfc836446c00eadbbf2ea7f3e9d3b79e5fb8e3b5e1f5915c79e5a2da2b",
+        "probe_labels.py"
+      ],
+      [
+        "51990a97f0a2b6f533b9dc56c39c9c6f09e73fe12afeff229ffb5801f1de87c6",
+        "probe_rules.py"
+      ],
+      [
+        "7b2ffa2616ba815210c026e0234b3e9e085483cb7ec7f918a5810b74a99ae4c2",
+        "prompts.py"
+      ],
+      [
+        "bffd8dafebf9a71233e8641b5a0921a06ec18fd0f500bcd7724fd6db875f288e",
+        "rates.py"
+      ],
+      [
+        "1b85a44dd8f2b05359d0cf08bbfca134a029e6c3282705b2d800e8f39c54d827",
+        "reporting.py"
+      ],
+      [
+        "1f587e2b5bd30eefe3ec720f5488929152e5cdf9de264b962b295dc57d7e05a4",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "7e3597331baef9bab71dac58a963c508eb312b4393125d6682347da2081520dc",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "afecb542e2ce8ffc60e6546b819c18f3675c98c9b0767934dc0b37437fae84ef",
+        "verifier.py"
+      ],
+      [
+        "941c030e655d5a8fae970d8b954b3e48840a462cd435dcd23bdd63671c3e9ebd",
+        "vllm_probe.py"
+      ],
+      [
+        "3f1fbf9f5e8069e9d6d9166470857439e8cb73a6e3ddc31e70a853c03c103d87",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": null,
+    "source": "runpod-part1-60step-20261126/train-lambda0/run-settings.json"
+  },
+  "runpod-part1-lambda05-20261126/train-lambda05": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.5,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 60
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "51276774bc60dae01e531711becf331f7d57f2eead0aa10d6319813c292227ae",
+        "budget.py"
+      ],
+      [
+        "8e24c2907a85e6539fd0bf49a4220eccfb32b605c4c69e1b0463d7a87f921428",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "40ac80a715ff8a67e395a9e83c1d50eba80fad213abc17a61410fcf3890c4544",
+        "export_transcripts.py"
+      ],
+      [
+        "dbf18ed47a4284135df5b6f7ce85caf5b5cdc708976acc5c73a9adfd0660df68",
+        "formal_audit.py"
+      ],
+      [
+        "36323af5ebf8043eba49071ab87741a1357c11849e1c7b722276b72128c485ef",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "33699e17fad2ba7b3233c9b59ba4a22a17eba3995e87340dfc631c1f17ac6e00",
+        "hf_grpo.py"
+      ],
+      [
+        "564d8bce52d9e38a7baa8bbec64ca9350c2a6a51435aed3efd770ad8dc4e53fb",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "f22af034ab1417420e9d58d95d4ea85a57fe134d086fc0382a08e849ae632aac",
+        "judge.py"
+      ],
+      [
+        "b57bf817f753ebc4baf303e9e6978a74a6f811cd374caf88feddab1770ed60a4",
+        "judge_holdout.py"
+      ],
+      [
+        "f0020aea366eea66ca49ab4509e3bff2c0f23f01ab4e316a9241f6fa1748d4c0",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ec6088554c5c62810b3b5cf4c40ca188678f1e0fccea8a99c1aba429a2d76136",
+        "openai_probe.py"
+      ],
+      [
+        "04d5eb57432d738edae5fb84d6a9382bbf5bf935a7fd5821166cf6c14a1b0144",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "921cfee4aed1ab07ea13442f29d25e3d2d6d0b9904cee6c320eb2133b4def129",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "da09ba0e7957a3f5b1e84b544ddee0d948d8e3fd58156dc1f87149958f679255",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "66d77fdfc836446c00eadbbf2ea7f3e9d3b79e5fb8e3b5e1f5915c79e5a2da2b",
+        "probe_labels.py"
+      ],
+      [
+        "51990a97f0a2b6f533b9dc56c39c9c6f09e73fe12afeff229ffb5801f1de87c6",
+        "probe_rules.py"
+      ],
+      [
+        "7b2ffa2616ba815210c026e0234b3e9e085483cb7ec7f918a5810b74a99ae4c2",
+        "prompts.py"
+      ],
+      [
+        "8f47fdbe6a64894b5f307a19c906ff4b5083ee9229985840326940c25335a1dc",
+        "provenance.py"
+      ],
+      [
+        "bffd8dafebf9a71233e8641b5a0921a06ec18fd0f500bcd7724fd6db875f288e",
+        "rates.py"
+      ],
+      [
+        "653acb1ea1b07990039779cba98130fb988096e36e28d2d5ce3fc59c8af64598",
+        "reporting.py"
+      ],
+      [
+        "039e29d20efe9d558bb6f1a4b4f26e857d6b744362448323d9792536e2ab1145",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "7e3597331baef9bab71dac58a963c508eb312b4393125d6682347da2081520dc",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "afecb542e2ce8ffc60e6546b819c18f3675c98c9b0767934dc0b37437fae84ef",
+        "verifier.py"
+      ],
+      [
+        "4edb668a6320270f625c0564297d96f5cb51c4ee6fc525bf1960f2ed4c51f26e",
+        "vllm_probe.py"
+      ],
+      [
+        "3f1fbf9f5e8069e9d6d9166470857439e8cb73a6e3ddc31e70a853c03c103d87",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": null,
+    "source": "runpod-part1-lambda05-20261126/train-lambda05/run-settings.json"
+  },
+  "runpod-part1-measure-20261126/train-baseline": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "baseline",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 4,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 4
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "e5bc6d4de10651ec9adbbb18a7926ca432b13e57362ae23f07a250386d97ed2b",
+        "budget.py"
+      ],
+      [
+        "8e24c2907a85e6539fd0bf49a4220eccfb32b605c4c69e1b0463d7a87f921428",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "40ac80a715ff8a67e395a9e83c1d50eba80fad213abc17a61410fcf3890c4544",
+        "export_transcripts.py"
+      ],
+      [
+        "dbf18ed47a4284135df5b6f7ce85caf5b5cdc708976acc5c73a9adfd0660df68",
+        "formal_audit.py"
+      ],
+      [
+        "95eb69c9a79f86fd70852e8a5eeaada10b169c5c370384a67bb6c4e70dcfa067",
+        "gates.py"
+      ],
+      [
+        "5aa707099fc675e37944ae6e2f591fab2a6d6787b2cc28cefc1f1f84e96eabff",
+        "gen_bench.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "bc09dc1df75d8c95ec98623566e0bf7025f79c13d995fb41dba09063b490a7c6",
+        "hf_grpo.py"
+      ],
+      [
+        "564d8bce52d9e38a7baa8bbec64ca9350c2a6a51435aed3efd770ad8dc4e53fb",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "e7cd4441c87587ef0b3f5e3deaac0b7f7f1dc76d2cd7f3d58dcd7863995edd57",
+        "judge.py"
+      ],
+      [
+        "d15317e2e893f2700b322a965d29b38c5035ff120bc3b85057445d0503b13b9e",
+        "judge_holdout.py"
+      ],
+      [
+        "f0020aea366eea66ca49ab4509e3bff2c0f23f01ab4e316a9241f6fa1748d4c0",
+        "mlx_rl.py"
+      ],
+      [
+        "9650acdad51139a74057101ee841d1a207bddd757694e433ad607df2aa094940",
+        "model_io.py"
+      ],
+      [
+        "1200304c0f0f3ab8442de2fc10a332003d447bcf27e4e6d5fe901ddf45650bd3",
+        "openai_probe.py"
+      ],
+      [
+        "136f2d0fdb28f8cf6c09095599ab8b6bd32ce7a7fec4579aa910c1b5b0247798",
+        "outcomes.py"
+      ],
+      [
+        "e1447a56fe23968a78164d3d45dcb58173b098d267735dd694516333110e3d71",
+        "pilot.py"
+      ],
+      [
+        "792c34324d0b5d1f32241963ab6ee94c2749361b00672cbaf95adf3b2809e6fa",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "82e76644034eb463cc7ab541510244961e7ab6bc7339410b68ed2470fb2cdae4",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "66d77fdfc836446c00eadbbf2ea7f3e9d3b79e5fb8e3b5e1f5915c79e5a2da2b",
+        "probe_labels.py"
+      ],
+      [
+        "7e713e418f38bf588e06e8916f66a0ae4aee0b8c65737df3bee7cded92c71574",
+        "probe_rules.py"
+      ],
+      [
+        "7b2ffa2616ba815210c026e0234b3e9e085483cb7ec7f918a5810b74a99ae4c2",
+        "prompts.py"
+      ],
+      [
+        "1b85a44dd8f2b05359d0cf08bbfca134a029e6c3282705b2d800e8f39c54d827",
+        "reporting.py"
+      ],
+      [
+        "1f587e2b5bd30eefe3ec720f5488929152e5cdf9de264b962b295dc57d7e05a4",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "7e3597331baef9bab71dac58a963c508eb312b4393125d6682347da2081520dc",
+        "tasks.py"
+      ],
+      [
+        "a9add816525422187855a4a4a98cac8203184afc5138b86f9762f0bb1519a58f",
+        "tasks_hard.py"
+      ],
+      [
+        "d6b11114bb05d255fcd074b7d4b7b190403d503c135a7d1cc4ae76bd3b68d06e",
+        "verifier.py"
+      ],
+      [
+        "941c030e655d5a8fae970d8b954b3e48840a462cd435dcd23bdd63671c3e9ebd",
+        "vllm_probe.py"
+      ],
+      [
+        "d9a5f5b5c380e54b289b70a62583f95292801b6e7f3a362331c6bff6e6b6380a",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": null,
+    "source": "runpod-part1-measure-20261126/train-baseline/run-settings.json"
+  },
+  "runpod-part1-measure-20261126/train-lambda0": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 4,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 4
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "e5bc6d4de10651ec9adbbb18a7926ca432b13e57362ae23f07a250386d97ed2b",
+        "budget.py"
+      ],
+      [
+        "8e24c2907a85e6539fd0bf49a4220eccfb32b605c4c69e1b0463d7a87f921428",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "40ac80a715ff8a67e395a9e83c1d50eba80fad213abc17a61410fcf3890c4544",
+        "export_transcripts.py"
+      ],
+      [
+        "dbf18ed47a4284135df5b6f7ce85caf5b5cdc708976acc5c73a9adfd0660df68",
+        "formal_audit.py"
+      ],
+      [
+        "95eb69c9a79f86fd70852e8a5eeaada10b169c5c370384a67bb6c4e70dcfa067",
+        "gates.py"
+      ],
+      [
+        "5aa707099fc675e37944ae6e2f591fab2a6d6787b2cc28cefc1f1f84e96eabff",
+        "gen_bench.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "bc09dc1df75d8c95ec98623566e0bf7025f79c13d995fb41dba09063b490a7c6",
+        "hf_grpo.py"
+      ],
+      [
+        "564d8bce52d9e38a7baa8bbec64ca9350c2a6a51435aed3efd770ad8dc4e53fb",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "e7cd4441c87587ef0b3f5e3deaac0b7f7f1dc76d2cd7f3d58dcd7863995edd57",
+        "judge.py"
+      ],
+      [
+        "d15317e2e893f2700b322a965d29b38c5035ff120bc3b85057445d0503b13b9e",
+        "judge_holdout.py"
+      ],
+      [
+        "f0020aea366eea66ca49ab4509e3bff2c0f23f01ab4e316a9241f6fa1748d4c0",
+        "mlx_rl.py"
+      ],
+      [
+        "9650acdad51139a74057101ee841d1a207bddd757694e433ad607df2aa094940",
+        "model_io.py"
+      ],
+      [
+        "1200304c0f0f3ab8442de2fc10a332003d447bcf27e4e6d5fe901ddf45650bd3",
+        "openai_probe.py"
+      ],
+      [
+        "136f2d0fdb28f8cf6c09095599ab8b6bd32ce7a7fec4579aa910c1b5b0247798",
+        "outcomes.py"
+      ],
+      [
+        "e1447a56fe23968a78164d3d45dcb58173b098d267735dd694516333110e3d71",
+        "pilot.py"
+      ],
+      [
+        "792c34324d0b5d1f32241963ab6ee94c2749361b00672cbaf95adf3b2809e6fa",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "82e76644034eb463cc7ab541510244961e7ab6bc7339410b68ed2470fb2cdae4",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "66d77fdfc836446c00eadbbf2ea7f3e9d3b79e5fb8e3b5e1f5915c79e5a2da2b",
+        "probe_labels.py"
+      ],
+      [
+        "7e713e418f38bf588e06e8916f66a0ae4aee0b8c65737df3bee7cded92c71574",
+        "probe_rules.py"
+      ],
+      [
+        "7b2ffa2616ba815210c026e0234b3e9e085483cb7ec7f918a5810b74a99ae4c2",
+        "prompts.py"
+      ],
+      [
+        "1b85a44dd8f2b05359d0cf08bbfca134a029e6c3282705b2d800e8f39c54d827",
+        "reporting.py"
+      ],
+      [
+        "1f587e2b5bd30eefe3ec720f5488929152e5cdf9de264b962b295dc57d7e05a4",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "7e3597331baef9bab71dac58a963c508eb312b4393125d6682347da2081520dc",
+        "tasks.py"
+      ],
+      [
+        "a9add816525422187855a4a4a98cac8203184afc5138b86f9762f0bb1519a58f",
+        "tasks_hard.py"
+      ],
+      [
+        "d6b11114bb05d255fcd074b7d4b7b190403d503c135a7d1cc4ae76bd3b68d06e",
+        "verifier.py"
+      ],
+      [
+        "941c030e655d5a8fae970d8b954b3e48840a462cd435dcd23bdd63671c3e9ebd",
+        "vllm_probe.py"
+      ],
+      [
+        "d9a5f5b5c380e54b289b70a62583f95292801b6e7f3a362331c6bff6e6b6380a",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": null,
+    "source": "runpod-part1-measure-20261126/train-lambda0/run-settings.json"
+  },
+  "runpod-part1-measure2-20261126/train-baseline": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "baseline",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 4,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 4
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "e5bc6d4de10651ec9adbbb18a7926ca432b13e57362ae23f07a250386d97ed2b",
+        "budget.py"
+      ],
+      [
+        "8e24c2907a85e6539fd0bf49a4220eccfb32b605c4c69e1b0463d7a87f921428",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "40ac80a715ff8a67e395a9e83c1d50eba80fad213abc17a61410fcf3890c4544",
+        "export_transcripts.py"
+      ],
+      [
+        "dbf18ed47a4284135df5b6f7ce85caf5b5cdc708976acc5c73a9adfd0660df68",
+        "formal_audit.py"
+      ],
+      [
+        "414f9343e18be423fb8999d1c0cb2f56b7c25c0f3010fbead9f214ebbd755917",
+        "gates.py"
+      ],
+      [
+        "5aa707099fc675e37944ae6e2f591fab2a6d6787b2cc28cefc1f1f84e96eabff",
+        "gen_bench.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "2d91adce1ad669c6237f9ed88c102415daf2c51374ecf105495fd529e1d7c415",
+        "hf_grpo.py"
+      ],
+      [
+        "564d8bce52d9e38a7baa8bbec64ca9350c2a6a51435aed3efd770ad8dc4e53fb",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "da32bb9fd1c44d86ba3b3c55d05bfce2668adbabdc1612e356e99b9d81dfd8fe",
+        "judge.py"
+      ],
+      [
+        "d15317e2e893f2700b322a965d29b38c5035ff120bc3b85057445d0503b13b9e",
+        "judge_holdout.py"
+      ],
+      [
+        "f0020aea366eea66ca49ab4509e3bff2c0f23f01ab4e316a9241f6fa1748d4c0",
+        "mlx_rl.py"
+      ],
+      [
+        "72fdeed314235fb24e4d2b6b819d947a6f529f2cdd5055e9c359fbadd74def9a",
+        "model_io.py"
+      ],
+      [
+        "1200304c0f0f3ab8442de2fc10a332003d447bcf27e4e6d5fe901ddf45650bd3",
+        "openai_probe.py"
+      ],
+      [
+        "de823528a5b63cf8055cf44c1929896c1be23f4f2503fea9aedac5bdc08b41d1",
+        "outcomes.py"
+      ],
+      [
+        "e1447a56fe23968a78164d3d45dcb58173b098d267735dd694516333110e3d71",
+        "pilot.py"
+      ],
+      [
+        "792c34324d0b5d1f32241963ab6ee94c2749361b00672cbaf95adf3b2809e6fa",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "82e76644034eb463cc7ab541510244961e7ab6bc7339410b68ed2470fb2cdae4",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "66d77fdfc836446c00eadbbf2ea7f3e9d3b79e5fb8e3b5e1f5915c79e5a2da2b",
+        "probe_labels.py"
+      ],
+      [
+        "7e713e418f38bf588e06e8916f66a0ae4aee0b8c65737df3bee7cded92c71574",
+        "probe_rules.py"
+      ],
+      [
+        "7b2ffa2616ba815210c026e0234b3e9e085483cb7ec7f918a5810b74a99ae4c2",
+        "prompts.py"
+      ],
+      [
+        "1b85a44dd8f2b05359d0cf08bbfca134a029e6c3282705b2d800e8f39c54d827",
+        "reporting.py"
+      ],
+      [
+        "1f587e2b5bd30eefe3ec720f5488929152e5cdf9de264b962b295dc57d7e05a4",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "7e3597331baef9bab71dac58a963c508eb312b4393125d6682347da2081520dc",
+        "tasks.py"
+      ],
+      [
+        "a9add816525422187855a4a4a98cac8203184afc5138b86f9762f0bb1519a58f",
+        "tasks_hard.py"
+      ],
+      [
+        "d6b11114bb05d255fcd074b7d4b7b190403d503c135a7d1cc4ae76bd3b68d06e",
+        "verifier.py"
+      ],
+      [
+        "941c030e655d5a8fae970d8b954b3e48840a462cd435dcd23bdd63671c3e9ebd",
+        "vllm_probe.py"
+      ],
+      [
+        "4e1a52d23cc7cc69cdf4a9e642aa0cebf50541e608536f1ef9ed374e98973ede",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": null,
+    "source": "runpod-part1-measure2-20261126/train-baseline/run-settings.json"
+  },
+  "runpod-part1-measure2-20261126/train-lambda0": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 4,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 4
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "e5bc6d4de10651ec9adbbb18a7926ca432b13e57362ae23f07a250386d97ed2b",
+        "budget.py"
+      ],
+      [
+        "8e24c2907a85e6539fd0bf49a4220eccfb32b605c4c69e1b0463d7a87f921428",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "40ac80a715ff8a67e395a9e83c1d50eba80fad213abc17a61410fcf3890c4544",
+        "export_transcripts.py"
+      ],
+      [
+        "dbf18ed47a4284135df5b6f7ce85caf5b5cdc708976acc5c73a9adfd0660df68",
+        "formal_audit.py"
+      ],
+      [
+        "414f9343e18be423fb8999d1c0cb2f56b7c25c0f3010fbead9f214ebbd755917",
+        "gates.py"
+      ],
+      [
+        "5aa707099fc675e37944ae6e2f591fab2a6d6787b2cc28cefc1f1f84e96eabff",
+        "gen_bench.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "2d91adce1ad669c6237f9ed88c102415daf2c51374ecf105495fd529e1d7c415",
+        "hf_grpo.py"
+      ],
+      [
+        "564d8bce52d9e38a7baa8bbec64ca9350c2a6a51435aed3efd770ad8dc4e53fb",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "da32bb9fd1c44d86ba3b3c55d05bfce2668adbabdc1612e356e99b9d81dfd8fe",
+        "judge.py"
+      ],
+      [
+        "d15317e2e893f2700b322a965d29b38c5035ff120bc3b85057445d0503b13b9e",
+        "judge_holdout.py"
+      ],
+      [
+        "f0020aea366eea66ca49ab4509e3bff2c0f23f01ab4e316a9241f6fa1748d4c0",
+        "mlx_rl.py"
+      ],
+      [
+        "72fdeed314235fb24e4d2b6b819d947a6f529f2cdd5055e9c359fbadd74def9a",
+        "model_io.py"
+      ],
+      [
+        "1200304c0f0f3ab8442de2fc10a332003d447bcf27e4e6d5fe901ddf45650bd3",
+        "openai_probe.py"
+      ],
+      [
+        "de823528a5b63cf8055cf44c1929896c1be23f4f2503fea9aedac5bdc08b41d1",
+        "outcomes.py"
+      ],
+      [
+        "e1447a56fe23968a78164d3d45dcb58173b098d267735dd694516333110e3d71",
+        "pilot.py"
+      ],
+      [
+        "792c34324d0b5d1f32241963ab6ee94c2749361b00672cbaf95adf3b2809e6fa",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "82e76644034eb463cc7ab541510244961e7ab6bc7339410b68ed2470fb2cdae4",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "66d77fdfc836446c00eadbbf2ea7f3e9d3b79e5fb8e3b5e1f5915c79e5a2da2b",
+        "probe_labels.py"
+      ],
+      [
+        "7e713e418f38bf588e06e8916f66a0ae4aee0b8c65737df3bee7cded92c71574",
+        "probe_rules.py"
+      ],
+      [
+        "7b2ffa2616ba815210c026e0234b3e9e085483cb7ec7f918a5810b74a99ae4c2",
+        "prompts.py"
+      ],
+      [
+        "1b85a44dd8f2b05359d0cf08bbfca134a029e6c3282705b2d800e8f39c54d827",
+        "reporting.py"
+      ],
+      [
+        "1f587e2b5bd30eefe3ec720f5488929152e5cdf9de264b962b295dc57d7e05a4",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "7e3597331baef9bab71dac58a963c508eb312b4393125d6682347da2081520dc",
+        "tasks.py"
+      ],
+      [
+        "a9add816525422187855a4a4a98cac8203184afc5138b86f9762f0bb1519a58f",
+        "tasks_hard.py"
+      ],
+      [
+        "d6b11114bb05d255fcd074b7d4b7b190403d503c135a7d1cc4ae76bd3b68d06e",
+        "verifier.py"
+      ],
+      [
+        "941c030e655d5a8fae970d8b954b3e48840a462cd435dcd23bdd63671c3e9ebd",
+        "vllm_probe.py"
+      ],
+      [
+        "4e1a52d23cc7cc69cdf4a9e642aa0cebf50541e608536f1ef9ed374e98973ede",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": null,
+    "source": "runpod-part1-measure2-20261126/train-lambda0/run-settings.json"
+  },
+  "runpod-part1-poc60-20261126/train-baseline": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "baseline",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 1,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 60
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "e5bc6d4de10651ec9adbbb18a7926ca432b13e57362ae23f07a250386d97ed2b",
+        "budget.py"
+      ],
+      [
+        "8e24c2907a85e6539fd0bf49a4220eccfb32b605c4c69e1b0463d7a87f921428",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "40ac80a715ff8a67e395a9e83c1d50eba80fad213abc17a61410fcf3890c4544",
+        "export_transcripts.py"
+      ],
+      [
+        "dbf18ed47a4284135df5b6f7ce85caf5b5cdc708976acc5c73a9adfd0660df68",
+        "formal_audit.py"
+      ],
+      [
+        "95eb69c9a79f86fd70852e8a5eeaada10b169c5c370384a67bb6c4e70dcfa067",
+        "gates.py"
+      ],
+      [
+        "a3bc2dee603da6a10881b6b62a8b3e7af091cabb414fe13f03ebc9fde7a9773f",
+        "gen_bench.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "7fb68108d71c3d526d828b461fa2cf1c8e84f2e8bca3fbc52ecf6764db436051",
+        "hf_grpo.py"
+      ],
+      [
+        "564d8bce52d9e38a7baa8bbec64ca9350c2a6a51435aed3efd770ad8dc4e53fb",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "e7cd4441c87587ef0b3f5e3deaac0b7f7f1dc76d2cd7f3d58dcd7863995edd57",
+        "judge.py"
+      ],
+      [
+        "d15317e2e893f2700b322a965d29b38c5035ff120bc3b85057445d0503b13b9e",
+        "judge_holdout.py"
+      ],
+      [
+        "0b95d1131999d614d9cf65f015443fc2f677831517ded1fc9a8890f02da683f2",
+        "mlx_rl.py"
+      ],
+      [
+        "9650acdad51139a74057101ee841d1a207bddd757694e433ad607df2aa094940",
+        "model_io.py"
+      ],
+      [
+        "1200304c0f0f3ab8442de2fc10a332003d447bcf27e4e6d5fe901ddf45650bd3",
+        "openai_probe.py"
+      ],
+      [
+        "136f2d0fdb28f8cf6c09095599ab8b6bd32ce7a7fec4579aa910c1b5b0247798",
+        "outcomes.py"
+      ],
+      [
+        "e1447a56fe23968a78164d3d45dcb58173b098d267735dd694516333110e3d71",
+        "pilot.py"
+      ],
+      [
+        "792c34324d0b5d1f32241963ab6ee94c2749361b00672cbaf95adf3b2809e6fa",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "82e76644034eb463cc7ab541510244961e7ab6bc7339410b68ed2470fb2cdae4",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "66d77fdfc836446c00eadbbf2ea7f3e9d3b79e5fb8e3b5e1f5915c79e5a2da2b",
+        "probe_labels.py"
+      ],
+      [
+        "7e713e418f38bf588e06e8916f66a0ae4aee0b8c65737df3bee7cded92c71574",
+        "probe_rules.py"
+      ],
+      [
+        "7b2ffa2616ba815210c026e0234b3e9e085483cb7ec7f918a5810b74a99ae4c2",
+        "prompts.py"
+      ],
+      [
+        "1b85a44dd8f2b05359d0cf08bbfca134a029e6c3282705b2d800e8f39c54d827",
+        "reporting.py"
+      ],
+      [
+        "1f587e2b5bd30eefe3ec720f5488929152e5cdf9de264b962b295dc57d7e05a4",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "7e3597331baef9bab71dac58a963c508eb312b4393125d6682347da2081520dc",
+        "tasks.py"
+      ],
+      [
+        "a9add816525422187855a4a4a98cac8203184afc5138b86f9762f0bb1519a58f",
+        "tasks_hard.py"
+      ],
+      [
+        "d6b11114bb05d255fcd074b7d4b7b190403d503c135a7d1cc4ae76bd3b68d06e",
+        "verifier.py"
+      ],
+      [
+        "abdb4ce5ffd4dc850dd1d0a99373924a7df7e96f347107151aacf6f9d3d440c6",
+        "vllm_probe.py"
+      ],
+      [
+        "4d978c68f4757d67a774f161c02a1ac65bd73349f8a84df43b59d977ca0bd9b1",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": null,
+    "source": "runpod-part1-poc60-20261126/train-baseline/run-settings.json"
+  },
+  "runpod-part1-poc60-20261126/train-lambda0": {
+    "settings": {
+      "model": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": "low",
+      "thinking": "unsupported",
+      "mxfp4": "dequantize",
+      "quant": "none",
+      "attn_implementation": "eager",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 1,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 60
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "e5bc6d4de10651ec9adbbb18a7926ca432b13e57362ae23f07a250386d97ed2b",
+        "budget.py"
+      ],
+      [
+        "8e24c2907a85e6539fd0bf49a4220eccfb32b605c4c69e1b0463d7a87f921428",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "40ac80a715ff8a67e395a9e83c1d50eba80fad213abc17a61410fcf3890c4544",
+        "export_transcripts.py"
+      ],
+      [
+        "dbf18ed47a4284135df5b6f7ce85caf5b5cdc708976acc5c73a9adfd0660df68",
+        "formal_audit.py"
+      ],
+      [
+        "95eb69c9a79f86fd70852e8a5eeaada10b169c5c370384a67bb6c4e70dcfa067",
+        "gates.py"
+      ],
+      [
+        "a3bc2dee603da6a10881b6b62a8b3e7af091cabb414fe13f03ebc9fde7a9773f",
+        "gen_bench.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "7fb68108d71c3d526d828b461fa2cf1c8e84f2e8bca3fbc52ecf6764db436051",
+        "hf_grpo.py"
+      ],
+      [
+        "564d8bce52d9e38a7baa8bbec64ca9350c2a6a51435aed3efd770ad8dc4e53fb",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "e7cd4441c87587ef0b3f5e3deaac0b7f7f1dc76d2cd7f3d58dcd7863995edd57",
+        "judge.py"
+      ],
+      [
+        "d15317e2e893f2700b322a965d29b38c5035ff120bc3b85057445d0503b13b9e",
+        "judge_holdout.py"
+      ],
+      [
+        "0b95d1131999d614d9cf65f015443fc2f677831517ded1fc9a8890f02da683f2",
+        "mlx_rl.py"
+      ],
+      [
+        "9650acdad51139a74057101ee841d1a207bddd757694e433ad607df2aa094940",
+        "model_io.py"
+      ],
+      [
+        "1200304c0f0f3ab8442de2fc10a332003d447bcf27e4e6d5fe901ddf45650bd3",
+        "openai_probe.py"
+      ],
+      [
+        "136f2d0fdb28f8cf6c09095599ab8b6bd32ce7a7fec4579aa910c1b5b0247798",
+        "outcomes.py"
+      ],
+      [
+        "e1447a56fe23968a78164d3d45dcb58173b098d267735dd694516333110e3d71",
+        "pilot.py"
+      ],
+      [
+        "792c34324d0b5d1f32241963ab6ee94c2749361b00672cbaf95adf3b2809e6fa",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "82e76644034eb463cc7ab541510244961e7ab6bc7339410b68ed2470fb2cdae4",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "66d77fdfc836446c00eadbbf2ea7f3e9d3b79e5fb8e3b5e1f5915c79e5a2da2b",
+        "probe_labels.py"
+      ],
+      [
+        "7e713e418f38bf588e06e8916f66a0ae4aee0b8c65737df3bee7cded92c71574",
+        "probe_rules.py"
+      ],
+      [
+        "7b2ffa2616ba815210c026e0234b3e9e085483cb7ec7f918a5810b74a99ae4c2",
+        "prompts.py"
+      ],
+      [
+        "1b85a44dd8f2b05359d0cf08bbfca134a029e6c3282705b2d800e8f39c54d827",
+        "reporting.py"
+      ],
+      [
+        "1f587e2b5bd30eefe3ec720f5488929152e5cdf9de264b962b295dc57d7e05a4",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "7e3597331baef9bab71dac58a963c508eb312b4393125d6682347da2081520dc",
+        "tasks.py"
+      ],
+      [
+        "a9add816525422187855a4a4a98cac8203184afc5138b86f9762f0bb1519a58f",
+        "tasks_hard.py"
+      ],
+      [
+        "d6b11114bb05d255fcd074b7d4b7b190403d503c135a7d1cc4ae76bd3b68d06e",
+        "verifier.py"
+      ],
+      [
+        "abdb4ce5ffd4dc850dd1d0a99373924a7df7e96f347107151aacf6f9d3d440c6",
+        "vllm_probe.py"
+      ],
+      [
+        "4d978c68f4757d67a774f161c02a1ac65bd73349f8a84df43b59d977ca0bd9b1",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": null,
+    "source": "runpod-part1-poc60-20261126/train-lambda0/run-settings.json"
+  },
+  "runpod-qwen-lambda0-measure-20261126/train-lambda0": {
+    "settings": {
+      "model": "Qwen/Qwen3-32B",
+      "revision": "9216db5781bf21249d130ec9da846c4624c16137",
+      "arm": "report_correct",
+      "penalty": 0.0,
+      "report_mode": "prose",
+      "taskset": "hard",
+      "train_limit": null,
+      "prompt_variant": "neutral",
+      "reasoning_effort": null,
+      "thinking": "on",
+      "mxfp4": "absent",
+      "quant": "none",
+      "attn_implementation": "sdpa",
+      "experts_implementation": null,
+      "lora_rank": 16,
+      "learning_rate": 0.0001,
+      "lr_schedule": "constant",
+      "scale_rewards": "none",
+      "max_grad_norm": 1.0,
+      "router_aux_loss_coef": 0.0,
+      "beta": 0.0,
+      "num_generations": 4,
+      "prompts_per_step": 4,
+      "max_completion_length": 2048,
+      "seed": 42,
+      "save_every": 8,
+      "stop_no_variation": 99,
+      "stop_saturated": false,
+      "rollout_backend": "vllm",
+      "judge": "api",
+      "judge_model": "gpt-5.4-nano",
+      "judge_revision": null,
+      "judge_url": "https://api.openai.com/v1",
+      "judge_extra": {},
+      "verifier_retry_seconds": 120,
+      "adapter": null,
+      "eval_limit": 12,
+      "eval_samples": 2,
+      "libraries": {
+        "torch": "2.15.0",
+        "transformers": "5.17.0",
+        "trl": "1.19.0",
+        "peft": "0.21.0",
+        "accelerate": "1.15.0",
+        "datasets": "5.2.0"
+      },
+      "steps": 6
+    },
+    "source_digests": [
+      [
+        "5afea45770457e0aa3ecb4af420a919b83339875824ce6ce6c35bd547edf7103",
+        "__init__.py"
+      ],
+      [
+        "df557e0c5efd914335f9e5af4f531f31b1143893ef19c41b2e3ab611f3f3ca31",
+        "archive.py"
+      ],
+      [
+        "01cdc64fdd2358dada1df42224c665147ebd68c2386b52afc25a354bebe9c25f",
+        "budget.py"
+      ],
+      [
+        "6a0ec5228e6a418f034877a7e344766f3e378eb2cf46a456219fb9dae318121f",
+        "calibrate.py"
+      ],
+      [
+        "7612ada58b665f2c0873f24fb29997ed0659684732c5265b500ce73753be44ec",
+        "codex_hooks.py"
+      ],
+      [
+        "e792383cabdc943593dbc50d6449cc260ac3feb3448b973e2a6b9f14856cc7d4",
+        "deadline.py"
+      ],
+      [
+        "ec6172faaf1de859f1248c0783a237d5d5e4cb35504f79817635b659d6959637",
+        "export_transcripts.py"
+      ],
+      [
+        "efb47fe2c4889e0494d69f1488c5c2c04b7712cde22b2ae2bccf7b0e0e07a8d2",
+        "formal_audit.py"
+      ],
+      [
+        "f1ca9b8ee0b7984935d4f076303eeda339f41aefc4420767f8b78d10dd267db9",
+        "gates.py"
+      ],
+      [
+        "3a5bb8a8aa96c3bd4d03c7ae5a03af909221dad08792c5ffaa620c586c047d8a",
+        "gpu.py"
+      ],
+      [
+        "dc13fbc1449eca7de525766488562bed86681b765ee6562213d5c62b67f38631",
+        "grader.py"
+      ],
+      [
+        "742592279a81213e617b3b06e531f8af13f284de1d9b46d9d3a6c3def703bf0d",
+        "hf_grpo.py"
+      ],
+      [
+        "ab8cb348cd59cd5e758bbadd212d1c316a864a3f51e7794b6322869fec65c502",
+        "holdout_collection.py"
+      ],
+      [
+        "99974fec0dfe1a9bc9b959ee9af3d159bbd08d3556c5856838a1675c4d6802f9",
+        "json_objects.py"
+      ],
+      [
+        "34fc5a2766f31a42814600dc5cce64877f724dd0e388dc57a60bf78a8ccbe5a0",
+        "jsonl.py"
+      ],
+      [
+        "3af3f76eafa67f70593373881f3a38a241de483dc1e8365356a8c2a39565f301",
+        "judge.py"
+      ],
+      [
+        "ae3ace3fd13ed096acda440134c67d3342cba864e824c0dffb01e55db4f03fd6",
+        "judge_holdout.py"
+      ],
+      [
+        "d655f569228f132b79b4300e12bcaf04e21aa0bdef0bd6365529951002e745d6",
+        "mlx_rl.py"
+      ],
+      [
+        "8a8976ac4e8b73e854b875c11e4b7018f8f65750491351b3ea026d020a22d56b",
+        "model_io.py"
+      ],
+      [
+        "ee874f17152253a49e03869ba8ed7b28f8bf6c45d415bd3df935ea546765c865",
+        "openai_probe.py"
+      ],
+      [
+        "1d2c46dcc2f55fbc9743569fcd9b845a0f7949689f9d24b7f8cc38507949417f",
+        "outcomes.py"
+      ],
+      [
+        "4fd6a1c426283c47a3bd3653453c94cc3b25dcd2c24815e68e6f60dd47c63600",
+        "pilot.py"
+      ],
+      [
+        "a70ec39797239bf31ccba72158e8cca72bffd73bc2441074aaf5174c68e94c8e",
+        "pilot_evidence.py"
+      ],
+      [
+        "820e7a5514c3d096d54c2d9c5044e00a7a319b38a7dfc73a2dbebfcbcec355b0",
+        "pilot_model.py"
+      ],
+      [
+        "ef2ec4b84bff6c8d6585aaf68973838d1e8fb88de01c98af100799c614c402cc",
+        "pilot_runner.py"
+      ],
+      [
+        "8d28ea6ae7f20307dc9efaa9591f74cb62faf255de1e5bbfe76022c57a14fe74",
+        "pilot_simulation.py"
+      ],
+      [
+        "02dbf5fed7198326fc85856ef826a1cad441497303bd998f695f0e3c6335d361",
+        "probe_labels.py"
+      ],
+      [
+        "4f886bbb804a3ada520a1853148db9c5671d9644c1108089fc980dad78d787b4",
+        "probe_rules.py"
+      ],
+      [
+        "91ce3302285ec2152f2bb8cd65758766b35f45ceb3759b05b9dd05858c459b20",
+        "prompts.py"
+      ],
+      [
+        "0ead9f7328a03012ec93e2c2f9c20d5ba4fc08c54cd127a609a2862880e82b8c",
+        "provenance.py"
+      ],
+      [
+        "06c57d1b418bbcb56805aa885138476794d9c9406f694cbf00503df852f61477",
+        "rates.py"
+      ],
+      [
+        "79604c633776d7c956a10ab4a218bee03736d1fc1ea73ed1a2494ca4824ab771",
+        "reporting.py"
+      ],
+      [
+        "d164f2d22ec2e5523e23c857715970e6d20ce9c0b53611bc908c7e906bb6971d",
+        "rescore.py"
+      ],
+      [
+        "8a83973bb47263eed314abc9159cedc19cf191d2b47a45467d64920985da0990",
+        "retry_options.py"
+      ],
+      [
+        "aabc8914e9198e116656fa32bbef7e3459a32129d1f65733a7544db3992a5d89",
+        "sampling.py"
+      ],
+      [
+        "818fbc4360469f52ece5c4cabd2e080929d8cfa4012d0f5e9e79bd272f3f84f4",
+        "source_scan.py"
+      ],
+      [
+        "7ee1e31f4c1ca94543129ee29aeb38ed1219b08f620278d460f2dd2b590541c7",
+        "state_files.py"
+      ],
+      [
+        "8824e12c51bc7728b0674e6a54cf9128ed57c48b8466a16c504e1bba4c6b6418",
+        "tasks.py"
+      ],
+      [
+        "b2232ab17877b9fc9cb697236883437a3d2eb2aaaa200eee21333f7a76596860",
+        "tasks_hard.py"
+      ],
+      [
+        "28727c55b35291f1e4b49f62d0349be1e1bdd9e9144a79f0641b27cdb2194120",
+        "verifier.py"
+      ],
+      [
+        "7975f681ef25fd35a455759bbb373e84e27d36fcb96931f3900f4872694160d2",
+        "vllm_probe.py"
+      ],
+      [
+        "3f1fbf9f5e8069e9d6d9166470857439e8cb73a6e3ddc31e70a853c03c103d87",
+        "vllm_rollouts.py"
+      ]
+    ],
+    "launch_commit": "6e0ff7fce2b30c1d480866598b6752b31734f28f",
+    "source": "runpod-qwen-lambda0-measure-20261126/train-lambda0/run-settings.json"
+  }
+}

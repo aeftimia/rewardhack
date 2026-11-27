@@ -1,0 +1,9 @@
+{
+  "fresh": {
+    "max_completion_length": 16384
+  },
+  "continuation": {
+    "inherit": true,
+    "overrides": {}
+  }
+}
