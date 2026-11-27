@@ -185,15 +185,19 @@ finish() {
   # print its own text before the answer. Only this run's own job is copied: an earlier job's out/ on a kept pod was
   # copied by its own driver, and copying it again into this run's folder would count its rows twice (round 43).
   HELD=unknown
-  if [[ $LAUNCHED == 0 ]]; then
+  if [[ $LAUNCH_SENT == 0 ]]; then
     HELD=$(on_pod "$JOB_TRACES" | tail -n 1)
     if [[ -z $HELD ]]; then HELD=$(on_pod "$JOB_TRACES" | tail -n 1); fi
   fi
-  if [[ $LAUNCHED == 0 && $HELD == empty ]]; then
+  if [[ $LAUNCH_SENT == 1 && $LAUNCHED == 0 ]]; then
+    say "the launch call failed, so whether this run's job started is unknown: out/ on the pod is not copied into this run's folder (it may be an earlier job's) and the pod is not removed from here; its removal timer bounds it. Look at out/ there before fetching it"
+    COPIED=1 CHECKPOINTS=0 SMALL_COPIED=1
+  elif [[ $LAUNCHED == 0 && $HELD == empty ]]; then
     say 'no job was launched on this pod: nothing to copy'
     COPIED=1 CHECKPOINTS=1 SMALL_COPIED=1
   elif [[ $LAUNCHED == 0 ]]; then
-    say "this run launched no job, and the pod holds an earlier job's results (or did not say): they are not copied into this run's folder, and the pod is not removed from here"
+    if [[ -z $HELD ]]; then say 'this run launched no job, and the pod did not answer whether one ever ran there: nothing is copied, and it is not removed from here'
+    else say "this run launched no job, and the pod holds an earlier job's results: they are not copied into this run's folder, and the pod is not removed from here"; fi
     COPIED=1 CHECKPOINTS=0 SMALL_COPIED=1
   else
   say "copying results"
@@ -251,7 +255,8 @@ finish() {
   exit "$code"
 }
 ARMED=0
-LAUNCHED=0  # set once this run's job is started on the pod: only then does `finish` copy out/
+LAUNCH_SENT=0  # set just before the launch call
+LAUNCHED=0  # set once the launch call returned: only then does `finish` copy out/
 trap finish EXIT
 # Within SSH_UP_SECONDS (ops/pod_pins.env), which the launch gate counts: each try is bounded as a whole (ssh's
 # ConnectTimeout covers only the connection; BatchMode keeps it from waiting on a prompt) and followed by a 15 s pause.
@@ -283,12 +288,13 @@ rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --excl
 if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == api ]]; then
   printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | "${SSH[@]}" "root@$HOST" 'umask 077; cat > ~/.judge_key'
 fi
-# Set before the launch, not after: a launch whose ssh call fails may have started the job all the same, and then its
-# results must be copied. The launch first moves any earlier out/ aside, so the out/ copied is this run's (round 43).
-LAUNCHED=1
+# Sent, then confirmed: a launch whose ssh call fails may or may not have reached the pod, so its out/ may be this run's
+# or an earlier job's, and `finish` neither copies nor removes it (review round 44).
+LAUNCH_SENT=1
 # A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
 # The remote log goes inside it so the runner's own errors are pulled with the results.
 "${SSH[@]}" "root@$HOST" "if [ -e out ]; then mv out out.prev.\$(date +%s); fi; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=${AUTOSTOP_GRACE_SECONDS:-600} ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
+LAUNCHED=1
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60+90))  # the remote timeout is DEADLINE; the extra time is for it to write EXIT_CODE
 while ((SECONDS < END)); do
