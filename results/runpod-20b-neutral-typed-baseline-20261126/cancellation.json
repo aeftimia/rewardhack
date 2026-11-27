@@ -1,0 +1,14 @@
+{
+  "status": "failed_before_training",
+  "reason": "Fresh pod failed GPU-free self-test: 88321 MiB occupied after 60 seconds; nvidia-smi showed no processes visible in the container.",
+  "pod": "3cjmyt1w5fb9qm",
+  "deployed_at": "2026-11-27T04:36:50.242Z",
+  "removal_requested_at": "2026-11-27T04:40:23.553Z",
+  "console_confirmed_no_pods": true,
+  "console_spend_usd_per_hour": 0,
+  "hourly_usd_including_disk": 2.725,
+  "booked_hours_upper_bound": 0.07,
+  "booked_gpu_usd_upper_bound": 0.19,
+  "training_started": false,
+  "next_action": "Retry the same pending cell on a fresh placement. Count this failed attempt against that cell's $15 approval. No unidentified GPU process was killed."
+}
