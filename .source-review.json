@@ -58,7 +58,7 @@
     "path": "src/rewardhack/pilot_runner.py",
     "rule": "py-except-swallow",
     "text": "except EOFError:",
-    "reason": "EOF from the analysis child is converted to an explicit ended message; the parent then raises a RuntimeError for analysis ending without a result. This never creates a valid analysis."
+    "reason": "Only receiver.recv() is inside this try, and only EOFError is caught; other receive or poll errors propagate through the cleanup finally. The child protocol sends only ok, invalid, or crash, so ended is a parent-only EOF marker, never a valid worker result. This marker delays classification until finally has killed and reaped the exact child and closed the receiver. After cleanup, ended always raises: TimeCap if the actual child exit status is SIGALRM, otherwise RuntimeError for ending without a result. Cleanup failures also propagate. Neither EOF nor any other receive failure can return analysis data or count as successful evidence."
   },
   {
     "path": "src/rewardhack/pilot_runner.py",

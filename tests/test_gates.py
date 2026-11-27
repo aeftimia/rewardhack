@@ -79,12 +79,12 @@ def test_the_driver_is_asked_before_anything_is_deployed_and_the_grace_is_counte
     assert 'LEAN_ISOLATION=required cannot work' in settle(repo, settings=dict(LEAN_ISOLATION='required'))[1][0]
     assert 'not settings ops/drive_runpod.sh reads: SMOKE_steps' in settle(repo, settings=dict(SMOKE_steps='4'))[1][0]
     assert 'at least 5 min' in settle(repo, deadline=4, basis='2x measured 2 min')[1][0]
-    # Besides the deadline: the driver's wait for SSH (SSH_UP_SECONDS and ARM_SECONDS, 10 min), the provisional timer, and the runner's 30 s kill-after
+    # Besides the deadline: API endpoint discovery plus driver SSH/arming (20 min), the provisional timer, and the runner's 30 s kill-after
     # with the grace, rounded up together (review round 30).
     record, refused = settle(repo, settings=dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='3600', SMOKE_STEPS='4'))
-    assert refused == [] and record['worst_case_minutes'] == 60 + 10 + 15 + 61
+    assert refused == [] and record['worst_case_minutes'] == 60 + 20 + 15 + 61
     record, refused = settle(repo, settings=dict(KEEP_POD='1'))
-    assert refused == [] and record['worst_case_minutes'] == 96 and record['worst_case_usd'] == pytest.approx(2.70*96/60)
+    assert refused == [] and record['worst_case_minutes'] == 106 and record['worst_case_usd'] == pytest.approx(2.70*106/60)
     (repo / 'ops' / 'drive_runpod.sh').write_text('exit 9\n')
     assert 'has no DRIVE_CHECK_ONLY mode' in settle(repo)[1][0]
 
@@ -93,7 +93,7 @@ def test_the_worst_case_reads_the_kill_after_from_the_pod_pins(repo):
     pins = repo / 'ops' / 'pod_pins.env'
     pins.write_text(pins.read_text().replace('KILL_AFTER_SECONDS=30\n', 'KILL_AFTER_SECONDS=600\n'))
     run(repo, 'commit', '-qam', 'longer kill-after')
-    assert settle(repo)[0]['worst_case_minutes'] == 60 + 10 + 15 + 20
+    assert settle(repo)[0]['worst_case_minutes'] == 60 + 20 + 15 + 20
     pins.write_text(pins.read_text().replace('KILL_AFTER_SECONDS=600\n', ''))
     run(repo, 'commit', '-qam', 'no kill-after')
     assert 'must set KILL_AFTER_SECONDS once' in settle(repo)[1][0]

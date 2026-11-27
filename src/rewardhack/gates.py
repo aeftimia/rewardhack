@@ -31,6 +31,8 @@ SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements
 # the runner's wait between TERM and KILL (KILL_AFTER_SECONDS there) and the grace before the pod removes itself.
 PROVISIONAL_MINUTES = 15
 PINS = Path('ops') / 'pod_pins.env'
+# cap: 3x estimated 10 s (one control-plane request)
+RUNPOD_API_SECONDS = 30  # create request and final endpoint poll can each take this long
 DRIVER_GRACE_SECONDS = 600  # what ops/remote_job.sh uses when AUTOSTOP_GRACE_SECONDS is not given
 DRIVER_JUDGE_MAX_USD = 1.0  # what ops/drive_runpod.sh passes to the pod when JUDGE_MAX_USD is not given
 # The one statement of the cap multiples: CLAUDE.md, the help text below and every check read them from here
@@ -110,7 +112,8 @@ def pod_pin(root, name):
 def overhead_minutes(root, settings):
     """The minutes a pod can bill beyond its job's deadline under these driver settings (see PROVISIONAL_MINUTES)."""
     after = pod_pin(root, 'KILL_AFTER_SECONDS') + grace_seconds(settings)
-    before = pod_pin(root, 'SSH_UP_SECONDS') + pod_pin(root, 'ARM_SECONDS')
+    # API deployment can spend one boot allowance discovering its endpoint before the driver's SSH wait.
+    before = 2 * pod_pin(root, 'SSH_UP_SECONDS') + pod_pin(root, 'ARM_SECONDS') + 2 * RUNPOD_API_SECONDS
     return math.ceil(before / 60) + PROVISIONAL_MINUTES + math.ceil(after / 60)
 
 
