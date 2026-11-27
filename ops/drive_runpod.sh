@@ -170,6 +170,20 @@ fi
 # pod's login shell runs it; tests/test_round30_followups.py runs it against a real failed --arm-only.
 # shellcheck disable=SC2016  # expanded by the pod's shell, not here
 JOB_TRACES='set -- out.prev.*; if [ -e out/remote.log ] || [ -e "$1" ]; then echo held; else echo empty; fi'
+# Asked just before the launch and again after a launch call that did not return: "<1 if out/remote.log exists, else 0>
+# <number of out.prev.*>". A launch that ran wrote a fresh out/remote.log or moved an earlier out/ to a new out.prev.*,
+# so the two answers tell whether this run's job started (review round 46).
+# shellcheck disable=SC2016  # expanded by the pod's shell, not here
+LAUNCH_TRACES='set -- out.prev.*; if [ -e "$1" ]; then n=$#; else n=0; fi; if [ -e out/remote.log ]; then r=1; else r=0; fi; echo "$r $n"'
+LAUNCH_TRACE_FORM='^[01] [0-9]+$'
+# Whether the launch ran, from the answers before ($1) and after ($2): it did if out/remote.log appeared or out.prev.* grew.
+# shellcheck disable=SC2329  # run by `finish` below
+launch_ran() {
+  local before_log before_prev after_log after_prev
+  read -r before_log before_prev <<< "$1"
+  read -r after_log after_prev <<< "$2"
+  ((after_prev > before_prev || (before_log == 0 && after_log == 1)))
+}
 # One command on the pod, bounded as a whole: the cleanup below asks the RunPod API too (`--remove-now`), and a stalled
 # API must end in the reminders, not hold the driver with the pod billing (review round 35). ARM_SECONDS: ops/pod_pins.env.
 # shellcheck disable=SC2329  # run by `finish` below
@@ -184,6 +198,17 @@ finish() {
   # (review round 42), and once more if no answer came (round 43). The last line only: a login shell on the pod may
   # print its own text before the answer. Only this run's own job is copied: an earlier job's out/ on a kept pod was
   # copied by its own driver, and copying it again into this run's folder would count its rows twice (round 43).
+  # A launch call that did not return: the pod's state now, against its state just before, says whether the launch ran.
+  # If it did, this run's out/ is copied as after any launch; if not, this run launched nothing. Without an answer, it
+  # stays unknown (review round 46).
+  if [[ $LAUNCH_SENT == 1 && $LAUNCHED == 0 ]]; then
+    AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1)
+    if ! [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1); fi
+    if [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then
+      if launch_ran "$BEFORE_LAUNCH" "$AFTER_LAUNCH"; then say 'the launch call failed, but the job started on the pod: its results are copied'; LAUNCHED=1
+      else say 'the launch call failed and the job did not start on the pod'; LAUNCH_SENT=0; fi
+    fi
+  fi
   HELD=unknown
   if [[ $LAUNCH_SENT == 0 ]]; then
     HELD=$(on_pod "$JOB_TRACES" | tail -n 1)
@@ -296,6 +321,9 @@ if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && ${
 fi
 # Sent, then confirmed: a launch whose ssh call fails may or may not have reached the pod, so its out/ may be this run's
 # or an earlier job's, and `finish` neither copies nor removes it (review round 44).
+if ! BEFORE_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1) || ! [[ $BEFORE_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then
+  echo "could not read the pod's state before the launch (got '$BEFORE_LAUNCH'); not launching"; exit 1
+fi
 LAUNCH_SENT=1
 # A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
 # The remote log goes inside it so the runner's own errors are pulled with the results.

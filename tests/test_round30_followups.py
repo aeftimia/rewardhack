@@ -91,15 +91,20 @@ def test_the_driver_refuses_at_once_without_a_timeout_command(tmp_path):
     assert done.returncode == 2 and 'needs a timeout command' in done.stdout, done.stdout + done.stderr
 
 
-def arm_fails(tmp_path, out_on_pod, fails='--arm-only', rsync=1, keep='1'):
+def arm_fails(tmp_path, out_on_pod, fails='--arm-only', rsync=1, keep='1', launch_traces=('1 0', '1 0')):
     """The driver against a pod that answers at once and whose ssh call containing `fails` fails (by default the arm
-    call); `out_on_pod`: whether a job ever ran there; `rsync`: the exit status of every copy. Returns the driver's
-    output and the ssh calls it made, in order."""
+    call); `out_on_pod`: whether a job ever ran there; `rsync`: the exit status of every copy; `launch_traces`: the
+    pod's answers to LAUNCH_TRACES, before the launch and then after it. Returns the driver's output and the ssh calls it
+    made, in order."""
     calls = tmp_path/'calls'
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir(parents=True)
+    answers = tmp_path/'launch-traces'
+    answers.write_text(''.join(f'{answer}\n' for answer in launch_traces))
     ssh = (f'echo "$*" >> {calls}\n[[ "$*" != *{fails}* ]] || exit 255\n'
-           f'if [[ "$*" == *out/remote.log* ]]; then echo "Welcome to the pod"; echo {out_on_pod}; fi\n')  # a banner, then the answer to JOB_TRACES
+           # a banner, then the answer: to LAUNCH_TRACES the next scripted one, to JOB_TRACES out_on_pod
+           f'if [[ "$*" == *\'"$r $n"\'* ]]; then echo "Welcome to the pod"; head -n 1 {answers}; tail -n +2 {answers} > {answers}.rest; mv {answers}.rest {answers}\n'
+           f'elif [[ "$*" == *out/remote.log* ]]; then echo "Welcome to the pod"; echo {out_on_pod}; fi\n')
     stubs = {'ssh': ssh, 'rsync': f'exit {rsync}\n', 'sleep': 'exit 0\n', 'timeout': TIMEOUT_STUB}
     for name, body in stubs.items():
         (bin_dir/name).write_text('#!/bin/bash\n' + body)
@@ -161,6 +166,12 @@ def test_a_run_that_armed_but_did_not_launch_copies_nothing_of_an_earlier_job(tm
     output, sent = arm_fails(tmp_path/'sync', 'held', fails='--never--', rsync=1, keep='0')  # the sync is the first rsync
     assert "holds an earlier job's results" in output and 'copying results' not in output, output
     assert not any('--remove-now' in line for line in sent), sent
-    output, sent = arm_fails(tmp_path/'launch', 'held', fails='nohup', rsync=0, keep='0')
+    # A launch call that failed: the pod's answers before and after say whether the job started (review round 46).
+    output, sent = arm_fails(tmp_path/'unanswered', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '?', '?'))
     assert 'whether this run' in output and 'copying results' not in output, output
     assert not any('--remove-now' in line for line in sent), sent
+    output, sent = arm_fails(tmp_path/'not-started', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '1 0'))
+    assert 'did not start' in output and "holds an earlier job's results" in output and 'copying results' not in output, output
+    assert not any('--remove-now' in line for line in sent), sent
+    output, sent = arm_fails(tmp_path/'started', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '1 1'))
+    assert 'the job started on the pod' in output and 'copying results' in output, output

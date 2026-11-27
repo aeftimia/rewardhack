@@ -66,6 +66,11 @@ def pytest_collection_modifyitems(config, items):
         raise pytest.UsageError(f"--repeat-match selects no test: {', '.join(unmatched)}")
 
 
+# A fake pod's answer to the driver's LAUNCH_TRACES question (asked just before the launch): no out/remote.log and no
+# out.prev.*, a pod where no job has run. For ssh stubs that otherwise answer only the commands they test.
+LAUNCH_TRACES_ANSWER = 'for arg in "$@"; do if [[ $arg == *\'"$r $n"\'* ]]; then echo "0 0"; fi; done\n'
+
+
 # GNU timeout's stand-in where tests stub it: skip its options and its duration, run the rest. The runner calls
 # `timeout --signal=TERM --kill-after=N secs cmd`, the driver `timeout secs cmd`; a fixed `shift 3` mangled the second.
 TIMEOUT_STUB = 'while [[ $1 == -* ]]; do shift; done\nshift\nexec "$@"\n'

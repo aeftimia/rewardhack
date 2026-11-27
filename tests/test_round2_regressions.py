@@ -5,7 +5,7 @@ import subprocess
 import time
 
 import pytest
-from conftest import TIMEOUT_STUB, driver_script
+from conftest import LAUNCH_TRACES_ANSWER, TIMEOUT_STUB, driver_script
 
 from rewardhack import outcomes, probe_rules
 
@@ -25,7 +25,7 @@ def drive(tmp_path, *, pull_fails=False, timer_running=True, keep_pod=False, clo
     calls.write_text('')
     ssh = f'''echo "ssh $*" >> {calls}
 [[ -e {tmp_path}/removed ]] && exit 255
-for arg in "$@"; do
+''' + LAUNCH_TRACES_ANSWER + f'''for arg in "$@"; do
   if [[ $arg == "cat out/EXIT_CODE" ]]; then echo 0; fi
   if [[ $arg == *pgrep* ]]; then exit {0 if timer_running else 1}; fi
   if [[ $arg == *--remove-now* ]]; then touch {tmp_path}/removed; fi
@@ -110,7 +110,12 @@ def test_a_terminated_runner_takes_its_job_with_it(tmp_path):
         assert runner.wait(timeout=10) == 143
         assert (tmp_path/'out'/'EXIT_CODE').read_text().strip() == '143'
         assert not pids.exists(), 'the pids file outlived the job it names'
-        time.sleep(0.3)
+        # A KILL to the whole group cannot be ignored, but the processes take a moment to go; a fixed 0.3 s failed 1 in 10
+        # under the suite's load (26 Nov). Up to 5 s, then the group must be empty.
+        for _ in range(50):
+            if subprocess.run(['pgrep', '-g', str(group)], capture_output=True).stdout == b'':
+                break
+            time.sleep(0.1)
         assert subprocess.run(['pgrep', '-g', str(group)], capture_output=True).stdout == b'', 'the job outlived its runner'
     finally:
         if runner.poll() is None:
