@@ -1,0 +1,16 @@
+{
+  "training_status": "completed",
+  "backup_status": "incomplete_remote_copy",
+  "pod": "16k91uyyrwane7",
+  "training_completed_utc": "2026-11-27T05:25:28Z",
+  "scheduled_removal_utc": "2026-11-27T05:35:28Z",
+  "console_verified": "No pods; current spend $0.000/hr after removal",
+  "preserved": "All 60 step records, 960 training rollouts, before and final held-out evaluations, completed summary, adapter snapshots at steps 8, 16, 24, 32, 40, 48 and 56",
+  "missing": "Final adapter and complete resumable trainer checkpoints",
+  "partial_checkpoint_warning": "trainer/checkpoint-56 is an interrupted transfer, NOT a valid resumable checkpoint; optimizer.pt may be partial",
+  "cause": "The 10-minute completion grace expired during transfers. The gated copy-only successor's required full test suite did not finish before removal, so it was not launched.",
+  "driver_warning": "The driver's final-copy failure does not mean all results were lost: a separate small-file copy preserved the completed evaluation and summary before shutdown.",
+  "rerun_policy": "Completed cell: do not repeat training to repair the backup.",
+  "next_launch_condition": "Resolve transfer timing and validate preservation of final adapters and resumable checkpoints before further paid runs.",
+  "s3_status": "Separate immutable snapshots 8, 16, and 24 verified in S3. Full preserved-output upload failed before transfer because AWS SSO expired; browser renewal requires sign-in. Remaining files are retained locally."
+}

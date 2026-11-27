@@ -1,0 +1,13 @@
+2026-11-27T04:47:52Z self-test passed: NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 250 GB free
+2026-11-27T04:47:52Z WARNING: no network namespace; Lean runs as an unprivileged user with an empty environment (LEAN_ISOLATION=none)
+2026-11-27T04:47:52Z start lean
+Lean (version 4.19.0, x86_64-unknown-linux-gnu, commit 6caaee842e94, Release)
+2026-11-27T04:47:58Z start install
+2026-11-27T04:48:20Z start download openai/gpt-oss-20b
+2026-11-27T04:48:34Z verifier controls passed
+2026-11-27T04:48:34Z probe skipped (run earlier); training with --max-completion-length 2048
+2026-11-27T04:48:34Z start rollout-install
+2026-11-27T04:48:34Z start rollout-server
+2026-11-27T04:50:42Z start train-baseline
+2026-11-27T05:25:28Z end train-baseline passed: steps 60 early stop none
+1415 MiB

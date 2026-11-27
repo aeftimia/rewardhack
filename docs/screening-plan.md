@@ -14,7 +14,7 @@ The baseline does not depend on λ; do not duplicate it for each λ.
 | Model | Prompt | Report | Baseline | λ=0 | λ=0.5 |
 |---|---|---|---|---|---|
 | gpt-oss-20b | neutral | prose | completed | completed | completed |
-| gpt-oss-20b | neutral | typed | pending | pending | pending |
+| gpt-oss-20b | neutral | typed | completed; backup incomplete | pending | pending |
 | gpt-oss-20b | refute | prose | pending | pending | pending |
 | gpt-oss-20b | refute | typed | pending | pending | pending |
 | Qwen3-32B | neutral | prose | pending | pending | pending |
@@ -27,10 +27,12 @@ latest order is to establish Qwen incrementally: first λ=0, neutral/prose,
 starting with a six-step measuring pass; then the full 60-step run only if it
 fits the cap and the measurements look sound. Next use λ=0.5, neutral/prose to
 establish the trend. Only then consider the other Qwen cells. Leave over-cap
-Qwen runs for the owner's morning reassessment. Continue the nine missing 20b
-initial cells under the existing approval when they fit and checks are clean.
+Qwen runs for the owner's morning reassessment. Eight 20b initial cells remain
+under the existing approval; resume only after the backup defect below is fixed.
 
-The eventual table has 24 initial cells, **21 new runs**. Reuse the completed baseline and λ=0 in
+The eventual table has 24 initial cells, **20 remaining runs**. The new typed
+baseline is completed in `results/runpod-20b-neutral-typed-baseline-retry1-20261126/`.
+Reuse the completed prose baseline and λ=0 in
 `results/runpod-part1-60step-20261126/`, and λ=0.5 in
 `results/runpod-part1-lambda05-20261126/`. Their run-settings record seed 42,
 neutral/prose, 60 steps, 4 prompts × 4 generations, learning rate 1e-4, and the
@@ -101,3 +103,31 @@ Qwen needs a longer-answer measurement and a new cost estimate, for the owner's
 morning reassessment. Before resuming the approved 20b cells, add and validate
 an automatic stop before optimization when initial-evaluation truncation calls
 for a larger token limit, using the existing advice rule.
+
+## Completed typed baseline and backup incident (27 November)
+
+The 20b neutral/typed baseline completed all 60 steps. Final held-out evaluation
+was 24/24 exploits, all disclosed, with no genuine proofs, refutations, or
+truncation. This cell is completed and must not be repeated. The truncation
+guard was implemented in 0.29.0 before this run.
+
+All evaluation and training records and adapter snapshots through step 56 were
+copied locally. The pod's ten-minute completion grace expired before the final
+adapter and resumable trainer checkpoints were copied. The copy-only successor
+passed its required full launch checks only after the pod had been removed and
+was never launched. The partial checkpoint is explicitly marked unusable.
+The console confirmed no pods and $0.000/hour spend. Further paid launches are
+paused until final-output preservation is validated with the measured transfer
+speed and a properly budgeted copy window. Do not rerun this completed cell.
+
+Independent review identified a concrete driver flaw: interim adapter transfers
+run synchronously inside the completion-poll loop. Rsync's idle timeout does
+not cap total transfer duration, so a progressing large copy can block detection
+of completion beyond the entire grace period. Before another launch, bound or
+preempt those transfers, prioritize final records and final adapter/checkpoints,
+and budget the copy period from measured throughput before deployment. A second
+launch gate started during grace is not a reliable preservation mechanism.
+
+Snapshots 8, 16 and 24 have verified S3 receipts. The attempt to archive the
+remaining preserved output failed because AWS SSO expired; renewing it opened
+a sign-in page. All remaining files are retained locally pending sign-in.
