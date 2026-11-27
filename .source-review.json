@@ -57,12 +57,6 @@
   {
     "path": "src/rewardhack/pilot_runner.py",
     "rule": "py-except-swallow",
-    "text": "except EOFError:",
-    "reason": "EOF from the analysis child is converted to an explicit ended message; the parent then raises a RuntimeError for analysis ending without a result. This never creates a valid analysis."
-  },
-  {
-    "path": "src/rewardhack/pilot_runner.py",
-    "rule": "py-except-swallow",
     "text": "except TimeCap:",
     "reason": "TimeCap is converted to an explicit time-cap finish reason in persisted pilot state; it stops further stages and does not report a successful analysis."
   },

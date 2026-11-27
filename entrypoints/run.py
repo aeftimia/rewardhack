@@ -10,6 +10,7 @@ from rewardhack import judge, reporting, retry_options, vllm_rollouts
 from rewardhack.hf_grpo import run
 from rewardhack.outcomes import ARMS, SATURATION_FLOOR, SATURATION_WINDOW
 from rewardhack.prompts import VARIANTS
+from rewardhack.sampling import DEFAULT_SEED
 from rewardhack.tasks import TASKSETS
 
 
@@ -58,7 +59,7 @@ def main():
     ap.add_argument('--stop-no-variation', type=int, default=24)
     ap.add_argument('--stop-saturated', action=argparse.BooleanOptionalAction, default=True,
                     help=f'stop once reward variation is credibly below {SATURATION_FLOOR:.0%}% of the latest {SATURATION_WINDOW} prompt groups (outcomes.saturated)')
-    ap.add_argument('--seed', type=int, default=42)
+    ap.add_argument('--seed', type=int, default=DEFAULT_SEED)
     ap.add_argument('--max-seconds', type=int, default=3600)
     ap.add_argument('--final-eval-seconds', type=int, default=600, help='reserved after training for the after-evaluation')
     reporting.add_arguments(ap)

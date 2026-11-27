@@ -181,8 +181,8 @@ def _analyze(spec, paths, seconds):
             raise TimeCap('pilot evidence analysis reached its wall-time cap')
         try:
             kind, value = receiver.recv()
-        except EOFError:
-            kind, value = 'ended', None
+        except EOFError as error:
+            kind, value = 'ended', error
     finally:
         try:
             # fallback-ok: kill targets the positive PID returned by fork, never a group or a lookup-derived PID. ProcessLookupError means that PID no longer exists; _reap must still obtain its actual exit status within the deadline, or raise. No successful result is returned on unconfirmed termination or an already-reaped child.
@@ -193,8 +193,8 @@ def _analyze(spec, paths, seconds):
             receiver.close()
     if kind == 'ended':
         if exitcode == -signal.SIGALRM:  # its own alarm: this process was suspended across the deadline
-            raise TimeCap('pilot evidence analysis reached its wall-time cap')
-        raise RuntimeError('pilot analysis process ended without a result')
+            raise TimeCap('pilot evidence analysis reached its wall-time cap') from value
+        raise RuntimeError('pilot analysis process ended without a result') from value
     if kind == 'ok':
         return value
     error_types = {'invalid': ValueError, 'crash': RuntimeError}

@@ -72,6 +72,30 @@ def test_the_runner_kills_after_the_pinned_wait():
     assert '--kill-after="$KILL_AFTER_SECONDS"' in runner and '$(($2+KILL_AFTER_SECONDS+GRACE))' in runner
 
 
+def test_qwen_rollout_command_matches_reference_shape():
+    """Capture the real rollout argv without a GPU. The 8k reference used 4x4 draws and a 10,240-token context."""
+    import subprocess
+
+    def command(environment, limit, generations):
+        shell = """source ops/pod_lib.sh
+in_env() { printf '%s\\n' "$VLLM_SERVER_DEV_MODE" "$VLLM_ALLOW_RUNTIME_LORA_UPDATING" "$@"; }
+serve_rollouts "$1" 1 "$2" "$3"
+"""
+        return subprocess.run(['bash', '-c', shell, 'test', environment, str(limit), str(generations)],
+                              cwd=ROOT, text=True, capture_output=True, check=True).stdout.splitlines()
+
+    reference = command('vllm', 8192, int(PINS['DEFAULT_TRAIN_GENERATIONS']))
+    replay = command('probe', 16384, int(PINS['DEFAULT_TRAIN_GENERATIONS']))
+    assert reference[:6] == ['1', 'True', 'vllm', 'vllm', 'serve', PINS['QWEN3_32B']]
+    assert reference[reference.index('--max-num-seqs') + 1] == '16'
+    context = reference.index('--max-model-len') + 1
+    assert reference[context] == '10240'
+    reference[2], reference[context] = 'probe', '18432'
+    assert replay == reference
+    smaller = command('vllm', 8192, 2)
+    assert smaller[smaller.index('--max-num-seqs') + 1] == '8'
+
+
 def test_every_part_one_job_names_its_model():
     """Round 33: a job added to PART_ONE_RUNS without a PART_ONE_MODEL row would have read as model 0 (gpt-oss-20b)."""
     import subprocess

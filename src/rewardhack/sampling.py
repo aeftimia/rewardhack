@@ -5,6 +5,7 @@ for RL on language models and gpt-oss's own recommendation. Truncation (the earl
 rare tokens where an exploit is first sampled, and needs vLLM's per-token sampling mask for a consistent importance
 ratio. In every library used here top_p 1.0 and top_k 0 both mean "no truncation".
 """
+DEFAULT_SEED = 42
 TEMPERATURE = 1.0
 TOP_P = 1.0
 TOP_K = 0

@@ -19,6 +19,20 @@ from .sampling import TEMPERATURE, TOP_K, TOP_P
 from ._hashing import file_sha256
 
 SEED_STRIDE = 10**6
+ROLLOUT_REFERENCE_SECONDS = 330  # 3x longest measured 106 s, rounded up
+ROLLOUT_REFERENCE_TOKENS = 2048
+ROLLOUT_REFERENCE_BATCH = 16
+
+
+def completion_timeout(prompt_count, max_tokens):
+    """Scale the short-answer timing bound for answer length and queued batches.
+
+    The 24-answer Qwen evaluation at 8,192 tokens exceeded the old fixed 330 s
+    while its server was still generating normally. Budget full waves of the
+    reference batch, including requests waiting behind the first wave.
+    """
+    return (ROLLOUT_REFERENCE_SECONDS * max(1, math.ceil(max_tokens / ROLLOUT_REFERENCE_TOKENS))
+            * max(1, math.ceil(prompt_count / ROLLOUT_REFERENCE_BATCH)))
 
 
 def pinned_vllm():
@@ -54,7 +68,7 @@ class AdapterRollouts:
     def __init__(self, args, stops):
         self.args, self.stops = args, stops
         # 3x estimated 40 s for an adapter operation; completion requests use
-        # 3x the longest measured 106 s rollout, rounded up to 330 s.
+        # the answer-length and batch-size bound in completion_timeout.
         self.client = httpx.Client(base_url=args.rollout_url, timeout=120, trust_env=False)
         # One name per training process: runs share one server (Part 1 trains two arms in a row), and vLLM refuses a name
         # already registered unless the load is in place, which a new process's first load is not.
@@ -106,6 +120,7 @@ class AdapterRollouts:
         longest = max(map(len, prompts))
         if longest + max_tokens > self.max_model_len:
             raise ValueError(f'a {longest}-token prompt and {max_tokens} answer tokens exceed the vLLM context of {self.max_model_len}')
+        request_timeout = completion_timeout(len(prompts), max_tokens)
         def send(item):
             index, prompt = item
             params = dict(n=1, max_tokens=max_tokens, temperature=TEMPERATURE,
@@ -113,35 +128,37 @@ class AdapterRollouts:
                           seed=seed+index, stop_token_ids=[self.stops], ignore_eos=True,
                           skip_special_tokens=False, logprobs=0, output_kind=2)
             body = dict(model=model, request_id=str(uuid.uuid4()), token_ids=prompt, sampling_params=params)
-            reply = self.request('POST', '/inference/v1/generate', body=body, timeout=330).json()
-            if len(reply['choices']) != 1:
-                raise ValueError('vLLM must return exactly one completion per request')
-            return reply['choices'][0]
+            reply = self.request('POST', '/inference/v1/generate', body=body, timeout=request_timeout).json()
+            return self.parse_completion(index, reply, max_tokens)
         # executor.map preserves prompt/group order despite out-of-order replies.
         with ThreadPoolExecutor(max_workers=min(32, len(prompts))) as pool:
             choices = list(pool.map(send, enumerate(prompts)))
-        ids, probabilities = [], []
-        for choice in choices:
-            tokens = choice['token_ids']
-            logs = choice['logprobs']['content']
-            values = [entry['logprob'] for entry in logs]
-            if (not tokens or len(tokens) > max_tokens or len(tokens) != len(values)
-                    or [entry['token_id'] for entry in logs] != tokens
-                    or not all(type(token) is int and token >= 0 for token in tokens)
-                    or not all(isinstance(value, (int, float)) and math.isfinite(value) and value <= 0 for value in values)):
-                raise ValueError('vLLM returned invalid or misaligned token IDs/log probabilities')
-            if choice['finish_reason'] not in ('stop', 'length'):
-                raise ValueError(f"unexpected finish reason {choice['finish_reason']!r}")
-            if choice['finish_reason'] == 'stop' and tokens[-1] != self.stops:
-                raise ValueError('vLLM stopped without returning a configured stop token')
-            if choice['finish_reason'] == 'length' and len(tokens) != max_tokens:
-                raise ValueError('vLLM reached a length limit before the requested completion budget')
-            if self.stops in tokens[:-1]:
-                raise ValueError('vLLM continued past the configured stop token')
-            ids.append(tokens)
-            probabilities.append(values)
+        ids, probabilities = zip(*choices, strict=True)
         # No sampling mask: TRL then normalises the trainer's log-probabilities over the whole vocabulary, as sampled.
-        return ids, probabilities, None
+        return list(ids), list(probabilities), None
+
+    def parse_completion(self, index, reply, max_tokens):
+        """Validate one reply in its worker so observers can retain each completed draw."""
+        if len(reply['choices']) != 1:
+            raise ValueError('vLLM must return exactly one completion per request')
+        choice = reply['choices'][0]
+        tokens = choice['token_ids']
+        logs = choice['logprobs']['content']
+        values = [entry['logprob'] for entry in logs]
+        if (not tokens or len(tokens) > max_tokens or len(tokens) != len(values)
+                or [entry['token_id'] for entry in logs] != tokens
+                or not all(type(token) is int and token >= 0 for token in tokens)
+                or not all(isinstance(value, (int, float)) and math.isfinite(value) and value <= 0 for value in values)):
+            raise ValueError('vLLM returned invalid or misaligned token IDs/log probabilities')
+        if choice['finish_reason'] not in ('stop', 'length'):
+            raise ValueError(f"unexpected finish reason {choice['finish_reason']!r}")
+        if choice['finish_reason'] == 'stop' and tokens[-1] != self.stops:
+            raise ValueError('vLLM stopped without returning a configured stop token')
+        if choice['finish_reason'] == 'length' and len(tokens) != max_tokens:
+            raise ValueError('vLLM reached a length limit before the requested completion budget')
+        if self.stops in tokens[:-1]:
+            raise ValueError('vLLM continued past the configured stop token')
+        return tokens, values
 
     def verify_reload(self, prompt):
         """A/B/A, once per kind of adapted weight (attention and other linear layers; the MoE experts): changing only
