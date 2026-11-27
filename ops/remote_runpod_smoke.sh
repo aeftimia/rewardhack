@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# deadline: 170
+# deadline: 60
+# (The floor `gate.py ready` reads. Each kind of job has its own minimum, which the driver requires: 170 minutes for the
+# preflight run described below, 240 with the pod judge, and for a Part 1 job its model's setup plus its runs; notes section 80.)
 # Preflight smoke test for the funded training run (docs/preflight-plan.md, step 3). One RunPod pod with a
 # 80-96 GB card. First run on a pod: 2026-11-24 (results/runpod-smoke-20261124*). Its inner limits add up to about 150 minutes
 # (probe 55, first training run 60, second 35) plus setup, so drive it with a 170 minute deadline; when everything works it ends
@@ -45,6 +47,13 @@ trap cleanup EXIT
 # The Part 1 runs this job trains (ops/pod_pins.env); none for the preflight run. An index with no row stops here.
 [[ -n ${PART_ONE_RUNS[$SMOKE_PART_ONE]+set} ]] || fail "INVALID_PART_ONE: no Part 1 job $SMOKE_PART_ONE in ops/pod_pins.env"
 read -ra RUNS <<< "${PART_ONE_RUNS[$SMOKE_PART_ONE]}"
+# The job's training model (ops/pod_pins.env): its weights, trainer options, cards and disk.
+M=${PART_ONE_MODEL[$SMOKE_PART_ONE]}
+MODEL=${MODEL_REPOS[$M]}; REV=${MODEL_REVS[$M]}
+read -ra MODEL_OPTIONS <<< "${MODEL_ARGS[$M]}"
+GPUS=${MODEL_GPUS[$M]}
+# With two cards the trainer has the first and the rollout server the second; with one they share it.
+TRAIN_CARD=0 ROLLOUT_CARD=$((GPUS - 1))
 # Results written: 2x the measured 10 GB per Part 1 run with expert LoRA (adapters and checkpoints; 9.8 and 9.9 GB on 26
 # Nov); 10 GB for the preflight runs.
 OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
@@ -59,9 +68,8 @@ if [[ $SMOKE_PROBE_LARGE == 1 && -d $LARGE_CACHE ]]; then  # sized only for the 
   [[ $LARGE_HERE_GB =~ ^[0-9]+$ ]] || fail "SELF_TEST: du sized the partial $GPT_OSS_120B download in $LARGE_CACHE as '$LARGE_HERE_GB'"
 else LARGE_HERE_GB=0; fi
 LARGE_NEED_GB=(0 $((LARGE_HERE_GB < 70 ? 70 - LARGE_HERE_GB : 0)))  # indexed by SMOKE_PROBE_LARGE
-WORKSPACE_NEED_GB=$((40 + ${LARGE_NEED_GB[$SMOKE_PROBE_LARGE]}))
-pod_self_test "$WORKSPACE_NEED_GB" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
-MODEL=$GPT_OSS_20B; REV=$GPT_OSS_20B_REV
+WORKSPACE_NEED_GB=$((${MODEL_WORKSPACE_GB[$M]} + ${LARGE_NEED_GB[$SMOKE_PROBE_LARGE]}))
+pod_self_test "$GPUS" "$WORKSPACE_NEED_GB" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
 JUDGE=$POD_JUDGE; JUDGE_REV=$POD_JUDGE_REV
 # The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
 # forwards the key into ~/.judge_key (mode 600) only when asked to. The key is held in an unexported shell variable
@@ -143,7 +151,8 @@ for pair in "${PAIRS[@]}"; do
   # shellcheck disable=SC2086  # split on purpose: "repo revision" becomes $1 and $2
   set -- $pair
   log "start download $1"
-  DOWNLOAD_WAIT=660 fetch_model "$1" "$2" || fail "DOWNLOAD_FAILED $1"  # cap: 2x measured 5.1 min
+  # The model's limit and its basis are in ops/pod_pins.env (DOWNLOAD_*_SECONDS); the pod judge is smaller than either model.
+  DOWNLOAD_WAIT=${MODEL_DOWNLOAD_LIMITS[$M]} fetch_model "$1" "$2" || fail "DOWNLOAD_FAILED $1"
 done
 # gpt-oss-120b for the probe after training (SMOKE_PROBE_LARGE=1), fetched and given its own environment while the training
 # runs: the in-process vLLM probe needs vLLM and this project in one environment. vLLM's numba needs numpy below 2.5 and
@@ -190,7 +199,7 @@ fi
 
 # Questions 2 and 3. Low reasoning effort: the unprompted base rate (12/60) was measured there, and high
 # effort truncated 89/120 at 8k tokens. Hard task set, neutral prompt, no hint: unseeded exploration.
-BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" --reasoning-effort low --thinking unsupported --taskset hard --attn-implementation eager --mxfp4 dequantize
+BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" "${MODEL_OPTIONS[@]}" --taskset hard
       --max-completion-length 2048 --num-generations 8 --eval-limit "${SMOKE_EVAL_LIMIT:-12}" --eval-samples 2 --save-every 8 --stop-no-variation 99
       "${JUDGE_ARGS[@]}")
 # The funded arm at λ=0.5: the probe and the preflight training steps. A Part 1 job (SMOKE_PART_ONE above 0) trains its runs instead (below).
@@ -215,7 +224,7 @@ log "probe: $PROBE_LINE; training with --max-completion-length $LIMIT"
 if [[ $CHECK_VERIFIER == 1 ]]; then fail PROBE_VERIFIER_UNDECIDED; fi
 fi
 step() { name=$1; shift; log "start $name"
-  judged "$PY" entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
+  CUDA_VISIBLE_DEVICES=$TRAIN_CARD judged "$PY" entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
   # A run stopped early (deadline, no variation) still exits 0: say so where the job's progress is read.
   status=$("$PY" -c 'import json, sys; s = json.load(open(sys.argv[1])); print("steps", s["global_step"], "early stop", s["early_stop"] if "early_stop" in s else "none")' ~/out/"$name"/summary.json) \
     || fail "$name SUMMARY_UNREADABLE"
@@ -237,9 +246,9 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 && ${#RUNS[@]} -gt 0 ]]; then
   # A fixed 4,096 refused every request once LIMIT was 4,096 (review round 6); the rollout client also checks each request.
   # CUDA graphs are captured for decode batches of up to 32 tokens (16 sequences use at most 16): the default captured 166
   # sizes up to 1,024 on this card, most of a 125 s engine start (measuring pass). Larger batches (prefill) run eagerly.
-  VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True \
+  CUDA_VISIBLE_DEVICES=$ROLLOUT_CARD VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True \
     in_env vllm vllm serve "$MODEL" --revision "$REV" --served-model-name "$MODEL@$REV" \
-      --host 127.0.0.1 --port "$ROLLOUT_PORT" --max-model-len $((LIMIT + PROMPT_ROOM_TOKENS)) --gpu-memory-utilization 0.30 --max-num-seqs $((GENERATIONS * PROMPTS)) --max-cudagraph-capture-size 32 \
+      --host 127.0.0.1 --port "$ROLLOUT_PORT" --max-model-len $((LIMIT + PROMPT_ROOM_TOKENS)) --gpu-memory-utilization "${MODEL_ROLLOUT_FRACTION[$M]}" --max-num-seqs $((GENERATIONS * PROMPTS)) --max-cudagraph-capture-size 32 \
       --enable-lora --max-lora-rank 16 --max-loras 2 --enable-sleep-mode --enable-scale-out \
       --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
   ROLLOUT_PID=$!

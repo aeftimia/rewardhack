@@ -38,6 +38,12 @@ if [[ -n ${SMOKE_PROBE_LARGE+set} ]]; then PROBE_LARGE=$SMOKE_PROBE_LARGE; else 
 [[ $PART_ONE == 0 || ${#PART_ONE_JOB[@]} -gt 0 || $PROBE_LARGE == 1 ]] || { echo "SMOKE_PART_ONE=$PART_ONE has no training runs: it is only for SMOKE_PROBE_LARGE=1"; exit 2; }
 # The probe runs after a Part 1 job's training, on the vLLM path that job already requires.
 [[ $PROBE_LARGE == 0 || $PART_ONE != 0 ]] || { echo 'SMOKE_PROBE_LARGE=1 runs after a Part 1 job: set SMOKE_PART_ONE too'; exit 2; }
+# The job's training model (ops/pod_pins.env). The gpt-oss-120b probe takes one whole card after a one-card job's training.
+MODEL_INDEX=${PART_ONE_MODEL[$PART_ONE]}
+[[ $PROBE_LARGE == 0 || ${MODEL_GPUS[$MODEL_INDEX]} == 1 ]] || { echo "SMOKE_PROBE_LARGE=1 follows a one-card job; SMOKE_PART_ONE=$PART_ONE trains ${MODEL_REPOS[$MODEL_INDEX]} on ${MODEL_GPUS[$MODEL_INDEX]} cards"; exit 2; }
+# The preflight run's own limits add up to about 150 minutes plus setup (ops/remote_runpod_smoke.sh's header); the script's
+# `# deadline:` line is the floor for every job, so this minimum is held here (notes section 80).
+[[ $REMOTE != ops/remote_runpod_smoke.sh || $PART_ONE != 0 || ! $DEADLINE =~ ^[0-9]+$ || $DEADLINE -ge 170 ]] || { echo 'the preflight run (SMOKE_PART_ONE unset or 0) needs a deadline of at least 170 minutes'; exit 2; }
 if [[ $PART_ONE != 0 ]]; then
   # A Part 1 job's runs are the whole training (the gpt-oss-120b probe may follow): no preflight probe, no funded-arm runs, and its length and time limit stated, not
   # taken from the preflight defaults (12 steps, 60 minutes). ${X+set} tests whether the launch set X (bash 3.2 has no -v).
@@ -49,10 +55,9 @@ if [[ $PART_ONE != 0 ]]; then
   }
   # The setup allowance below is the API judge's; a judge served on the pod adds its download, start and validation.
   [[ -z ${JUDGE_KIND+set} || $JUDGE_KIND == api ]] || { echo "SMOKE_PART_ONE=$PART_ONE is sized for JUDGE_KIND=api"; exit 2; }
-  # The runs one after the other, each allowed SMOKE_TRAIN_SECONDS, after setup and the vLLM server start (15 minutes
-  # measured on 25 Nov): a shorter job deadline would end the last run before its after-evaluation.
-  # cap: 2x measured 15 min
-  PART1_SETUP_MINUTES=30
+  # The runs one after the other, each allowed SMOKE_TRAIN_SECONDS, after setup and the vLLM server start (per model, with
+  # its basis, in ops/pod_pins.env): a shorter job deadline would end the last run before its after-evaluation.
+  PART1_SETUP_MINUTES=${MODEL_SETUP_LIMITS[$MODEL_INDEX]}
   # Whole numbers before any arithmetic: bash evaluates text inside (( )) as an expression. At most six digits (about 11
   # days of seconds): a longer one overflows bash's arithmetic and turned the deadline check below into a pass (round 28).
   [[ $DEADLINE =~ ^[1-9][0-9]{0,5}$ && $SMOKE_TRAIN_SECONDS =~ ^[1-9][0-9]{0,5}$ && $SMOKE_FINAL_EVAL_SECONDS =~ ^[1-9][0-9]{0,5}$ ]] || {
@@ -146,6 +151,8 @@ if [[ ${DRIVE_CHECK_ONLY:-0} == 1 ]]; then echo 'check passed'; exit 0; fi
 # marked used here. No host is exempt: tests run a copy of ops/ whose gate.sh is a stub (tests/conftest.py).
 bash ops/gate.sh launch --remote "$REMOTE" --deadline "$DEADLINE" || { echo 'not started: the launch check above refused it, before any pod was contacted' >&2; exit 2; }
 mkdir -p "$RESULTS"
+# The commit the pod runs (the launch record requires it clean), kept with the results: the run archive records it (notes section 80).
+git rev-parse HEAD > "$RESULTS/launch-commit.txt"
 SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$RESULTS/known_hosts" -o ConnectTimeout=10 -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 # rsync never deletes here, so every resumable checkpoint an interim copy saw would stay on this machine (the trainer keeps
 # two on the pod; with expert LoRA each is about 3 GB). Interim copies leave them out; the final copy takes the ones left.
@@ -329,7 +336,12 @@ LAUNCH_SENT=1
 set +e
 # A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
 # The remote log goes inside it so the runner's own errors are pulled with the results.
-"${SSH[@]}" "root@$HOST" "if [ -e out ]; then mv out out.prev.\$(date +%s); fi; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=${AUTOSTOP_GRACE_SECONDS:-600} ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
+# The values the pod gets for settings left unset: the documented defaults the checks above validated.
+if [[ -n ${JUDGE_KIND:-} ]]; then SENT_JUDGE_KIND=$JUDGE_KIND; else SENT_JUDGE_KIND=api; fi
+if [[ -n ${LEAN_ISOLATION:-} ]]; then SENT_ISOLATION=$LEAN_ISOLATION; else SENT_ISOLATION=required; fi
+if [[ -n ${JUDGE_MAX_USD:-} ]]; then SENT_JUDGE_MAX_USD=$JUDGE_MAX_USD; else SENT_JUDGE_MAX_USD=1; fi
+if [[ -n ${AUTOSTOP_GRACE_SECONDS:-} ]]; then SENT_GRACE=$AUTOSTOP_GRACE_SECONDS; else SENT_GRACE=600; fi
+"${SSH[@]}" "root@$HOST" "if [ -e out ]; then mv out out.prev.\$(date +%s); fi; mkdir -p out; JUDGE_KIND=$SENT_JUDGE_KIND LEAN_ISOLATION=$SENT_ISOLATION JUDGE_MAX_USD=$SENT_JUDGE_MAX_USD REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=$SENT_GRACE ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
 LAUNCH_STATUS=$?
 set -e
 # The call runs the job in the background, so it fails only when ssh did, which may be before or after the job started.

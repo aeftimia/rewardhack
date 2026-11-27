@@ -19,7 +19,8 @@ smi() { timeout "$NVIDIA_SMI_SECONDS" nvidia-smi "$@"; }
 # the log (the callers fail on it), not a free card.
 card_used_mib() {
   local used
-  used=$(smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1) || { log "nvidia-smi failed or did not answer in $NVIDIA_SMI_SECONDS s"; return 1; }
+  # The busiest card: a two-card job's rollout server holds the second (review round 32).
+  used=$(smi --query-gpu=memory.used --format=csv,noheader,nounits | sort -n | tail -1) || { log "nvidia-smi failed or did not answer in $NVIDIA_SMI_SECONDS s"; return 1; }
   [[ $used =~ ^[0-9]+$ ]] || { log "nvidia-smi read the card's memory as '$used'"; return 1; }
   echo "$used"
 }
@@ -76,10 +77,10 @@ fetch_model() {
 fetch_attempt() { timeout "$3" "$HF" download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*'; }
 
 # Seconds-long checks of what the job assumes about the machine, before any install or download is paid for.
-# Usage: pod_self_test <free GB needed under /workspace> <free GB needed for ~/out> <port that must be free>...
+# Usage: pod_self_test <cards needed> <free GB needed under /workspace> <free GB needed for ~/out> <port that must be free>...
 pod_self_test() {
-  local need_gb=$1 out_need_gb=$2 tool port free_gb out_free_gb
-  shift 2
+  local gpus=$1 need_gb=$2 out_need_gb=$3 tool port free_gb out_free_gb cards
+  shift 3
   for tool in runpodctl timeout setsid pkill pgrep curl tar zstd nvidia-smi python; do
     command -v "$tool" > /dev/null || fail "SELF_TEST: $tool is not on this pod"
   done
@@ -93,6 +94,9 @@ pod_self_test() {
   done
   # A process killed a moment ago (a relaunch) can take some seconds to give the card back.
   wait_card_free 'SELF_TEST (an earlier job'"'"'s process?)'
+  # A two-card model on a one-card pod would fail only at the rollout server's start, after the download.
+  cards=$(smi --query-gpu=name --format=csv,noheader | wc -l) || fail NVIDIA_SMI_FAILED
+  ((cards >= gpus)) || fail "SELF_TEST: this pod has $cards card(s), the job's model needs $gpus"
   free_gb=$(df --output=avail -BG /workspace | tail -1 | tr -dc 0-9)
   [[ $free_gb -ge $need_gb ]] || fail "SELF_TEST: /workspace has ${free_gb} GB free, the job needs $need_gb"
   # Results go to ~/out, on the container disk, and a relaunch keeps the earlier run beside it (out.prev.*). With expert
