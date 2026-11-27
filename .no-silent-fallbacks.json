@@ -91,9 +91,11 @@
           {"path": "src/rewardhack/verifier.py", "symbol": "INCONCLUSIVE"},
           {"path": "src/rewardhack/verifier.py", "symbol": "verify_proof"},
           {"path": "src/rewardhack/verifier.py", "symbol": "verify_refutation"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "decided"},
           {"path": "src/rewardhack/outcomes.py", "symbol": "score"},
           {"path": "src/rewardhack/outcomes.py", "symbol": "training_rewards"},
-          {"path": "src/rewardhack/outcomes.py", "symbol": "summarize"}
+          {"path": "src/rewardhack/outcomes.py", "symbol": "summarize"},
+          {"path": "tests/test_outcome_regressions.py", "symbol": "test_only_timeouts_are_retried_and_only_within_the_allowance"}
         ]
       }]
     },
