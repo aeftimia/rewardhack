@@ -1,12 +1,13 @@
 """Tests for what the first review round (2026-11-25) showed could break unseen. Tiny models and stubs, CPU only."""
 import json
 import os
+import signal
 import subprocess
 import time
 from types import SimpleNamespace
 
 import pytest
-from conftest import TIMEOUT_STUB, run_options
+from conftest import SETSID, TIMEOUT_STUB, run_options
 
 from rewardhack import hf_grpo, outcomes, rescore
 from test_training_integration import REWARDS, TASKS, tiny, train
@@ -161,8 +162,8 @@ def test_the_prompt_does_not_depend_on_the_day_or_on_a_missing_switch():
 def stubs(tmp_path, **bodies):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir(exist_ok=True)
-    for name, body in dict(dict(timeout=TIMEOUT_STUB, setsid='exec "$@"\n'), **bodies).items():
-        (bin_dir/name).write_text('#!/bin/bash\n'+body)
+    for name, body in dict(dict(timeout=TIMEOUT_STUB, setsid=SETSID), **bodies).items():
+        (bin_dir/name).write_text(body if body.startswith('#!') else '#!/bin/bash\n'+body)
         (bin_dir/name).chmod(0o755)
     return str(bin_dir)+':'+os.environ['PATH']
 
@@ -189,20 +190,35 @@ def test_a_provisional_timer_can_be_armed_before_the_repo_is_on_the_pod(tmp_path
 def test_a_relaunch_stops_the_earlier_job_first(tmp_path):
     """An earlier job left running would share the GPU, and its exit would write this run's exit code."""
     path = stubs(tmp_path)
-    old_runner = subprocess.Popen(['sleep', '300'])
-    old_job = subprocess.Popen(['bash', '-c', 'sleep 300 & wait'], start_new_session=True)
+    child_pid = tmp_path/'old-child'
+    old_runner = subprocess.Popen(['bash', '-c', 'sleep 300 & echo "$!" > "$1"; wait', 'old-runner', str(child_pid)],
+                                  start_new_session=True)
     pids = tmp_path/'pids'
-    pids.write_text(f'{old_runner.pid} {old_job.pid}\n')
+    pids.write_text(f'{old_runner.pid}\n')
     job = tmp_path/'job.sh'
     job.write_text('exit 0\n')
     env = dict(os.environ, PATH=path, REMOTE_JOB_OUT=str(tmp_path/'out'), REMOTE_JOB_PIDS=str(pids), REQUIRE_AUTOSTOP='0')
+    replacement = None
     try:
-        result = subprocess.run(['bash', 'ops/remote_job.sh', str(job), '10'], env=env, capture_output=True, text=True)
-        assert result.returncode == 0, result.stdout+result.stderr
-        assert old_runner.wait(timeout=5) == -9 and old_job.wait(timeout=5) == -9
-        assert subprocess.run(['pgrep', '-g', str(old_job.pid)], capture_output=True).stdout == b'', 'a child of the earlier job survived'
+        for _ in range(100):
+            if child_pid.exists() and child_pid.read_text().strip():
+                break
+            time.sleep(.05)
+        assert os.getsid(int(child_pid.read_text())) == old_runner.pid
+        replacement = subprocess.Popen(['bash', 'ops/remote_job.sh', str(job), '10'], env=env,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # Reap our old child while the replacement waits for the session to disappear.
+        assert old_runner.wait(timeout=10) == -9
+        stdout, stderr = replacement.communicate(timeout=45)
+        assert replacement.returncode == 0, stdout+stderr
+        assert subprocess.run(['pgrep', '-s', str(old_runner.pid)], capture_output=True).stdout == b'', 'a child of the earlier job survived'
         assert not pids.exists(), 'the pids file outlived the job it names'
     finally:
-        for process in (old_runner, old_job):
-            if process.poll() is None:
-                process.kill()
+        try:
+            os.killpg(old_runner.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            assert old_runner.poll() is not None, 'the old process group disappeared while its runner remained'
+        old_runner.wait(timeout=5)
+        if replacement is not None and replacement.poll() is None:
+            replacement.kill()
+            replacement.wait(timeout=5)

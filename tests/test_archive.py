@@ -7,10 +7,12 @@ import re
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 from conftest import PROJECT
 from test_driver_refusals import drive
+from rewardhack import hf_grpo
 
 # Stand-ins: the bucket is the folder FAKE_S3/<bucket>/. rclone copies (honouring the anchored --exclude filters and
 # --immutable), checks, hashes and cats; FAKE_RCLONE_CHECK_FAILS makes `check` report a difference. aws presigns and reports
@@ -115,7 +117,7 @@ def run(tmp_path):
             (run/'train-a'/'trainer'/f'checkpoint-{step}'/part).write_bytes(bytes([step]) * 100)
     (run/'train-a'/'adapter-step8').mkdir()
     (run/'train-a'/'adapter-step8'/'adapter_model.safetensors').write_bytes(b'\x01' * 100)
-    for name in ('run-settings.json', 'training-rollouts.jsonl', 'steps.jsonl', 'summary.json'):
+    for name in hf_grpo.RESUME_RUN_FILES:
         (run/'train-a'/name).write_text('{}\n')
     (run/'known_hosts').write_text('pod key\n')
     (run/'launch-commit.txt').write_text(COMMIT + '\n')
@@ -176,7 +178,7 @@ def test_resume_names_one_checkpoint_and_the_run_files_and_the_pod_checks_them(t
     assert code == 0, lines
     names = [name for _, name, _ in json.loads(lines)]
     assert names == sorted([f'train-a/trainer/checkpoint-60/{part}' for part in CHECKPOINT_PARTS]
-                           + ['train-a/run-settings.json', 'train-a/steps.jsonl', 'train-a/training-rollouts.jsonl'])
+                           + [f'train-a/{name}' for name in hf_grpo.RESUME_RUN_FILES])
     assert archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60')[1] == lines
     code, output = fetch(tmp_path, tmp_path/'pod', lines)
     assert code == 0, output
@@ -205,6 +207,34 @@ def test_resume_refuses_what_it_cannot_resume(tmp_path, run):
     assert code != 0 and 'no archive' in output
     code, output = archive(tmp_path, 'resume', run_id, 'train-a/trainer/checkpoint-60', FAKE_SESSION_SECONDS='600')
     assert code != 0 and 'aws sso logout' in output and 'https://' not in output
+
+
+def test_fetched_checkpoint_passes_the_trainers_resume_checks(tmp_path, run, monkeypatch):
+    """Archive selection must satisfy the trainer's actual reader, not just its list of filenames."""
+    original = run/'train-a'
+    args = SimpleNamespace(**dict.fromkeys(hf_grpo.RESUME_SETTINGS))
+    vars(args).update(steps=61, num_generations=1, prompts_per_step=1, lr_schedule='constant',
+                      resume_from=tmp_path/'pod'/'train-a'/'trainer'/'checkpoint-60', out=tmp_path/'continued')
+    monkeypatch.setattr(hf_grpo.importlib.metadata, 'version', lambda name: 'test-version')
+    (original/hf_grpo.RUN_SETTINGS).write_text(json.dumps(hf_grpo.run_settings(args)))
+    (original/'summary.json').write_text(json.dumps({'status': 'completed', 'global_step': 60}))
+    (original/'trainer'/'checkpoint-60'/'trainer_state.json').write_text(json.dumps({'global_step': 60, 'epoch': 1.0}))
+    (original/'training-rollouts.jsonl').write_text('{}\n' * 60)
+    (original/'steps.jsonl').write_text(''.join(json.dumps({'step': step}) + '\n' for step in range(1, 61)))
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    code, document = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60')
+    assert code == 0, document
+    code, output = fetch(tmp_path, tmp_path/'pod', document)
+    assert code == 0, output
+    hf_grpo.check_resume(args)
+
+
+@pytest.mark.parametrize('missing', ['summary.json', 'before-evaluation.jsonl'])
+def test_archive_without_required_run_metadata_cannot_resume(tmp_path, run, missing):
+    (run/'train-a'/missing).unlink()
+    assert archive(tmp_path, 'upload', run)[0] == 0
+    code, output = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60')
+    assert code != 0 and missing in output
 
 
 def test_existing_s3_record_and_objects_are_read_without_rewriting(tmp_path, run):

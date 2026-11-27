@@ -3,7 +3,7 @@ import os
 import subprocess
 
 import pytest
-from conftest import TIMEOUT_STUB, driver_script
+from conftest import SETSID, TIMEOUT_STUB, driver_script
 
 DROPPED = ('LEAN_ISOLATION', 'REQUIRE_AUTOSTOP', 'AUTOSTOP_GRACE_SECONDS', 'KEEP_POD')
 
@@ -13,9 +13,9 @@ def clean_env(tmp_path, **settings):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()
     stubs = {'ssh': f'echo "$*" >> {tmp_path}/ssh-calls\nexit 255\n', 'rsync': 'exit 1\n', 'sleep': 'exit 0\n',
-             'timeout': TIMEOUT_STUB, 'setsid': 'exec "$@"\n'}  # stand-ins, so no test waits on a real limit
+             'timeout': TIMEOUT_STUB, 'setsid': SETSID}  # stand-ins, so no test waits on a real limit
     for name, body in stubs.items():
-        (bin_dir/name).write_text('#!/bin/bash\n'+body)
+        (bin_dir/name).write_text(body if body.startswith('#!') else '#!/bin/bash\n'+body)
         (bin_dir/name).chmod(0o755)
     kept = {k: v for k, v in os.environ.items() if k not in DROPPED and not k.startswith('SMOKE_')}
     return dict(kept, PATH=f"{bin_dir}:{os.environ['PATH']}", **{'JUDGE_KIND': 'pod', 'FORWARD_JUDGE_KEY': '0', **settings})  # a case may name its own judge

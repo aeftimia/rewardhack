@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import LAUNCH_TRACES_ANSWER, TIMEOUT_STUB, driver_script
+from conftest import LAUNCH_RECEIPT_ANSWER, SETSID, TIMEOUT_STUB, driver_script
 
 from rewardhack.judge import validate
 from rewardhack.judge_holdout import acceptance, check_frozen, check_rows, freeze, load_review, prepare
@@ -94,7 +94,7 @@ def test_remote_runner_propagates_failure(tmp_path):
     timeout.write_text('#!/bin/bash\n' + TIMEOUT_STUB)
     timeout.chmod(0o755)
     setsid = bin_dir/'setsid'  # the job runs in its own session so a relaunch can stop all of it; macOS has no setsid
-    setsid.write_text('#!/bin/bash\nexec "$@"\n')
+    setsid.write_text(SETSID)
     setsid.chmod(0o755)
     job = tmp_path/'fail.sh'
     job.write_text('exit 7\n')
@@ -115,10 +115,10 @@ def test_remote_runner_arms_pod_removal_or_refuses_to_start(tmp_path, pod_id):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()
     calls = tmp_path/'runpodctl.calls'
-    stubs = dict(timeout=TIMEOUT_STUB, setsid='exec "$@"\n', pkill=f'echo "pkill $@" >> {calls}\n',
+    stubs = dict(timeout=TIMEOUT_STUB, setsid=SETSID, pkill=f'echo "pkill $@" >> {calls}\n',
                  runpodctl=f'echo "$@ key=$RUNPOD_API_KEY" >> {calls}\n[[ $2 != pod || $3 != bad ]]\n')
     for name, body in stubs.items():
-        (bin_dir/name).write_text('#!/bin/bash\n'+body)
+        (bin_dir/name).write_text(body if body.startswith('#!') else '#!/bin/bash\n'+body)
         (bin_dir/name).chmod(0o755)
     job = tmp_path/'job.sh'
     job.write_text(f'touch {tmp_path}/job-ran\nexit 0\n')
@@ -181,7 +181,7 @@ def test_driver_returns_remote_status(tmp_path, remote_code):
     bin_dir.mkdir()
     stubs = {
         # Once removal has been requested the pod stops answering, which is how the driver knows it is gone.
-        'ssh': f'[[ -e {tmp_path}/removed ]] && exit 255\n' + LAUNCH_TRACES_ANSWER + f'for arg in "$@"; do if [[ $arg == "cat out/EXIT_CODE" ]]; then echo {remote_code}; fi\n'
+        'ssh': f'[[ -e {tmp_path}/removed ]] && exit 255\n' + LAUNCH_RECEIPT_ANSWER + f'for arg in "$@"; do if [[ $arg == *"cat EXIT_CODE"* ]]; then echo {remote_code}; fi\n'
                f'if [[ $arg == *--remove-now* ]]; then touch {tmp_path}/removed; fi; done\nexit 0\n',
         'rsync': 'exit 0\n',
         'sleep': 'exit 0\n',

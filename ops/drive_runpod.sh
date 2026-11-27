@@ -96,6 +96,9 @@ fi
 # The copy to and from the pod passes its ssh options to rsync as one string, which rsync splits at spaces: a results path with
 # a space sends ssh half of the known-hosts path as the host. The sync then fails after the pod is armed, and so do the final copies.
 [[ $RESULTS != *[[:space:]]* ]] || { echo "the results directory must not contain spaces (give it relative to the repo): $RESULTS"; exit 2; }
+# A run owns its local directory too: rsync preserves absent files, and reusing a directory would retain an earlier
+# run's rows while overwriting its launch commit. Reject even an empty directory or a broken symlink.
+[[ ! -e $RESULTS && ! -L $RESULTS ]] || { echo "the results directory must be new: $RESULTS"; exit 2; }
 if [[ ${SMOKE_SKIP_PROBE:-0} == 1 && -z ${SMOKE_TOKEN_LIMIT:-} ]]; then
   echo 'SMOKE_SKIP_PROBE=1 needs SMOKE_TOKEN_LIMIT, the token limit an earlier probe on this model called for; without it the job stops on the pod after its install and download'; exit 2
 fi
@@ -146,18 +149,22 @@ fi
 # Everything above refuses a command that could only fail later, on a pod that is already billing. DRIVE_CHECK_ONLY=1 runs just
 # those checks, with placeholder host and port if need be, so they can be made before a pod is deployed (`entrypoints/gate.py ready`).
 if [[ ${DRIVE_CHECK_ONLY:-0} == 1 ]]; then echo 'check passed'; exit 0; fi
-# The first act once the arguments are valid: the launch record (`entrypoints/gate.py ready`) must cover this launch, its commit,
+# Reserve the destination atomically before consuming the launch record. Two drivers given the same path cannot
+# both pass this mkdir, even if each saw it absent above. A failed gate leaves this empty reservation for inspection.
+mkdir -p -- "$(dirname -- "$RESULTS")" || { echo "could not create the results parent: $RESULTS" >&2; exit 2; }
+mkdir -- "$RESULTS" || { echo "could not reserve a new results directory: $RESULTS" >&2; exit 2; }
+# Before contacting a pod: the launch record (`entrypoints/gate.py ready`) must cover this launch, its commit,
 # ledger, remote script, deadline and the driver settings in this environment, and must not have started one already. It is
 # marked used here. No host is exempt: tests run a copy of ops/ whose gate.sh is a stub (tests/conftest.py).
 bash ops/gate.sh launch --remote "$REMOTE" --deadline "$DEADLINE" || { echo 'not started: the launch check above refused it, before any pod was contacted' >&2; exit 2; }
-mkdir -p "$RESULTS"
 # The commit the pod runs (the launch record requires it clean), kept with the results: the run archive records it (notes section 80).
 git rev-parse HEAD > "$RESULTS/launch-commit.txt"
 SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$RESULTS/known_hosts" -o ConnectTimeout=10 -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 # rsync never deletes here, so every resumable checkpoint an interim copy saw would stay on this machine (the trainer keeps
 # two on the pod; with expert LoRA each is about 3 GB). Interim copies leave them out; the final copy takes the ones left.
 # The vLLM hand-over adapter (rewritten every step) and the reload-check adapter are scratch, about 1 GB each: never copied.
-pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" --exclude='adapter-rollout/' --exclude='adapter-sync-check/' "$@" "root@$HOST:out/" "$RESULTS/"; }
+# Enter the owned directory before checking it, so a later rename cannot redirect the copy.
+pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" --rsync-path="$OWN_OUTPUT && rsync" --exclude='adapter-rollout/' --exclude='adapter-sync-check/' "$@" "root@$HOST:./" "$RESULTS/"; }
 # Sizes in the final copy, smallest first: the pod removes itself at most 10 minutes after the job ends.
 SMALL=(--exclude='adapter*/' --exclude='trainer/checkpoint-*/')  # logs, rows, summaries, evaluations
 ADAPTERS=(--exclude='trainer/checkpoint-*/')                      # and the saved adapters, about 1 GB each
@@ -179,22 +186,6 @@ fi
 # A job's trace is a remote.log, in out/ or in an out.prev.* a relaunch moved aside; an out.prev.* holding only what an
 # arm call wrote (autostop.log) is none (review round 48).
 JOB_TRACES='set -- out.prev.*/remote.log; if [ -e out/remote.log ] || [ -e "$1" ]; then echo held; else echo empty; fi'
-# Asked just before the launch and again after a launch call that did not return: "<1 if out/remote.log exists, else 0>
-# <number of out.prev.*>". A launch that ran wrote a fresh out/remote.log or moved an earlier out/ to a new out.prev.*,
-# so the two answers tell whether this run's job started (review round 46).
-# shellcheck disable=SC2016  # expanded by the pod's shell, not here
-LAUNCH_TRACES='set -- out.prev.*; if [ -e "$1" ]; then n=$#; else n=0; fi; if [ -e out/remote.log ]; then r=1; else r=0; fi; echo "$r $n"'
-LAUNCH_TRACE_FORM='^[01] [0-9]+$'
-# Whether the launch ran, from the answers before ($1) and after ($2). The launch moves an earlier out/ aside and then
-# writes a fresh out/remote.log as it starts the job, so the job started only if out/remote.log is there now and is new:
-# there was none before, or out.prev.* grew. A connection lost between the move and the start leaves no remote.log, and
-# counts as not started (review round 47).
-launch_ran() {
-  local before_log before_prev after_log after_prev
-  read -r before_log before_prev <<< "$1"
-  read -r after_log after_prev <<< "$2"
-  ((after_log == 1 && (before_log == 0 || after_prev > before_prev)))
-}
 # One command on the pod, bounded as a whole: the cleanup below asks the RunPod API too (`--remove-now`), and a stalled
 # API must end in the reminders, not hold the driver with the pod billing (review round 35). ARM_SECONDS: ops/pod_pins.env.
 # shellcheck disable=SC2329  # run by `finish` below
@@ -205,20 +196,15 @@ finish() {
   # From here nothing may stop this function: with the terminal gone a plain `echo` fails, and under `set -e` that
   # ended the cleanup before the copy and the removal. Every step below reports its own failure.
   set +e
-  # When this run launched no job, whether any job ever ran on the pod (see the removal below); asked before the copy
-  # (review round 42), and once more if no answer came (round 43). The last line only: a login shell on the pod may
-  # print its own text before the answer. Only this run's own job is copied: an earlier job's out/ on a kept pod was
-  # copied by its own driver, and copying it again into this run's folder would count its rows twice (round 43).
-  # A launch call that failed is settled where it failed (below, after the launch): a job that started is followed as
-  # any other, and one that did not leaves LAUNCH_SENT=0. Only a launch whose pod gave no answer arrives here sent but
-  # unconfirmed (review rounds 46 and 47).
+  # Only a confirmed receipt authorizes copying out/. Before any launch was sent, ask whether the pod holds
+  # earlier results so cleanup can preserve them. Take the last line to ignore a login-shell banner.
   HELD=unknown
   if [[ $LAUNCH_SENT == 0 ]]; then
     HELD=$(on_pod "$JOB_TRACES" | tail -n 1)
     if [[ -z $HELD ]]; then HELD=$(on_pod "$JOB_TRACES" | tail -n 1); fi
   fi
   if [[ $LAUNCH_SENT == 1 && $LAUNCHED == 0 ]]; then
-    say "the launch call failed, so whether this run's job started is unknown: out/ on the pod is not copied into this run's folder (it may be an earlier job's) and the pod is not removed from here; its removal timer bounds it. Look at out/ there before fetching it"
+    say "this launch's receipt was not confirmed, so whether this run's job started is unknown: out/ is not copied and the pod is not removed from here. Its removal timer bounds it; inspect launch.$LAUNCH_ID.log and out/LAUNCH_ID on the pod"
     COPIED=1 CHECKPOINTS=0 SMALL_COPIED=1
   elif [[ $LAUNCHED == 0 && $HELD == empty ]]; then
     say 'no job was launched on this pod: nothing to copy'
@@ -248,15 +234,16 @@ finish() {
     if [[ $CHECKPOINTS == 0 ]]; then say 'the results are copied but the resumable checkpoints are not: the pod is not removed from here, so they can still be fetched until its own timer removes it'; fi
   fi
   fi  # the copy
-  if ! on_pod 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
+  # An unconfirmed detached launch may still need its staged key. The pod's timer bounds that file's lifetime.
+  if [[ -n ${LAUNCH_ID:-} && ( $LAUNCH_SENT == 0 || $LAUNCHED == 1 ) ]] && ! on_pod "rm -f ~/.judge_key.$LAUNCH_ID"; then
+    say "could not reach the pod to delete this launch's staged judge key"
+  fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
-  # This run armed no timer, so it started no job. A fresh pod then holds nothing and is removed here whatever KEEP_POD
-  # says (review round 39: a failed arm call on a reachable pod was left with a reminder and no bound on its billing). A
-  # kept pod (a relaunch) may hold an earlier job's results, and its earlier timer: it is removed only when it answers
-  # that no job was ever launched on it; otherwise the timer check below says whether a timer still runs (review round
-  # 40). Only a launched job leaves out/remote.log (the launch below writes it) or an out.prev.* (a relaunch's move);
-  # out/ alone is no sign, since the runner creates it before arming (review round 41).
-  # HELD is asked before the copy, at the top of this function.
+  # A later launch must never be removed by this driver's cleanup.
+  REMOVE_COMMAND='bash -s -- --remove-now'
+  if [[ $LAUNCHED == 1 ]]; then REMOVE_COMMAND="$OWN_OUTPUT && $REMOVE_COMMAND"; fi
+  # A failed arm on a fresh, empty pod requires immediate removal even with KEEP_POD. Preserve earlier results
+  # on a reused pod, but verify that a removal timer remains. out/ alone proves nothing: arming creates it too.
   if [[ $ARMED == 0 && -z $HELD ]] && ! on_pod true; then
     if [[ $SSH_UP == 1 ]]; then why='the pod stopped answering after it accepted SSH, before this run armed a removal timer on it'
     else why='the pod never accepted SSH, so this run armed no removal timer on it'; fi
@@ -273,7 +260,7 @@ finish() {
       fi
     elif on_pod "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
     else say "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
-  elif on_pod 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
+  elif on_pod "$REMOVE_COMMAND" < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
     # Accepted is not gone: the pod is gone when it stops answering.
     GONE=0
     for _ in $(seq 12); do
@@ -282,7 +269,7 @@ finish() {
     done
     if [[ $GONE == 1 ]]; then say "pod removed: it no longer answers"
     else say "REMINDER: RunPod accepted the removal but the pod still answers after a minute. Check the console now"; code=97; fi
-  else say "REMINDER: could not remove the pod from here. Terminate it in the RunPod console now"; code=97; fi
+  else say "REMINDER: removal was not confirmed. Check the pod's launch ownership and removal timer now before terminating it: a different launch must be preserved"; code=97; fi
   if [[ $SMALL_COPIED == 0 && $code == 0 ]]; then code=96; fi
   if [[ $SMALL_COPIED == 1 && $COPIED == 0 && $code == 0 ]]; then code=94; fi
   if [[ $COPIED == 1 && $CHECKPOINTS == 0 && $code == 0 ]]; then code=95; fi
@@ -293,7 +280,7 @@ ARMED=0
 # final try (review round 37); `finish` tells a pod that never answered from one that stopped answering (round 45).
 SSH_UP=0
 LAUNCH_SENT=0  # set just before the launch call
-LAUNCHED=0  # set once the launch call returned: only then does `finish` copy out/
+LAUNCHED=0  # set only after the pod confirms this launch's receipt
 trap finish EXIT
 # Within SSH_UP_SECONDS (ops/pod_pins.env), which the launch gate counts: each try is bounded as a whole (ssh's
 # ConnectTimeout covers only the connection; BatchMode keeps it from waiting on a prompt) and followed by a 15 s pause.
@@ -323,51 +310,43 @@ ARMED_AT=$(date -u +%FT%TZ)
 rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
 # The API judge needs the OpenAI key on the pod. It is sent only on request, over the SSH channel into a mode-600
 # file that the remote script reads once and deletes; it never appears in a command line or in the repo.
+LAUNCH_ID="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM-$RANDOM"
+OWN_OUTPUT="cd out && [ \"\$(cat LAUNCH_ID)\" = '$LAUNCH_ID' ]"
+printf '%s\n' "$LAUNCH_ID" > "$RESULTS/launch-id.txt"
 if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == api ]]; then
-  printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | "${SSH[@]}" "root@$HOST" 'umask 077; cat > ~/.judge_key'
+  printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | on_pod "umask 077; cat > ~/.judge_key.$LAUNCH_ID"
 fi
-# Sent, then confirmed: a launch whose ssh call fails may or may not have reached the pod, so its out/ may be this run's
-# or an earlier job's, and `finish` neither copies nor removes it (review round 44).
-if ! BEFORE_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1) || ! [[ $BEFORE_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then
-  echo "could not read the pod's state before the launch (got '$BEFORE_LAUNCH'); not launching"; exit 1
-fi
-LAUNCH_SENT=1
-# fallback-ok: off for the one launch call below; the next lines read its status, exit 1 unless the pod shows the job started, and turn exit-on-error back on
-set +e
-# A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
-# The remote log goes inside it so the runner's own errors are pulled with the results.
 # The values the pod gets for settings left unset: the documented defaults the checks above validated.
 if [[ -n ${JUDGE_KIND:-} ]]; then SENT_JUDGE_KIND=$JUDGE_KIND; else SENT_JUDGE_KIND=api; fi
 if [[ -n ${LEAN_ISOLATION:-} ]]; then SENT_ISOLATION=$LEAN_ISOLATION; else SENT_ISOLATION=required; fi
 if [[ -n ${JUDGE_MAX_USD:-} ]]; then SENT_JUDGE_MAX_USD=$JUDGE_MAX_USD; else SENT_JUDGE_MAX_USD=1; fi
 if [[ -n ${AUTOSTOP_GRACE_SECONDS:-} ]]; then SENT_GRACE=$AUTOSTOP_GRACE_SECONDS; else SENT_GRACE=600; fi
-"${SSH[@]}" "root@$HOST" "if [ -e out ]; then mv out out.prev.\$(date +%s); fi; mkdir -p out; JUDGE_KIND=$SENT_JUDGE_KIND LEAN_ISOLATION=$SENT_ISOLATION JUDGE_MAX_USD=$SENT_JUDGE_MAX_USD REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=$SENT_GRACE ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
-LAUNCH_STATUS=$?
-set -e
-# The call runs the job in the background, so it fails only when ssh did, which may be before or after the job started.
-# The pod's state against its state just before says which: a job that started is followed like any other (copying it
-# in the exit trap would copy nothing yet, and with KEEP_POD=0 remove the pod and the job with it); one that did not
-# means this run launched nothing (review rounds 46 and 47). With no answer, `finish` reports it unknown.
-if ((LAUNCH_STATUS != 0)); then
-  # Each ask in an `if` condition: exit-on-error is back on, and a failed query must lead to the second ask and then to
-  # the message, not end the script (review round 48).
-  if ! AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1) || ! [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then
-    if ! AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1) || ! [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then
-      echo "the launch call failed (exit $LAUNCH_STATUS) and the pod did not say whether the job started"; exit 1
-    fi
-  fi
-  if ! launch_ran "$BEFORE_LAUNCH" "$AFTER_LAUNCH"; then
-    LAUNCH_SENT=0
-    echo "the launch call failed (exit $LAUNCH_STATUS) and the job did not start on the pod"; exit 1
-  fi
-  say "the launch call failed (exit $LAUNCH_STATUS), but the job started on the pod: following it"
+LAUNCH_SENT=1
+if ! on_pod "JUDGE_KIND=$SENT_JUDGE_KIND LEAN_ISOLATION=$SENT_ISOLATION JUDGE_MAX_USD=$SENT_JUDGE_MAX_USD REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=$SENT_GRACE ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh --launch $LAUNCH_ID pilot-repo/$REMOTE $((DEADLINE*60)) > launch.$LAUNCH_ID.log 2>&1 < /dev/null &"; then
+  say 'launch SSH failed; checking the launch receipt on the pod'
 fi
-LAUNCHED=1
+# An SSH success only acknowledges a background shell. Always wait for the detached transaction
+# to stop the old writer, prepare a clean directory and record this launch's exact identity.
+# cap: 2.5x estimated 18 s (stopping an earlier job and preparing its replacement)
+RECEIPT_WAIT_SECONDS=45
+for attempt in 1 2; do
+  if receipt=$(on_pod "for i in \$(seq $RECEIPT_WAIT_SECONDS); do if [ -r out/LAUNCH_ID ] && [ \"\$(cat out/LAUNCH_ID)\" = '$LAUNCH_ID' ]; then echo '$LAUNCH_ID'; exit 0; fi; sleep 1; done; exit 1" | tail -n 1) && [[ $receipt == "$LAUNCH_ID" ]]; then
+    LAUNCHED=1
+    break
+  fi
+done
+[[ $LAUNCHED == 1 ]] || { echo "launch receipt unconfirmed; inspect launch.$LAUNCH_ID.log on the pod"; exit 1; }
+say 'launch receipt confirmed: following this job'
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60+90))  # the remote timeout is DEADLINE; the extra time is for it to write EXIT_CODE
 while ((SECONDS < END)); do
   sleep 60
-  if code=$("${SSH[@]}" "root@$HOST" 'cat out/EXIT_CODE' 2>/dev/null); then
+  if code=$(on_pod "if $OWN_OUTPUT; then cat EXIT_CODE; else echo ownership-lost; fi" 2>> "$RESULTS/ssh-poll.log"); then
+    if [[ $code == ownership-lost ]]; then
+      LAUNCHED=0
+      echo 'the output directory no longer belongs to this launch; stopping without copying or removing the pod'
+      exit 1
+    fi
     [[ $code =~ ^[0-9]+$ && $code -le 255 ]] || { echo 'invalid remote exit status'; exit 1; }
     echo "remote finished with exit=$code"
     exit "$code"

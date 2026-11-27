@@ -71,14 +71,79 @@ def pytest_collection_modifyitems(config, items):
         raise pytest.UsageError(f"--repeat-match selects no test: {', '.join(unmatched)}")
 
 
-# A fake pod's answer to the driver's LAUNCH_TRACES question (asked just before the launch): no out/remote.log and no
-# out.prev.*, a pod where no job has run. For ssh stubs that otherwise answer only the commands they test.
-LAUNCH_TRACES_ANSWER = 'for arg in "$@"; do if [[ $arg == *\'"$r $n"\'* ]]; then echo "0 0"; fi; done\n'
+# Echo the exact receipt requested by the driver, including when SSH printed a login banner.
+LAUNCH_RECEIPT_ANSWER = r'''for arg in "$@"; do
+  if [[ $arg == *'cat out/LAUNCH_ID'* && $arg == *'then echo'* ]]; then
+    token=${arg#*then echo \'}
+    printf '%s\n' "${token%%\'*}"
+  fi
+done
+'''
 
 
 # GNU timeout's stand-in where tests stub it: skip its options and its duration, run the rest. The runner calls
 # `timeout --signal=TERM --kill-after=N secs cmd`, the driver `timeout secs cmd`; a fixed `shift 3` mangled the second.
 TIMEOUT_STUB = 'while [[ $1 == -* ]]; do shift; done\nshift\nexec "$@"\n'
+
+# A real session boundary on macOS too; all runner tests exercise session ownership.
+SETSID = '''#!/usr/bin/env python3
+import os, sys
+args = sys.argv[1:]
+if args[0] == '--wait':
+    args.pop(0)
+os.setsid()
+os.execvp(args[0], args)
+'''
+
+
+@pytest.fixture(autouse=True)
+def session_process_tools(tmp_path_factory, monkeypatch):
+    """BSD pgrep/pkill lack Linux's -s; query real OS session IDs for runner tests on macOS."""
+    import sys
+    if sys.platform != 'darwin':
+        return
+    directory = tmp_path_factory.mktemp('session-tools')
+    script = '''#!/usr/bin/env python3
+import os, pathlib, signal, subprocess, sys
+name = pathlib.Path(sys.argv[0]).name
+args = sys.argv[1:]
+if '-s' not in args:
+    os.execv('/usr/bin/' + name, [name, *args])
+session = int(args[args.index('-s') + 1])
+pids = subprocess.run(['/bin/ps', '-axo', 'pid=,stat='], check=True, capture_output=True, text=True, timeout=15).stdout.splitlines()
+states = set(args[args.index('-r') + 1].split(',')) if '-r' in args else None
+members = []
+for text in pids:
+    number, state = text.split()
+    pid = int(number)
+    if pid == os.getpid():
+        continue
+    if states is not None and state[0] not in states:
+        continue
+    try:
+        if os.getsid(pid) == session:
+            members.append(pid)
+    except ProcessLookupError:
+        # A process can exit between the process listing and getsid; it is no longer a session member.
+        continue
+if name == 'pgrep':
+    for pid in members:
+        print(pid)
+else:
+    signum = int(args[0][1:]) if args[0].startswith('-') and args[0][1:].isdigit() else signal.SIGTERM
+    for pid in members:
+        try:
+            os.kill(pid, signum)
+        except ProcessLookupError:
+            # The requested postcondition already holds if the process exited before its signal.
+            continue
+sys.exit(0 if members else 1)
+'''
+    for name in ('pgrep', 'pkill'):
+        path = directory/name
+        path.write_text(script)
+        path.chmod(0o755)
+    monkeypatch.setenv('PATH', f"{directory}:{os.environ['PATH']}")
 
 
 @pytest.fixture

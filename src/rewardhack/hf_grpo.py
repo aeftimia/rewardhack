@@ -99,7 +99,7 @@ CHECKPOINT_FILES = ('adapter_model.safetensors', 'adapter_config.json', 'optimiz
 # What a resume reads from the run folder beside the checkpoint (check_resume, original_records); ops/run_archive.py fetches
 # exactly these and the checkpoint for a pod.
 ROLLOUTS, STEPS = 'training-rollouts.jsonl', 'steps.jsonl'
-RESUME_RUN_FILES = (RUN_SETTINGS, ROLLOUTS, STEPS)
+RESUME_RUN_FILES = (RUN_SETTINGS, ROLLOUTS, STEPS, 'summary.json', 'before-evaluation.jsonl')
 
 
 def resume_point(args):
