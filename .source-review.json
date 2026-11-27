@@ -9,7 +9,7 @@
     "path": "src/rewardhack/grader.py",
     "rule": "py-except-swallow",
     "text": "except ValueError:",
-    "reason": "The grader tries to parse candidate JSON objects from model prose; a ValueError means this candidate is not JSON, so the parser advances to the next candidate. If none parses the returned submission has a missing report and cannot be format_valid. The grader source is also deliberately embedded verbatim in model prompts."
+    "reason": "This function searches model prose for a submission, testing each opening brace as a possible JSON start. Rejecting an invalid candidate and testing another is the specified search algorithm, not substituting a successful parse. If all candidates fail, it explicitly returns report=None (not an empty string), established='' and proof_body=''. outcomes.score records format_valid as report is not None, so the failure remains visible as an invalid answer. A valid later candidate is the requested submission. Preserve this deliberately exposed grader source verbatim because it is part of the model prompt."
   },
   {
     "path": "src/rewardhack/grader.py",
@@ -33,7 +33,7 @@
     "path": "src/rewardhack/outcomes.py",
     "rule": "py-getattr-default",
     "text": "kwargs = {'retries': retries} if getattr(judge, 'accepts_retry_budget', False) else {}",
-    "reason": "External judge callables used by analysis and tests have the basic one-row interface. Only the project judge advertises accepts_retry_budget; absent capability means no retries keyword is passed. All call exceptions propagate."
+    "reason": "The public scoring interface accepts a callable judge(row), including plain Python functions supplied by analysis/tests; it does not require an object from a closed registry or require arbitrary function attributes. accepts_retry_budget is an OPTIONAL opt-in extension set by judge.checked for the extra retries keyword. Its absence means the base one-argument callable protocol, which is the normal interface, not an invalid judge substituted for a valid one. The same provided callable is invoked and its failures propagate; there is no replacement judge or fabricated successful verdict if it is broken."
   },
   {
     "path": "src/rewardhack/pilot.py",
@@ -51,13 +51,13 @@
     "path": "src/rewardhack/pilot_runner.py",
     "rule": "py-except-swallow",
     "text": "except subprocess.TimeoutExpired:",
-    "reason": "Subprocess timeout is returned explicitly as timed_out=True with exit_code=None. The finally block kills and reaps the process group, and the pilot records stage_failure."
+    "reason": "A TimeoutExpired is handled explicitly rather than reported as success. For the handler whose body returns a result dictionary, that dictionary directly marks timed_out=True and exit_code=None. For the handler whose body calls os.waitpid, this is cleanup after SIGKILL and a bounded Popen.wait; waitpid directly reaps that child when Popen's internal wait lock times out. Each handler's own body provides the distinct timeout handling; neither creates a successful stage result."
   },
   {
     "path": "src/rewardhack/pilot_runner.py",
     "rule": "py-suppress",
     "text": "with contextlib.suppress(ChildProcessError):",
-    "reason": "ChildProcessError from waitpid means the child was already reaped. Termination has already been requested, and other errors propagate."
+    "reason": "This exact waitpid uses process.pid from the Popen child just sent SIGKILL, with options=0. ChildProcessError is Python's ECHILD: this PID has no waitable child status for this parent, for example because Popen or another reaper already consumed it. No live waitable child is skipped by handling ECHILD; that is precisely the reaping postcondition. Other OSError values propagate. The original stage outcome is not changed by this cleanup handler, and stage timeouts remain timed_out=True with exit_code=None."
   },
   {
     "path": "src/rewardhack/pilot_runner.py",
@@ -75,7 +75,7 @@
     "path": "src/rewardhack/rescore.py",
     "rule": "py-get-compare",
     "text": "return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None",
-    "reason": "Existing rows from before cutoff-v1 cannot prove whether generation stopped normally. Only both legacy truncated and genuine_why=truncated establish a cutoff; otherwise return None (unknown), not False. New schema rows are strictly validated above."
+    "reason": "This function infers cutoff evidence; it does not certify that all historical metadata is well-formed. For unversioned rows, every state other than the two affirmative markers intentionally returns None, the explicit UNKNOWN outcome. Missing, contradictory, or otherwise insufficient historical metadata cannot establish normal termination and is never mapped to False. This includes raw-only probe rows and older truncated flags that could accompany complete answers. Only truncated together with genuine_why='truncated' establishes True. The cutoff-v1 branch has a schema contract and strictly validates it. Combining uncertain unversioned cases as unknown is the specified result, not a concealed success or a claim that malformed data was valid."
   },
   {
     "path": "src/rewardhack/state_files.py",
@@ -111,13 +111,13 @@
     "path": "entrypoints/validate_judge.py",
     "rule": "py-else-label",
     "text": "result.update(validation_kind='human_audit' if args.audit else 'human_heldout' if args.holdout else 'development', **provenance)",
-    "reason": "Mutually exclusive argparse audit/holdout flags select validation datasets. With neither flag the explicit development dataset is used and labelled development; no failed audit is relabelled."
+    "reason": "There is no free-form mode value here. argparse provides exactly two mutually exclusive optional Path arguments, --audit and --holdout. Their exhaustive reachable states are audit present, holdout present, and both absent. Both absent intentionally executes rows=read_set(args.read), the development dataset. This expression labels those same three states. Unknown CLI arguments are rejected by parse_args; there is no unlisted current mode or failure converted to development."
   },
   {
     "path": "ops/drive_runpod.sh",
     "rule": "sh-prefix-forward",
     "text": "[[ $name =~ ^SMOKE_[A-Z_]+$ && $value =~ ^[0-9]+$ ]] || { echo \"invalid $name\"; exit 2; }",
-    "reason": "The prefix syntax check is followed by an exact allowlist of supported SMOKE names before any variable is forwarded. Unknown names fail; this regex alone grants nothing."
+    "reason": "This flagged line is only a lexical validation step, not the authorization to forward a setting. Immediately afterward, the same loop requires exact space-delimited membership in SMOKE_READ, extracted from the selected remote script. A nonmember exits 2 before SMOKE_ENV is appended. Only after BOTH syntax and membership checks does the append occur. Thus prefix-shaped misspellings are rejected rather than forwarded; the complete loop, not the lexical regex in isolation, defines the forwarding policy."
   },
   {
     "path": "ops/drive_runpod.sh",
@@ -147,6 +147,6 @@
     "path": "ops/remote_job.sh",
     "rule": "sh-default-expansion",
     "text": "PIDS=${REMOTE_JOB_PIDS:-$HOME/.remote_job.pids}",
-    "reason": "These are documented output and PID-file location options for the runner. Omission selects the standard HOME location; filesystem failures are not a request to try another location."
+    "reason": "REMOTE_JOB_PIDS is an optional test-isolation override, not a required production configuration variable. The production driver does not set it: all launches deliberately share $HOME/.remote_job.pids so stop_previous can find and stop the predecessor session. The next line prints the selected state-file path and override name. Tests set distinct paths for independent fake pods. A supplied nonempty path is used exactly; a read/write failure does not select another path. This default therefore implements the normal production interface visibly rather than hiding a missing required setting."
   }
 ]

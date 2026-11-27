@@ -46,9 +46,9 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', deadline='240', **setti
     # The permission probe follows a Part 1 job's training, on its vLLM path.
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PROBE_LARGE='1'), 'SMOKE_PROBE_LARGE=1 runs after a Part 1 job'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PROBE_LARGE='3'), 'SMOKE_PROBE_LARGE must index PROBE_SET_NAMES'),
-    # A kept pod's grace must hold the checkpoint copy, the next launch's sizing and gate, and the relaunch: up to 30 minutes
+    # A kept pod's copy window is budgeted before deployment, including a slow complete checkpoint transfer.
     # there, 10 otherwise (review round 7, 26 Nov).
-    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', KEEP_POD='1', AUTOSTOP_GRACE_SECONDS='1801'), 'at most 1800'),
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', KEEP_POD='1', AUTOSTOP_GRACE_SECONDS='8101'), 'at most 8100'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='1800'), 'at most 600'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', KEEP_POD='yes'), 'KEEP_POD must be 0 or 1'),
     # Part 1 runs on vLLM rollouts and evaluations; without them it would silently use the trainer's sampler (round 16).

@@ -131,3 +131,22 @@ launch gate started during grace is not a reliable preservation mechanism.
 Snapshots 8, 16 and 24 have verified S3 receipts. The attempt to archive the
 remaining preserved output failed because AWS SSO expired; renewing it opened
 a sign-in page. All remaining files are retained locally pending sign-in.
+
+## Backup repair and next launch (27 November, morning)
+
+AWS access is working again and the preserved baseline output is being uploaded.
+The driver now runs interim adapter downloads independently of completion polls,
+stops and waits for that transfer before final copying, and keeps partial files
+in a separate rsync directory. A regression test simulates continuous transfer
+progress while the experiment finishes and verifies cancellation before the final
+copies. The focused ownership, refusal and cap suite passes (58 tests).
+
+For the next 20b launch, select the 8,100-second kept-pod copy window in the
+original gated command. This is 1.5 times an estimated 90 minutes to transfer up
+to 10.8 GB at 2 MB/s, including seven intermediate adapters, the final adapter,
+and two optimizer checkpoints. It is a ceiling, not a planned idle period:
+remove the pod as soon as the copied output has been verified. At $2.725/hour,
+the 136-minute job plus all 161 minutes of gate-counted overhead costs at most
+$13.49 for the next typed cell (no API judge charges), within the $15 approval.
+Continue only after independent review, the full launch gate, and archive access
+checks pass. The next cell is neutral/typed report_correct at lambda=0, job 6.

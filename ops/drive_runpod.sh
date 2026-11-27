@@ -116,10 +116,12 @@ fi
 # 180 s the pod can be gone before the copy is done; at 0 it is gone before the next look. The runner's own default is 600.
 # The grace is billed time after the job, and the launch record's budget check counts all of it. The ceiling is the runner's
 # default, except for a pod kept for a relaunch (KEEP_POD=1): there the grace must also hold the copy of several GB of
-# checkpoints, sizing the next launch from the results, `gate.py ready` (about 2 minutes of tests) and the relaunch itself.
+# checkpoints. Size this in the original launch; never depend on a new gate completing during grace.
 if [[ -n ${KEEP_POD+set} ]]; then KEEP=$KEEP_POD; else KEEP=0; fi  # unset: the pod is removed after the copy
 [[ $KEEP == 0 || $KEEP == 1 ]] || { echo 'KEEP_POD must be 0 or 1'; exit 2; }
-GRACE_CEILINGS=(600 1800)  # indexed by KEEP
+# cap: 1.5x estimated 90 min (up to 10.8 GB outstanding at 2 MB/s, including two optimizer checkpoints)
+KEPT_COPY_SECONDS=8100
+GRACE_CEILINGS=(600 "$KEPT_COPY_SECONDS")  # indexed by KEEP; the gate budgets the selected grace in full
 GRACE_FLOOR=180 GRACE_CEILING=${GRACE_CEILINGS[$KEEP]}
 if [[ -n ${AUTOSTOP_GRACE_SECONDS:-} ]]; then
   [[ $AUTOSTOP_GRACE_SECONDS =~ ^[1-9][0-9]*$ && $AUTOSTOP_GRACE_SECONDS -ge $GRACE_FLOOR && $AUTOSTOP_GRACE_SECONDS -le $GRACE_CEILING ]] || {
@@ -166,10 +168,21 @@ SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$
 # two on the pod; with expert LoRA each is about 3 GB). Interim copies leave them out; the final copy takes the ones left.
 # The vLLM hand-over adapter (rewritten every step) and the reload-check adapter are scratch, about 1 GB each: never copied.
 # Enter the owned directory before checking it, so a later rename cannot redirect the copy.
-pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" --rsync-path="$OWN_OUTPUT && rsync" --exclude='adapter-rollout/' --exclude='adapter-sync-check/' "$@" "root@$HOST:./" "$RESULTS/"; }
-# Sizes in the final copy, smallest first: the pod removes itself at most 10 minutes after the job ends.
+pull() { "${PULL[@]}" "$@" "root@$HOST:./" "$RESULTS/"; }
+# Sizes in the final copy, smallest first, within the grace budgeted before deployment.
 SMALL=(--exclude='adapter*/' --exclude='trainer/checkpoint-*/')  # logs, rows, summaries, evaluations
 ADAPTERS=(--exclude='trainer/checkpoint-*/')                      # and the saved adapters, about 1 GB each
+INTERIM_PID=''
+stop_interim() {
+  [[ -n $INTERIM_PID ]] || return 0
+  if kill -0 "$INTERIM_PID" 2>> "$RESULTS/interim-copy.log"; then
+    # timeout forwards TERM to its process group (rsync and SSH), then enforces kill-after.
+    if ! kill -TERM "$INTERIM_PID" 2>> "$RESULTS/interim-copy.log"; then echo 'interim cancellation failed; see interim-copy.log'; fi
+  fi
+  if wait "$INTERIM_PID"; then echo 'interim copy completed'
+  else echo 'interim copy stopped; see interim-copy.log; partial files will be resumed by the final copy'; fi
+  INTERIM_PID=''
+}
 say() { echo "$*" >> "$RESULTS/driver.log"; echo "$*"; }
 # The results are only on the pod until this machine copies them, and the pod removes itself a grace period after the job ends:
 # a laptop that goes to sleep in between loses them. macOS: hold off idle sleep for as long as this script lives (closing the lid
@@ -198,6 +211,8 @@ finish() {
   # From here nothing may stop this function: with the terminal gone a plain `echo` fails, and under `set -e` that
   # ended the cleanup before the copy and the removal. Every step below reports its own failure.
   set +e
+  # No concurrent writer may race the final copy or hold it behind a long adapter transfer.
+  stop_interim
   # Only a confirmed receipt authorizes copying out/. Before any launch was sent, ask whether the pod holds
   # earlier results so cleanup can preserve them. Take the last line to ignore a login-shell banner.
   HELD=unknown
@@ -217,8 +232,7 @@ finish() {
     COPIED=1 CHECKPOINTS=0 SMALL_COPIED=1
   else
   say "copying results"
-  # The small files, then the adapters, then the resumable checkpoints (several GB with expert LoRA): the pod removes
-  # itself at most 10 minutes after the job ends, and a slow copy must cost the checkpoints, never the results.
+  # Small files first, then adapters and resumable checkpoints within the pre-budgeted copy window.
   # Results and checkpoints are recorded apart, so that a failed checkpoint copy is not reported as lost results.
   COPIED=0 CHECKPOINTS=0 SMALL_COPIED=0
   for attempt in 1 2 3; do
@@ -314,6 +328,8 @@ rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --excl
 # file that the remote script reads once and deletes; it never appears in a command line or in the repo.
 LAUNCH_ID="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM-$RANDOM"
 OWN_OUTPUT="cd out && [ \"\$(cat LAUNCH_ID)\" = '$LAUNCH_ID' ]"
+PULL=(rsync -az --stats --partial-dir=.rsync-partial --timeout=60 -e "${SSH[*]}" --rsync-path="$OWN_OUTPUT && rsync"
+      --exclude='adapter-rollout/' --exclude='adapter-sync-check/' --exclude='.rsync-partial/')
 printf '%s\n' "$LAUNCH_ID" > "$RESULTS/launch-id.txt"
 if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && $JUDGE_KIND == api ]]; then
   printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | on_pod "umask 077; cat > ~/.judge_key.$LAUNCH_ID"
@@ -353,7 +369,13 @@ while ((SECONDS < END)); do
     echo "remote finished with exit=$code"
     exit "$code"
   fi
-  if ((SECONDS % 300 < 60)) && ! pull "${ADAPTERS[@]}"; then echo 'interim copy failed; will try again'; fi
+  if [[ -n $INTERIM_PID ]] && ! kill -0 "$INTERIM_PID" 2>> "$RESULTS/interim-copy.log"; then stop_interim; fi
+  if [[ -z $INTERIM_PID ]] && ((SECONDS % 300 < 60)); then
+    # A progressing transfer must not block completion polling. timeout owns its process group,
+    # so finish can stop both rsync and SSH before copying final records and checkpoints.
+    timeout --kill-after="$KILL_AFTER_SECONDS" "$((DEADLINE*60))" "${PULL[@]}" "${ADAPTERS[@]}" "root@$HOST:./" "$RESULTS/" >> "$RESULTS/interim-copy.log" 2>&1 &
+    INTERIM_PID=$!
+  fi
 done
 echo 'driver deadline reached; the remote timeout and the pod removal timer are armed'
 exit 1
