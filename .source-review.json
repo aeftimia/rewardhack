@@ -51,13 +51,8 @@
     "path": "src/rewardhack/pilot_runner.py",
     "rule": "py-except-swallow",
     "text": "except subprocess.TimeoutExpired:",
+    "symbol": "_execute",
     "reason": "Subprocess timeout is returned explicitly as timed_out=True with exit_code=None. The finally block kills and reaps the process group, and the pilot records stage_failure."
-  },
-  {
-    "path": "src/rewardhack/pilot_runner.py",
-    "rule": "py-suppress",
-    "text": "with contextlib.suppress(ChildProcessError):",
-    "reason": "ChildProcessError from waitpid means the child was already reaped. Termination has already been requested, and other errors propagate."
   },
   {
     "path": "src/rewardhack/pilot_runner.py",

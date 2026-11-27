@@ -292,8 +292,11 @@ def test_finished_runner_keeps_ownership_until_grace_timer_detaches(tmp_path, po
     with (tmp_path/'runner.log').open('w') as log:
         runner = subprocess.Popen(['bash', str(ROOT/'ops/remote_job.sh'), str(job), '60'], env=env, stdout=log, stderr=log)
         try:
-            for _ in range(100):
-                if (tmp_path/'timer-starting').exists():
+            # Startup includes the initial timer's own five-second readiness allowance,
+            # before this test can reach the grace-timer handoff it actually checks.
+            startup_deadline = time.monotonic() + 15
+            while not (tmp_path/'timer-starting').exists() and runner.poll() is None:
+                if time.monotonic() >= startup_deadline:
                     break
                 time.sleep(0.05)
             assert (tmp_path/'timer-starting').exists(), (tmp_path/'runner.log').read_text()

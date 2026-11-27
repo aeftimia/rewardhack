@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import subprocess
+import threading
 
 import pytest
 
@@ -15,6 +16,7 @@ def scan_repo(tmp_path, monkeypatch):
     (tmp_path/source_scan.REVIEW_FILE).write_text('[]')
     (tmp_path/'source.py').write_text('value = 1\n')
     checker = load_checker()
+    monkeypatch.setattr(checker, 'OPENAI_CREDENTIALS_FILE', tmp_path / 'openai.json')
     monkeypatch.setattr(source_scan, 'load_checker', lambda: checker)
     monkeypatch.setenv('OPENAI_API_KEY', 'test-only')
     monkeypatch.delenv(checker.GUARD, raising=False)
@@ -41,7 +43,7 @@ def test_no_unjudged_commit(scan_repo, monkeypatch, setting):
     else:
         monkeypatch.setenv('NO_SILENT_FALLBACKS_JUDGE', 'true')
     monkeypatch.setattr(checker, 'ask_judge', lambda cases: pytest.fail('invalid configuration'))
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, checker.JudgeError)):
         source_scan.full_scan(root)
 
 
@@ -112,7 +114,7 @@ def test_context_keeps_whole_function_and_local_helper():
     assert '>>    5' in context
 
 
-def test_windows_cover_flags_with_overlapping_context():
+def test_shell_context_keeps_complete_file():
     source = '\n'.join(f'line {i}' for i in range(400))
     contexts = ['\n'.join(load_checker().review_contexts(source, 'sh', line)) for line in (80, 81, 160, 161, 399)]
     for line, context in zip((80, 81, 160, 161, 399), contexts, strict=True):
@@ -127,11 +129,69 @@ def test_extensionless_shell_source_is_scanned(scan_repo, monkeypatch):
     assert source_scan.full_scan(root) == 1
 
 
-def test_one_window_denial_blocks_despite_another_approval(scan_repo, monkeypatch):
+def test_one_obligation_denial_blocks_despite_local_approval(scan_repo, monkeypatch):
     root, checker = scan_repo
     (root/'source.py').write_text("value = settings.get('count', 0)  # fallback-ok: test explanation\n")
-    monkeypatch.setattr(checker, 'review_contexts', lambda *args: ['first view', 'second view'])
+    monkeypatch.setattr(checker, 'review_cases', lambda path, finding: [
+        (path, dict(finding, context='first view', obligation='local')),
+        (path, dict(finding, context='second view', obligation='propagation'))])
     def review(cases):
         return [(finding['context'] == 'first view', 'test verdict') for _, finding in cases]
     monkeypatch.setattr(checker, 'ask_judge', review)
     assert source_scan.full_scan(root) == 1
+
+
+def test_configured_consumer_is_reviewed_and_stale_evidence_refused(scan_repo, monkeypatch):
+    root, checker = scan_repo
+    (root/'source.py').write_text("value = settings.get('count', 0)  # fallback-ok: explicit failed state\n")
+    (root/'consumer.py').write_text('def consume(value):\n    raise ValueError(value)\n')
+    found, _ = checker.scan((root/'source.py').read_text(), 'py')
+    item, = found
+    entry = dict(path='source.py', rule=item['rule'], text=item['text'], obligations=[
+        dict(claim='The consumer raises.', sources=[dict(path='consumer.py', symbol='consume')])])
+    (root/checker.CONFIG_NAME).write_text(json.dumps(dict(review_evidence=[entry])))
+    calls = []
+    monkeypatch.setattr(checker, 'ask_judge', lambda cases: calls.extend(cases) or [(True, 'fixture') for _ in cases])
+    assert source_scan.full_scan(root) == 0
+    assert len(calls) == 2 and 'raise ValueError(value)' in calls[1][1]['context']
+    (root/'source.py').write_text('value = 1\n')
+    with pytest.raises(ValueError, match='stale review evidence'):
+        source_scan.full_scan(root)
+
+
+def test_judge_requests_really_run_concurrently(scan_repo, monkeypatch):
+    root, checker = scan_repo
+    workers = source_scan.JUDGE_WORKERS
+    (root/'source.py').write_text(''.join(
+        f"value_{i} = settings.get('count', 0)  # fallback-ok: concurrency fixture\n"
+        for i in range(workers * 2)))
+    barrier, lock = threading.Barrier(workers), threading.Lock()
+    active, peak, requests = 0, 0, 0
+    def review(cases):
+        nonlocal active, peak, requests
+        assert len(cases) == 1
+        with lock:
+            active += 1
+            peak = max(peak, active)
+            requests += 1
+        barrier.wait(timeout=10)  # A serial implementation fails instead of merely running slower.
+        with lock:
+            active -= 1
+        return [(True, 'fixture')]
+    monkeypatch.setattr(checker, 'ask_judge', review)
+    assert source_scan.full_scan(root) == 0
+    assert peak == workers and requests == workers * 2
+
+
+def test_identical_handlers_use_their_own_symbol_notes(scan_repo, monkeypatch):
+    root, checker = scan_repo
+    (root/'source.py').write_text(''.join(
+        f'def {name}():\n    try:\n        call()\n    except ValueError:\n        return None\n'
+        for name in ('first', 'second')))
+    (root/source_scan.REVIEW_FILE).write_text(json.dumps([
+        dict(path='source.py', rule='py-except-swallow', text='except ValueError:', symbol=name, reason=name)
+        for name in ('first', 'second')]))
+    calls = []
+    monkeypatch.setattr(checker, 'ask_judge', lambda cases: calls.extend(cases) or [(True, 'fixture') for _ in cases])
+    assert source_scan.full_scan(root) == 0
+    assert {(f['symbol'], f['reason']) for _, f in calls} == {('first', 'first'), ('second', 'second')}

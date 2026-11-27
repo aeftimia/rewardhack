@@ -5,5 +5,102 @@
     "AutoTokenizer.from_pretrained": ["revision"],
     "model.generate": ["max_new_tokens", "do_sample", "temperature", "top_p", "top_k", "pad_token_id"],
     "LoraConfig": ["r", "lora_alpha", "target_modules", "lora_dropout"]
-  }
+  },
+  "review_evidence": [
+    {
+      "path": "src/rewardhack/outcomes.py",
+      "rule": "py-getattr-default",
+      "text": "kwargs = {'retries': retries} if getattr(judge, 'accepts_retry_budget', False) else {}",
+      "obligations": [{
+        "claim": "The project supplies basic one-row judges and a wrapper advertising accepts_retry_budget=True; capability selects the supported call signature, and call errors propagate.",
+        "sources": [
+          {"path": "src/rewardhack/judge.py", "symbol": "make_judge"},
+          {"path": "src/rewardhack/judge.py", "symbol": "with_statement_check"},
+          {"path": "src/rewardhack/rescore.py", "symbol": "rescore_file"}
+        ]
+      }]
+    },
+    {
+      "path": "src/rewardhack/grader.py",
+      "rule": "py-except-swallow",
+      "text": "except ValueError:",
+      "obligations": [{
+        "claim": "Exhausting the candidate JSON parses leaves report=None, which the consumer marks format_valid=False rather than treating it as a valid empty report.",
+        "sources": [
+          {"path": "src/rewardhack/grader.py", "symbol": "evaluate_submission"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "score"}
+        ]
+      }]
+    },
+    {
+      "path": "src/rewardhack/rescore.py",
+      "rule": "py-get-compare",
+      "text": "return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None",
+      "obligations": [{
+        "claim": "Unversioned rows without sufficient cutoff evidence pass an unknown cutoff decision (None) into rescoring, not a claim of normal termination or a new cutoff-v1 schema; malformed versioned rows are rejected before this legacy path.",
+        "sources": [
+          {"path": "src/rewardhack/rescore.py", "symbol": "rescore_file"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "score"}
+        ]
+      }]
+    },
+    {
+      "path": "src/rewardhack/gpu.py",
+      "rule": "py-except-dummy",
+      "text": "except (OSError, subprocess.SubprocessError, ValueError) as error:",
+      "obligations": [{
+        "claim": "The sampler error is exposed in run summaries; failed GPU telemetry is not silently reported as a successful measurement.",
+        "sources": [
+          {"path": "src/rewardhack/hf_grpo.py", "symbol": "run"},
+          {"path": "src/rewardhack/vllm_probe.py", "symbol": "run"}
+        ]
+      }]
+    },
+    {
+      "path": "src/rewardhack/grader.py",
+      "rule": "py-except-swallow",
+      "text": "except subprocess.TimeoutExpired:",
+      "obligations": [{
+        "claim": "The grader timeout diagnostic becomes verifier_inconclusive and is excluded from training rewards and measured behavior rates.",
+        "sources": [
+          {"path": "src/rewardhack/grader.py", "symbol": "evaluate_submission"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "score"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "training_rewards"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "summarize"}
+        ]
+      }]
+    },
+    {
+      "path": "src/rewardhack/verifier.py",
+      "rule": "py-except-swallow",
+      "text": "except subprocess.TimeoutExpired:",
+      "obligations": [{
+        "claim": "Timeout is classified as inconclusive, retried within the supplied budget, and still-inconclusive rows are excluded from training rewards and measured behavior rates.",
+        "sources": [
+          {"path": "src/rewardhack/verifier.py", "symbol": "INCONCLUSIVE"},
+          {"path": "src/rewardhack/verifier.py", "symbol": "verify_proof"},
+          {"path": "src/rewardhack/verifier.py", "symbol": "verify_refutation"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "score"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "training_rewards"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "summarize"}
+        ]
+      }]
+    },
+    {
+      "path": "src/rewardhack/verifier.py",
+      "rule": "py-except-swallow",
+      "text": "except (ValueError, KeyError, TypeError):",
+      "obligations": [{
+        "claim": "Unexpected verifier output remains inconclusive and cannot count as a proved or disproved proposition or a measured exploit; training excludes it.",
+        "sources": [
+          {"path": "src/rewardhack/verifier.py", "symbol": "INCONCLUSIVE"},
+          {"path": "src/rewardhack/verifier.py", "symbol": "verify_proof"},
+          {"path": "src/rewardhack/verifier.py", "symbol": "verify_refutation"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "score"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "training_rewards"},
+          {"path": "src/rewardhack/outcomes.py", "symbol": "summarize"}
+        ]
+      }]
+    }
+  ]
 }

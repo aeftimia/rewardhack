@@ -21,6 +21,8 @@ _read = pilot.read_json
 # Signals that end the runner while a stage is live. SIGKILL cannot be caught: after it, the stage's
 # process group survives and has to be found and killed by hand before anything is resumed.
 _STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT, signal.SIGINT)
+CLEANUP_SECONDS = 5.0
+CLEANUP_POLL_SECONDS = 0.01
 
 
 def _usd(value):
@@ -60,17 +62,25 @@ def _reserve(spec, out, stage, spec_hash):
     return key, []
 
 
+def _reap(pid):
+    """Return an observed exit status without Popen's lock or any blocking wait."""
+    deadline = time.monotonic() + CLEANUP_SECONDS
+    while True:
+        ended, status = os.waitpid(pid, os.WNOHANG)
+        if ended:
+            return os.waitstatus_to_exitcode(status)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError(f'cleanup deadline exceeded for child {pid}; termination is unconfirmed; inspect the process before resuming')
+        time.sleep(min(CLEANUP_POLL_SECONDS, remaining))
+
+
 def _terminate(process):
     # A child may exit while its workers remain in the original process group.
     with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGKILL)
-    # An interrupt that landed inside Popen.wait can leave its internal lock held, and an untimed wait
-    # would then block for ever on a child that is already dead: bound it and reap directly.
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        with contextlib.suppress(ChildProcessError):
-            os.waitpid(process.pid, 0)
+    if process.returncode is None:
+        process.returncode = _reap(process.pid)
 
 
 def _execute(stage, log, timeout=None, reservation_key=None):
@@ -117,9 +127,9 @@ def _execute(stage, log, timeout=None, reservation_key=None):
         finally:
             try:
                 armed.clear()
-            finally:
                 if process is not None:
                     _terminate(process)
+            finally:
                 for number, handler in previous.items():
                     signal.signal(number, handler)
             if stopping and not raised:  # arrived during the cleanup: the pilot was still told to stop
@@ -141,8 +151,7 @@ def _analyze(spec, paths, seconds):
     """
     if seconds <= 0:
         raise TimeCap('pilot analysis exhausted the remaining wall-time budget')
-    context = multiprocessing.get_context('fork')
-    receiver, sender = context.Pipe(duplex=False)
+    receiver, sender = multiprocessing.Pipe(duplex=False)
     def work():
         # If the parent is killed while it waits, nobody is left to enforce the deadline, and this child
         # holds the parent's pilot lock open: it ends itself shortly after the deadline regardless.
@@ -150,7 +159,7 @@ def _analyze(spec, paths, seconds):
         # Fork inherits the caller's signal mask. The watchdog must remain deliverable even if
         # the caller blocks alarms; changing only this child's mask leaves the caller untouched.
         signal.pthread_sigmask(signal.SIG_UNBLOCK, [signal.SIGALRM])
-        signal.setitimer(signal.ITIMER_REAL, seconds+5)
+        signal.setitimer(signal.ITIMER_REAL, seconds+CLEANUP_SECONDS)
         try:
             message = ('ok', pilot.decide(spec, pilot.read_evidence(spec, paths)))
         except (ValueError, OSError) as error:
@@ -159,8 +168,22 @@ def _analyze(spec, paths, seconds):
             sender.send(('crash', f'{type(error).__name__}: {error}'))
             raise
         sender.send(message)
-    child = context.Process(target=work, daemon=True)
-    child.start()
+    # A multiprocessing.Process would register an unbounded join at interpreter
+    # shutdown, even after our own cleanup deadline had raised. Own this fork's
+    # lifetime explicitly; the child must never return into the parent's runner.
+    try:
+        child = os.fork()
+    except OSError:
+        receiver.close()
+        sender.close()
+        raise
+    if child == 0:
+        receiver.close()
+        try:
+            work()
+            os._exit(0)
+        finally:
+            os._exit(1)  # a crashed worker cannot unwind into the parent's receipt-writing code
     sender.close()
     try:
         if not receiver.poll(seconds):
@@ -170,12 +193,15 @@ def _analyze(spec, paths, seconds):
         except EOFError:
             kind, value = 'ended', None
     finally:
-        if child.is_alive():
-            child.kill()
-        child.join()
-        receiver.close()
+        try:
+            # fallback-ok: kill targets the positive PID returned by fork, never a group or a lookup-derived PID. ProcessLookupError means that PID no longer exists; _reap must still obtain its actual exit status within the deadline, or raise. No successful result is returned on unconfirmed termination or an already-reaped child.
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(child, signal.SIGKILL)
+            exitcode = _reap(child)
+        finally:
+            receiver.close()
     if kind == 'ended':
-        if child.exitcode == -signal.SIGALRM:  # its own alarm: this process was suspended across the deadline
+        if exitcode == -signal.SIGALRM:  # its own alarm: this process was suspended across the deadline
             raise TimeCap('pilot evidence analysis reached its wall-time cap')
         raise RuntimeError('pilot analysis process ended without a result')
     if kind == 'ok':

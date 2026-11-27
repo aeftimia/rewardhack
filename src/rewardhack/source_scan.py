@@ -21,32 +21,33 @@ JUDGE_WORKERS = 4
 def full_scan(root):
     root = Path(root).resolve()
     checker = load_checker()
-    if not hasattr(checker, 'VERDICT_SCHEMA') or not hasattr(checker, 'review_contexts'):
-        raise RuntimeError('update the shared checker: the commit scan requires its strict OpenAI verdict schema')
+    if not all(hasattr(checker, name) for name in ('VERDICT_SCHEMA', 'review_cases', 'openai_api_key')):
+        raise RuntimeError('update the shared checker: the commit scan requires explicit review obligations')
     if os.environ.get(checker.GUARD):
         raise ValueError('full source scan cannot run with the judge recursion guard set')
     choice = os.environ.get('NO_SILENT_FALLBACKS_JUDGE')
     if choice not in (None, 'openai'):
         raise ValueError('the commit scan requires the OpenAI LLM judge, not a substitute command')
     os.environ['NO_SILENT_FALLBACKS_JUDGE'] = 'openai'
-    if not os.environ.get('OPENAI_API_KEY'):
-        raise ValueError('full source scan needs OPENAI_API_KEY; commits without an LLM judgment are refused')
+    checker.openai_api_key()  # Validate the selected credential source before scanning or starting workers.
     notes = json.loads((root / REVIEW_FILE).read_text(), object_pairs_hook=unique_object)
     if not isinstance(notes, list):
         raise TypeError(f'{REVIEW_FILE} must contain a list of review notes')
     explanations = {}
     for note in notes:
-        if not isinstance(note, dict) or set(note) != {'path', 'rule', 'text', 'reason'}:
+        if (not isinstance(note, dict) or not {'path', 'rule', 'text', 'reason'} <= set(note)
+                or set(note) - {'path', 'rule', 'text', 'reason', 'symbol'}):
             raise ValueError(f'invalid review note in {REVIEW_FILE}')
         if any(not isinstance(value, str) or not value.strip() for value in note.values()):
             raise ValueError(f'empty or non-text review note in {REVIEW_FILE}')
-        key = (note['path'], note['rule'], note['text'])
+        key = (note['path'], note['rule'], note['text'], note['symbol'] if 'symbol' in note else None)
         if key in explanations:
             raise ValueError(f'duplicate source review note: {key}')
         explanations[key] = note['reason']
     paths = subprocess.run(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
                            cwd=root, check=True, capture_output=True, timeout=30).stdout.decode().split('\0')
-    findings, files, used = [], 0, set()
+    findings, files, used, evidence_used = [], 0, set(), set()
+    settings = checker.project_settings(str(root / '__source_scan__.py'))
     for relative in sorted(set(paths) - {''}):
         path = root / relative
         if checker.skipped(relative):
@@ -65,15 +66,22 @@ def full_scan(root):
             raise ValueError(f'{relative}: {error}')
         files += 1
         for finding in found:
-            key = (relative, finding['rule'], finding['text'])
+            selector = (relative, finding['rule'], finding['text'])
+            exact = (*selector, finding['symbol'])
+            key = exact if exact in explanations else (*selector, None)
             if key in explanations and finding['reason'] is None:
                 used.add(key)
                 finding['reason'] = explanations[key]
-            for context in checker.review_contexts(source, language, finding['line']):
-                findings.append((relative, dict(finding, context=context)))
+            if 'obligations' in finding:
+                evidence_used.add(selector)
+            findings.extend(checker.review_cases(relative, finding))
     stale = explanations.keys() - used
     if stale:
-        raise ValueError(f'stale source review notes; remove or update them: {sorted(stale)}')
+        raise ValueError(f'stale source review notes; remove or update them: {sorted(stale, key=repr)}')
+    if 'review_evidence' in settings:
+        stale_evidence = {(entry['path'], entry['rule'], entry['text']) for entry in settings['review_evidence']} - evidence_used
+        if stale_evidence:
+            raise ValueError(f'stale review evidence; remove or update it: {sorted(stale_evidence)}')
     marked = [(path, finding) for path, finding in findings if finding['reason'] is not None]
     refused = [(path, dict(finding, verdict=None)) for path, finding in findings if finding['reason'] is None]
     # No cached verdicts: every commit needs a live, valid response, even with zero cases.
@@ -83,10 +91,11 @@ def full_scan(root):
     with ThreadPoolExecutor(max_workers=JUDGE_WORKERS) as pool:
         for batch, verdicts in zip(batches, pool.map(checker.ask_judge, batches), strict=True):
             for (path, finding), (allowed, reason) in zip(batch, verdicts, strict=True):
-                print(f'{path}:{finding["line"]} {finding["rule"]}: {"allow" if allowed else "deny"}: {reason}', flush=True)
+                print(f'{path}:{finding["line"]} {finding["rule"]} [{finding["obligation"]}]: '
+                      f'{"allow" if allowed else "deny"}: {reason}', flush=True)
                 if not allowed:
                     refused.append((path, dict(finding, verdict=reason)))
     for path, finding in refused:
         print('\n'.join(checker.describe(finding, prefix=f'{path}: ')), flush=True)
-    print(f'{files} source files scanned; {len(refused)} refused; {len(marked)} findings reviewed by the live judge', flush=True)
+    print(f'{files} source files scanned; {len(refused)} refused; {len(marked)} obligations reviewed by the live judge', flush=True)
     return 1 if refused else 0
