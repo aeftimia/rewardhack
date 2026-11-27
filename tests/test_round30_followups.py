@@ -121,6 +121,8 @@ def test_a_wait_that_connected_makes_no_further_unretried_try_and_a_failed_arm_r
     assert 'nothing to copy' in output and 'FINAL COPY FAILED' not in output, output  # no results were there to lose
     output, sent = arm_fails(tmp_path/'kept', 'held')
     assert not any('--remove-now' in line for line in sent) and 'removal timer is running' in output, sent
+    # This run launched no job, so the earlier job's results are not copied into its folder (counted twice) (round 43).
+    assert 'not copied into this run' in output and 'copying results' not in output, output
 
 
 def test_a_failed_arm_call_on_a_fresh_pod_leaves_no_trace_of_a_job(tmp_path):

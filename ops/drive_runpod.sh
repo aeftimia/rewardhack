@@ -180,14 +180,21 @@ finish() {
   # From here nothing may stop this function: with the terminal gone a plain `echo` fails, and under `set -e` that
   # ended the cleanup before the copy and the removal. Every step below reports its own failure.
   set +e
-  # Whether a job was ever launched on a pod this run armed no timer on (see the removal below); asked first, so that a
-  # pod where none ran is not reported as holding results the copy failed to fetch (review round 42). The last line
-  # only: a login shell on the pod may print its own text before the answer.
+  # When this run launched no job, whether any job ever ran on the pod (see the removal below); asked before the copy
+  # (review round 42), and once more if no answer came (round 43). The last line only: a login shell on the pod may
+  # print its own text before the answer. Only this run's own job is copied: an earlier job's out/ on a kept pod was
+  # copied by its own driver, and copying it again into this run's folder would count its rows twice (round 43).
   HELD=unknown
-  if [[ $ARMED == 0 ]]; then HELD=$(on_pod "$JOB_TRACES" | tail -n 1); fi
-  if [[ $ARMED == 0 && $HELD == empty ]]; then
+  if [[ $LAUNCHED == 0 ]]; then
+    HELD=$(on_pod "$JOB_TRACES" | tail -n 1)
+    if [[ -z $HELD ]]; then HELD=$(on_pod "$JOB_TRACES" | tail -n 1); fi
+  fi
+  if [[ $LAUNCHED == 0 && $HELD == empty ]]; then
     say 'no job was launched on this pod: nothing to copy'
     COPIED=1 CHECKPOINTS=1 SMALL_COPIED=1
+  elif [[ $LAUNCHED == 0 ]]; then
+    say "this run launched no job, and the pod holds an earlier job's results (or did not say): they are not copied into this run's folder, and the pod is not removed from here"
+    COPIED=1 CHECKPOINTS=0 SMALL_COPIED=1
   else
   say "copying results"
   # The small files, then the adapters, then the resumable checkpoints (several GB with expert LoRA): the pod removes
@@ -244,6 +251,7 @@ finish() {
   exit "$code"
 }
 ARMED=0
+LAUNCHED=0  # set once this run's job is started on the pod: only then does `finish` copy out/
 trap finish EXIT
 # Within SSH_UP_SECONDS (ops/pod_pins.env), which the launch gate counts: each try is bounded as a whole (ssh's
 # ConnectTimeout covers only the connection; BatchMode keeps it from waiting on a prompt) and followed by a 15 s pause.
@@ -275,6 +283,9 @@ rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --excl
 if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && ${JUDGE_KIND:-api} == api ]]; then
   printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | "${SSH[@]}" "root@$HOST" 'umask 077; cat > ~/.judge_key'
 fi
+# Set before the launch, not after: a launch whose ssh call fails may have started the job all the same, and then its
+# results must be copied. The launch first moves any earlier out/ aside, so the out/ copied is this run's (round 43).
+LAUNCHED=1
 # A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
 # The remote log goes inside it so the runner's own errors are pulled with the results.
 "${SSH[@]}" "root@$HOST" "if [ -e out ]; then mv out out.prev.\$(date +%s); fi; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=${AUTOSTOP_GRACE_SECONDS:-600} ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
