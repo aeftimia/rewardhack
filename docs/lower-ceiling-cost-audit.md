@@ -2,12 +2,12 @@
 
 This is an attribution audit, not a decision to repeat every run. The owner
 agreed to an 8,192-token ceiling for future matched comparisons. The coordinator
-will finish the in-flight GPT neutral/typed lambda=0 trajectory at its original
-2,048 ceiling, then hold further 2,048 launches while reconciling the queue.
+finished the GPT neutral/typed lambda=0 trajectory at its original 2,048 ceiling
+and is using 8,192 for the new permission experiment.
 
 ## Completed cells that a matched rerun could duplicate
 
-All four used 60 steps, 16 answers per step, seed 42 and a 2,048-token ceiling.
+All five used 60 steps, 16 answers per step, seed 42 and a 2,048-token ceiling.
 Compute below is summary elapsed time times the recorded pod rate, plus the
 run's judge meter. It excludes installation, download and transfer overhead.
 
@@ -17,14 +17,16 @@ run's judge meter. It excludes installation, download and transfer overhead.
 | GPT neutral/prose lambda=0 | 2 / 960 | $2.39 |
 | GPT neutral/prose lambda=0.5 | 59 / 960 | $2.13 |
 | GPT neutral/typed baseline | 1 / 960 | $1.58 |
-| **Total** | **68 / 3,840** | **$8.42** |
+| GPT neutral/typed lambda=0 | 1 / 960 | $1.54 |
+| **Total** | **69 / 4,800** | **$9.96** |
 
-The associated pod-ledger entries total $10.67 GPU and $0.89 judge, or $11.56.
+The first four cells' associated pod-ledger entries total $10.67 GPU and $0.89 judge, or $11.56.
 That envelope includes setup/copy overhead and a 120B inference probe sharing
 the lambda=0.5 pod; it must not all be attributed to these four training cells.
 Several ledger entries are provisional elapsed-time estimates, not settled
 provider costs. The unrelated $0.19 failed GPU placement is excluded here.
-The running neutral/typed lambda=0 cell is also excluded until it finishes.
+The completed neutral/typed lambda=0 cell adds $1.54 in direct runtime above;
+its full pod bill remains pending while weight transfers continue.
 
 The original Qwen short measurement adds at most $1.73 GPU plus $0.25 reserved
 judge allowance: **$1.98 upper bound**. It produced no preserved completed
@@ -49,7 +51,8 @@ justify rerunning them, but they are still valid observations under their own
 settings. The typed baseline also has almost no truncation; its missing final
 checkpoint is a separate transfer problem, not a consequence of the ceiling.
 
-The $8.42 direct / $11.56 associated historical spend provides an anchor for
+The $9.96 direct spend across five cells and $11.56 associated pod spend for the
+first four provide anchors for
 the scope of potentially duplicated work. It does not predict an 8,192 rerun:
 longer reasoning can change the policy, batch memory and throughput. Measure
 one GPT sensitivity run before assigning a new GPU-hour estimate. A larger
