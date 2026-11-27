@@ -17,9 +17,9 @@
 set -euo pipefail
 cd ~/pilot-repo
 # VLLM_ATTENTION_BACKEND was set here until 25 Nov: vLLM has reported it as an unknown variable since the 5 Nov probes, so it never did anything.
-export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMPLER=0
-export PATH="/usr/local/cuda/bin:$PATH" CUDA_HOME=/usr/local/cuda
-mkdir -p ~/out /workspace/hf
+source ops/pod_lib.sh
+configure_model_environment
+mkdir -p ~/out "$HF_HOME"
 rm -f ~/out/DONE
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
 fail() { log "$1"; exit 1; }
@@ -39,7 +39,6 @@ SMOKE_TRAIN_SECONDS=${SMOKE_TRAIN_SECONDS:-3600}  # fallback-ok: optional settin
 SMOKE_FINAL_EVAL_SECONDS=${SMOKE_FINAL_EVAL_SECONDS:-600}  # fallback-ok: optional setting; time reserved for the after-evaluation when unset
 SMOKE_MEMORY_SECONDS=${SMOKE_MEMORY_SECONDS:-1800}  # fallback-ok: optional setting; the memory check's documented limit when unset
 SMOKE_PROBE_LARGE=${SMOKE_PROBE_LARGE:-0}  # fallback-ok: optional setting; unset means no inference probe after training
-source ops/pod_lib.sh
 cleanup() {
   rm -f ~/.judge_key
   for pid in "$JUDGE_PID" "$ROLLOUT_PID"; do
@@ -73,7 +72,7 @@ JUDGE=$POD_JUDGE; JUDGE_REV=$POD_JUDGE_REV
 JUDGE_KIND=${JUDGE_KIND:-api}
 JUDGE_GPU_FRACTION=${JUDGE_GPU_FRACTION:-0.22}
 SMOKE_EVAL_LIMIT=${SMOKE_EVAL_LIMIT:-12}
-SMOKE_TRAIN_GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-4}
+SMOKE_TRAIN_GENERATIONS=${SMOKE_TRAIN_GENERATIONS:-$DEFAULT_TRAIN_GENERATIONS}
 if [[ $JUDGE_KIND == api ]]; then
   [[ -s ~/.judge_key ]] || fail 'NO_JUDGE_KEY: run the driver with FORWARD_JUDGE_KEY=1, or set JUDGE_KIND=pod'
   JUDGE_KEY=$(cat ~/.judge_key); rm -f ~/.judge_key
@@ -117,11 +116,7 @@ ln -sf /workspace/bin/lean-safe ~/lean-safe
 log start install
 # Limits on the steps that fetch from the network, so a stalled connection ends in minutes and not at the job's deadline:
 # the install took 81 s when timed, the 13 GB download 0.5 to 5.1 minutes, the vLLM install 222 s (all with pip).
-# shellcheck disable=SC2015  # the failure branch is meant to run when either step fails
-python -m venv /workspace/uv-venv && /workspace/uv-venv/bin/pip install -q uv==0.13.8 > ~/out/install-uv.log 2>&1 || fail UV_INSTALL_FAILED
-UV=/workspace/uv-venv/bin/uv
-# uv's cache of unpacked wheels (two torch and CUDA sets) stays off the disk ~/out is checked for (review round 12).
-export UV_CACHE_DIR=/workspace/uv-cache
+install_uv
 VLLM_INSTALL_PID=
 if [[ $JUDGE_KIND == pod || $SMOKE_VLLM_ROLLOUTS == 1 ]]; then
   INSTALL_WAIT=600 make_env vllm -r requirements-vllm.txt > ~/out/install-vllm.log 2>&1 &  # cap: 2x measured 222 s
@@ -225,7 +220,6 @@ step() { name=$1; shift; log "start $name"
 GENERATIONS=$SMOKE_TRAIN_GENERATIONS
 # Prompt groups per optimizer step (owner, 26 Nov, notes section 72): one group of four had reward variation in 12 of 60
 # baseline steps. Each group is its own micro-batch, so memory is that of one group; vLLM samples all groups at once.
-PROMPTS=4
 # The probe-only job (no runs) has nothing to sample rollouts for: no rollout server, which would only be stopped again.
 if [[ $SMOKE_VLLM_ROLLOUTS == 1 && ${#RUNS[@]} -gt 0 ]]; then
   [[ $JUDGE_KIND == api && ${SMOKE_SKIP_PROBE:?} == 1 && ${SMOKE_SECOND_RUN:?} == 0 ]] || fail INVALID_ROLLOUT_PILOT
@@ -236,11 +230,7 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 && ${#RUNS[@]} -gt 0 ]]; then
   # A fixed 4,096 refused every request once LIMIT was 4,096 (review round 6); the rollout client also checks each request.
   # CUDA graphs are captured for decode batches of up to 32 tokens (16 sequences use at most 16): the default captured 166
   # sizes up to 1,024 on this card, most of a 125 s engine start (measuring pass). Larger batches (prefill) run eagerly.
-  CUDA_VISIBLE_DEVICES=$ROLLOUT_CARD VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True \
-    in_env vllm vllm serve "$MODEL" --revision "$REV" --served-model-name "$MODEL@$REV" \
-      --host 127.0.0.1 --port "$ROLLOUT_PORT" --max-model-len $((LIMIT + PROMPT_ROOM_TOKENS)) --gpu-memory-utilization "${MODEL_ROLLOUT_FRACTION[$M]}" --max-num-seqs $((GENERATIONS * PROMPTS)) --max-cudagraph-capture-size 32 \
-      --enable-lora --max-lora-rank 16 --max-loras 2 --enable-sleep-mode --enable-scale-out \
-      --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
+  CUDA_VISIBLE_DEVICES=$ROLLOUT_CARD serve_rollouts vllm "$M" "$LIMIT" "$GENERATIONS" > ~/out/rollout-server.log 2>&1 &
   ROLLOUT_PID=$!
   # cap: 2x measured 390 s
   wait_for_server "$ROLLOUT_PID" "$ROLLOUT_PORT" "$MODEL@$REV" "$SERVER_WAIT" || fail ROLLOUT_SERVER_DID_NOT_START
@@ -262,7 +252,7 @@ from transformers import AutoTokenizer; AutoTokenizer.from_pretrained(sys.argv[1
     >> ~/out/steps.log 2>&1 || fail PROBE_ENVIRONMENT_BROKEN
 fi
 # The batch shape of every training step in this script, so that no comparison below changes it by accident.
-SHAPE=(--num-generations "$GENERATIONS" --prompts-per-step "$PROMPTS")
+SHAPE=(--num-generations "$GENERATIONS" --prompts-per-step "$TRAIN_PROMPTS_PER_STEP")
 TRAIN=(--steps "$SMOKE_STEPS" --learning-rate 1e-4 "${SHAPE[@]}" --max-seconds "$SMOKE_TRAIN_SECONDS" --final-eval-seconds "$SMOKE_FINAL_EVAL_SECONDS")
 if [[ $SMOKE_PART_ONE != 0 ]]; then
   # Part 1 (owner, 26 Nov; issue #2): the job's runs from ops/pod_pins.env, same seed and settings, one after the other.

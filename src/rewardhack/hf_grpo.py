@@ -348,6 +348,18 @@ def trainer_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_mo
         yield task, [output[start:].tolist() for output in outputs], time.perf_counter()-t0
 
 
+def evaluation_draws(tokenizer, tasks, args, samples):
+    """Return the server seed and ordered (task, round, prompt IDs) draws."""
+    from .vllm_rollouts import SEED_STRIDE
+    draws = []
+    for task in tasks:
+        messages = prompt(task['statement'], args.prompt_variant, args.report_mode)
+        ids = tokenizer.apply_chat_template(messages, tokenize=True, return_dict=True,
+                                            add_generation_prompt=True, **template_kwargs(args))['input_ids']
+        draws.extend((task, round_index, ids) for round_index in range(samples))
+    return evaluation_seed(args) * SEED_STRIDE, draws
+
+
 def server_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_model, stage):
     """Samples from the vLLM adapter server that serves the training rollouts, for every task in one call (owner, 26 Nov:
     a library's engine rather than trainer-side generation, which LoRA on the gpt-oss experts made about 8x slower). The
@@ -356,11 +368,9 @@ def server_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_mod
     Its generation time is the whole server call, wake to sleep (adapter save and load included), and covers every task's
     samples even when the evaluation stops early: `generation_seconds` reads high and `tokens_per_second` low, which errs on
     the safe side when either sizes a limit. The call's own parts are in rollout-backend.jsonl (`sync_seconds`, `seconds`)."""
-    from .vllm_rollouts import SEED_STRIDE
-    prompts = [tokenizer.apply_chat_template(prompt(task['statement'], args.prompt_variant, args.report_mode), tokenize=True, return_dict=True,
-                                             add_generation_prompt=True, **template_kwargs(args))['input_ids'] for task in tasks]
+    seed, draws = evaluation_draws(tokenizer, tasks, args, samples)
     t0 = time.perf_counter()
-    ids, _, _ = rollouts.sample(adapter_model, [ids for ids in prompts for _ in range(samples)], seed=evaluation_seed(args) * SEED_STRIDE,
+    ids, _, _ = rollouts.sample(adapter_model, [ids for _, _, ids in draws], seed=seed,
                                 record=dict(evaluation=stage))
     seconds = time.perf_counter()-t0
     for index, task in enumerate(tasks):

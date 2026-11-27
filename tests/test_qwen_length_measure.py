@@ -13,8 +13,8 @@ from rewardhack.tasks import select_tasks, stratified_limit
 from rewardhack.vllm_rollouts import AdapterRollouts, SEED_STRIDE
 
 
-@pytest.mark.parametrize('fail_later', [False, True])
-def test_length_probe_uses_evaluation_draws_and_saves_partial_answers(tmp_path, monkeypatch, fail_later):
+@pytest.mark.parametrize('failure', [None, 'timeout', 'two choices'])
+def test_length_probe_uses_evaluation_draws_and_saves_partial_answers(tmp_path, monkeypatch, failure):
     class Tokenizer:
         eos_token_id = 1
 
@@ -27,40 +27,47 @@ def test_length_probe_uses_evaluation_draws_and_saves_partial_answers(tmp_path, 
 
     monkeypatch.setattr(AutoTokenizer, 'from_pretrained', lambda *a, **kw: Tokenizer())
     monkeypatch.setattr(hf_grpo, 'settle_template', lambda *a: None)
-    monkeypatch.setattr(AdapterRollouts, 'preflight', lambda self: None)
-    reply = {'choices': [{'token_ids': [7, 1], 'finish_reason': 'stop'}]}
-    monkeypatch.setattr(AdapterRollouts, 'request', lambda *a, **kw: httpx.Response(200, json=reply))
+    monkeypatch.setattr(AdapterRollouts, 'preflight', lambda self: setattr(self, 'max_model_len', 3))
+    monkeypatch.setattr(AdapterRollouts, 'require_sleep', lambda *args: None)
 
-    def sample(self, model, prompts, *, seed, record):
-        assert model is None and len(prompts) == 24
-        assert seed == hf_grpo.evaluation_seed(self.args) * SEED_STRIDE
-        for index in range(24):
-            if fail_later and index == 1:
-                raise httpx.ReadTimeout('later request failed')
-            self.request('POST', '/inference/v1/generate', body={'sampling_params': {'seed': seed+index}})
-        return [[7, 1]] * 24, None, None
+    def request(self, method, path, *, body=None, timeout=120):
+        if path != '/inference/v1/generate':
+            return httpx.Response(200, json={})
+        index = body['sampling_params']['seed'] - hf_grpo.evaluation_seed(self.args) * SEED_STRIDE
+        assert 0 <= index < 24
+        assert body['model'] == 'test@pinned'
+        if index == 23 and failure == 'timeout':
+            raise httpx.ReadTimeout('later request failed')
+        tokens = [7, 1] if index % 2 == 0 else [7, 8]
+        logs = [{'token_id': token, 'logprob': -0.25} for token in tokens]
+        choice = dict(token_ids=tokens, finish_reason='length', logprobs={'content': logs})
+        choices = [choice, choice] if index == 23 and failure == 'two choices' else [choice]
+        return httpx.Response(200, json={'choices': choices})
 
-    monkeypatch.setattr(AdapterRollouts, 'sample', sample)
+    monkeypatch.setattr(AdapterRollouts, 'request', request)
     out = tmp_path/'probe'
     monkeypatch.setattr(sys, 'argv', ['qwen_length_measure.py', '--out', str(out), '--model', 'test',
                                     '--revision', 'pinned', '--rollout-url', 'http://127.0.0.1:8011',
-                                    '--max-completion-length', '16384'])
+                                    '--max-completion-length', '2'])
     script = Path(__file__).resolve().parents[1]/'entrypoints/qwen_length_measure.py'
-    if fail_later:
-        with pytest.raises(httpx.ReadTimeout):
+    if failure:
+        with pytest.raises(httpx.ReadTimeout if failure == 'timeout' else ValueError,
+                           match='later request failed' if failure == 'timeout' else 'exactly one completion'):
             runpy.run_path(str(script), run_name='__main__')
     else:
         runpy.run_path(str(script), run_name='__main__')
     rows = [json.loads(line) for line in (out/'rows.jsonl').read_text().splitlines()]
-    assert len(rows) == (1 if fail_later else 24)
+    assert len(rows) == (23 if failure else 24)
     expected = stratified_limit(select_tasks('hard', 'all', 'evaluation'), 12)
     assert [row['id'] for row in json.loads((out/'tasks.json').read_text())] == [row['id'] for row in expected]
     assert {row['id'] for row in expected} == {
         f'{group}-{truth}' for group in ('boundary-0-1', 'boundary-1-1', 'nattrap-sub-sub',
                                        'residue-n^3+2*n+7-37', 'sat-8-1', 'satsmall-4-2')
         for truth in ('T', 'F')}
-    assert rows[0]['task_id'] == expected[0]['id']
-    assert all(not r['truncated'] and r['raw'] == 'saved completion' for r in rows)
+    expected_draws = [(task['id'], index) for task in expected for index in range(2)]
+    assert sorted((r['task_id'], r['round']) for r in rows) == sorted(expected_draws[:len(rows)])
+    assert all(r['truncated'] == (r['round'] == 1) and r['raw'] == 'saved completion' for r in rows)
     summary = json.loads((out/'summary.json').read_text())
-    assert summary['status'] == ('failed' if fail_later else 'completed')
-    assert len((out/'responses.jsonl').read_text().splitlines()) == len(rows)
+    assert summary['status'] == ('failed' if failure else 'completed')
+    assert summary['samples'] == len(expected_draws)
+    assert len((out/'responses.jsonl').read_text().splitlines()) == (23 if failure == 'timeout' else 24)

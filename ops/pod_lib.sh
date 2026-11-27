@@ -9,6 +9,11 @@ source ops/pod_pins.env  # models, revisions, versions and ports: stated once th
 # cap: 2x measured 390 s
 SERVER_WAIT=900
 
+configure_model_environment() {
+  export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMPLER=0
+  export PATH="/usr/local/cuda/bin:$PATH" CUDA_HOME=/usr/local/cuda
+}
+
 # Wait until the card is free: a process that just ended (a relaunch's predecessor, a stopped server, a finished stage)
 # gives its memory back within seconds. Usage: wait_card_free <who is waiting, for the failure message>.
 # The limit, CARD_FREE_SECONDS, is in ops/pod_pins.env, where the driver also counts it: the whole wait, each query's own
@@ -36,6 +41,27 @@ wait_card_free() {
 
 # Every Python environment a job makes is /workspace/<name>-venv. Usage: env_bin <name> <command>.
 env_bin() { echo "/workspace/$1-venv/bin/$2"; }
+
+# Bootstrap the same installer and wheel cache for training and inference jobs.
+install_uv() {
+  python -m venv /workspace/uv-venv || fail UV_INSTALL_FAILED
+  # cap: 2x estimated 60 s
+  timeout 120 "$(env_bin uv pip)" install -q uv==0.13.8 > ~/out/install-uv.log 2>&1 || fail UV_INSTALL_FAILED
+  UV=$(env_bin uv uv)
+  export UV_CACHE_DIR=/workspace/uv-cache
+}
+
+# Matched rollout servers use the trainer's batch capacity and model column.
+serve_rollouts() {
+  local environment=$1 column=$2 limit=$3 generations=$4
+  local model=${MODEL_REPOS[$column]} revision=${MODEL_REVS[$column]}
+  VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True \
+    in_env "$environment" vllm serve "$model" --revision "$revision" --served-model-name "$model@$revision" \
+      --host 127.0.0.1 --port "$ROLLOUT_PORT" --max-model-len $((limit + PROMPT_ROOM_TOKENS)) \
+      --gpu-memory-utilization "${MODEL_ROLLOUT_FRACTION[$column]}" --max-num-seqs $((generations * TRAIN_PROMPTS_PER_STEP)) \
+      --max-cudagraph-capture-size 32 --enable-lora --max-lora-rank 16 --max-loras 2 \
+      --enable-sleep-mode --enable-scale-out --logprobs-mode processed_logprobs
+}
 
 # Create (or, on a relaunch, recreate: `uv venv` refuses an existing one without --clear) an environment, install into
 # it and record what was installed in ~/out/pip-freeze-<name>.txt. Usage: INSTALL_WAIT=<s> make_env <name> <uv pip args>,

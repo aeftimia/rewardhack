@@ -3,22 +3,17 @@
 # Inference only: same pinned base model and evaluation draws as the 8k run.
 set -euo pipefail
 cd ~/pilot-repo
-export HF_HUB_DISABLE_TELEMETRY=1 HF_HOME=/workspace/hf VLLM_USE_FLASHINFER_SAMPLER=0
-export PATH="/usr/local/cuda/bin:$PATH" CUDA_HOME=/usr/local/cuda
-mkdir -p ~/out /workspace/hf
+source ops/pod_lib.sh
+configure_model_environment
+mkdir -p ~/out "$HF_HOME"
 log() { echo "$(date -u +%FT%TZ) $*" >> ~/out/steps.log; }
 fail() { log "$1"; exit 1; }
-source ops/pod_lib.sh
 SERVER_PID=
 cleanup() { if [[ -n $SERVER_PID ]] && kill -0 "$SERVER_PID"; then stop_server "$SERVER_PID"; fi; }
 trap cleanup EXIT
 pod_self_test 1 95 2 "$ROLLOUT_PORT"
 log install
-python -m venv /workspace/uv-venv
-# cap: 2x estimated 60 s
-timeout 120 /workspace/uv-venv/bin/pip install -q uv==0.13.8 > ~/out/install-uv.log 2>&1
-UV=/workspace/uv-venv/bin/uv
-export UV_CACHE_DIR=/workspace/uv-cache
+install_uv
 grep '^numpy==' requirements-vllm.txt > /workspace/probe-override.txt
 # cap: 2x measured 222 s
 INSTALL_WAIT=600 make_env probe -r requirements-vllm.txt -e . --override /workspace/probe-override.txt > ~/out/install-probe.log 2>&1
@@ -29,12 +24,7 @@ DOWNLOAD_WAIT=480 fetch_model "$QWEN3_32B" "$QWEN3_32B_REV"
 LIMIT=${SMOKE_TOKEN_LIMIT:?}
 [[ $LIMIT == 16384 ]] || fail EXPECTED_16384_TOKEN_DIAGNOSTIC
 log server
-VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True \
-  in_env probe vllm serve "$QWEN3_32B" --revision "$QWEN3_32B_REV" \
-    --served-model-name "$QWEN3_32B@$QWEN3_32B_REV" --host 127.0.0.1 --port "$ROLLOUT_PORT" \
-    --max-model-len $((LIMIT + PROMPT_ROOM_TOKENS)) --gpu-memory-utilization "${MODEL_ROLLOUT_FRACTION[1]}" \
-    --max-num-seqs 16 --max-cudagraph-capture-size 32 --enable-lora --max-lora-rank 16 --max-loras 2 \
-    --enable-sleep-mode --enable-scale-out --logprobs-mode processed_logprobs > ~/out/rollout-server.log 2>&1 &
+serve_rollouts probe 1 "$LIMIT" "$DEFAULT_TRAIN_GENERATIONS" > ~/out/rollout-server.log 2>&1 &
 SERVER_PID=$!
 wait_for_server "$SERVER_PID" "$ROLLOUT_PORT" "$QWEN3_32B@$QWEN3_32B_REV" "$SERVER_WAIT"
 refuse_ignored_settings ~/out/rollout-server.log

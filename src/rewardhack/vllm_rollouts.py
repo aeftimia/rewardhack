@@ -129,34 +129,36 @@ class AdapterRollouts:
                           skip_special_tokens=False, logprobs=0, output_kind=2)
             body = dict(model=model, request_id=str(uuid.uuid4()), token_ids=prompt, sampling_params=params)
             reply = self.request('POST', '/inference/v1/generate', body=body, timeout=request_timeout).json()
-            if len(reply['choices']) != 1:
-                raise ValueError('vLLM must return exactly one completion per request')
-            return reply['choices'][0]
+            return self.parse_completion(index, reply, max_tokens)
         # executor.map preserves prompt/group order despite out-of-order replies.
         with ThreadPoolExecutor(max_workers=min(32, len(prompts))) as pool:
             choices = list(pool.map(send, enumerate(prompts)))
-        ids, probabilities = [], []
-        for choice in choices:
-            tokens = choice['token_ids']
-            logs = choice['logprobs']['content']
-            values = [entry['logprob'] for entry in logs]
-            if (not tokens or len(tokens) > max_tokens or len(tokens) != len(values)
-                    or [entry['token_id'] for entry in logs] != tokens
-                    or not all(type(token) is int and token >= 0 for token in tokens)
-                    or not all(isinstance(value, (int, float)) and math.isfinite(value) and value <= 0 for value in values)):
-                raise ValueError('vLLM returned invalid or misaligned token IDs/log probabilities')
-            if choice['finish_reason'] not in ('stop', 'length'):
-                raise ValueError(f"unexpected finish reason {choice['finish_reason']!r}")
-            if choice['finish_reason'] == 'stop' and tokens[-1] != self.stops:
-                raise ValueError('vLLM stopped without returning a configured stop token')
-            if choice['finish_reason'] == 'length' and len(tokens) != max_tokens:
-                raise ValueError('vLLM reached a length limit before the requested completion budget')
-            if self.stops in tokens[:-1]:
-                raise ValueError('vLLM continued past the configured stop token')
-            ids.append(tokens)
-            probabilities.append(values)
+        ids, probabilities = zip(*choices)
         # No sampling mask: TRL then normalises the trainer's log-probabilities over the whole vocabulary, as sampled.
-        return ids, probabilities, None
+        return list(ids), list(probabilities), None
+
+    def parse_completion(self, index, reply, max_tokens):
+        """Validate one reply in its worker so observers can retain each completed draw."""
+        if len(reply['choices']) != 1:
+            raise ValueError('vLLM must return exactly one completion per request')
+        choice = reply['choices'][0]
+        tokens = choice['token_ids']
+        logs = choice['logprobs']['content']
+        values = [entry['logprob'] for entry in logs]
+        if (not tokens or len(tokens) > max_tokens or len(tokens) != len(values)
+                or [entry['token_id'] for entry in logs] != tokens
+                or not all(type(token) is int and token >= 0 for token in tokens)
+                or not all(isinstance(value, (int, float)) and math.isfinite(value) and value <= 0 for value in values)):
+            raise ValueError('vLLM returned invalid or misaligned token IDs/log probabilities')
+        if choice['finish_reason'] not in ('stop', 'length'):
+            raise ValueError(f"unexpected finish reason {choice['finish_reason']!r}")
+        if choice['finish_reason'] == 'stop' and tokens[-1] != self.stops:
+            raise ValueError('vLLM stopped without returning a configured stop token')
+        if choice['finish_reason'] == 'length' and len(tokens) != max_tokens:
+            raise ValueError('vLLM reached a length limit before the requested completion budget')
+        if self.stops in tokens[:-1]:
+            raise ValueError('vLLM continued past the configured stop token')
+        return tokens, values
 
     def verify_reload(self, prompt):
         """A/B/A, once per kind of adapted weight (attention and other linear layers; the MoE experts): changing only
