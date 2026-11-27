@@ -90,12 +90,6 @@
     "reason": "Malformed Lean output is returned with an explicit unexpected-output diagnostic in INCONCLUSIVE. It is not treated as a proved or disproved proposition."
   },
   {
-    "path": "src/rewardhack/verifier.py",
-    "rule": "py-or-default",
-    "text": "axioms = {a.strip() for a in (found['axioms'] or '').split(',') if a.strip()}",
-    "reason": "The regex has an optional capture for the axiom list. A valid Lean response stating no axioms leaves that capture None; an unmatched or malformed response is rejected earlier."
-  },
-  {
     "path": "entrypoints/gate.py",
     "rule": "keyword",
     "text": "Codex PreToolUse adapter for the shared no-silent-fallbacks checker.",

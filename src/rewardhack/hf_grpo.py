@@ -19,7 +19,12 @@ from .outcomes import accumulate, compare, judge_advice, judge_failing, verifier
 from .prompts import prompt
 from .rates import observed_ratio
 from .sampling import TEMPERATURE, TOP_K, TOP_P
-from .tasks import split, stratified_limit, taskset_rows
+from .tasks import select_tasks, stratified_limit
+
+
+def stage_tasks(taskset, stage, limit):
+    """Select the ordered task groups for a trainer stage or its inference replay."""
+    return stratified_limit(select_tasks(taskset, 'all', provenance.STAGES[stage]['part']), limit)
 from .verifier import controls
 
 
@@ -783,10 +788,8 @@ def run(args):
             return
         from .judge import from_args
         args.judge_fn = from_args(args)
-        data = split(taskset_rows(args.taskset))
-        # The splits each stage samples, as its rows' provenance states them (every statement of each).
-        evaluation = stratified_limit(data[provenance.STAGES['before']['part']], args.eval_limit)
-        training = stratified_limit(data[provenance.STAGES['training']['part']], args.train_limit)
+        evaluation = stage_tasks(args.taskset, 'before', args.eval_limit)
+        training = stage_tasks(args.taskset, 'training', args.train_limit)
         (args.out/'tasks.json').write_text(json.dumps({'train': training, 'evaluation': evaluation}, indent=1, ensure_ascii=False)+'\n')
         import peft
         import torch

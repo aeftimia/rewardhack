@@ -12,9 +12,8 @@ from pathlib import Path
 from transformers import AutoTokenizer
 
 from rewardhack import jsonl, provenance
-from rewardhack.hf_grpo import evaluation_seed, settle_template
+from rewardhack.hf_grpo import evaluation_seed, settle_template, stage_tasks
 from rewardhack.prompts import prompt
-from rewardhack.tasks import select_tasks, stratified_limit
 from rewardhack.vllm_rollouts import AdapterRollouts, SEED_STRIDE
 
 
@@ -30,7 +29,7 @@ if __name__ == '__main__':
     args.out.mkdir(parents=True, exist_ok=False)
     tokenizer = AutoTokenizer.from_pretrained(args.model, revision=args.revision)
     settle_template(tokenizer, None, 'on')
-    tasks = stratified_limit(select_tasks('hard', 'all', 'evaluation'), 12)
+    tasks = stage_tasks('hard', 'before', 12)
     template = {'enable_thinking': True}
     prompts = [tokenizer.apply_chat_template(prompt(t['statement'], 'neutral', 'prose'), tokenize=True,
                return_dict=True, add_generation_prompt=True, **template)['input_ids'] for t in tasks]
