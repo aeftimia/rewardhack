@@ -9,7 +9,7 @@ import pytest
 from transformers import AutoTokenizer
 
 from rewardhack import hf_grpo
-from rewardhack.tasks import select_tasks
+from rewardhack.tasks import select_tasks, stratified_limit
 from rewardhack.vllm_rollouts import AdapterRollouts, SEED_STRIDE
 
 
@@ -53,7 +53,13 @@ def test_length_probe_uses_evaluation_draws_and_saves_partial_answers(tmp_path, 
         runpy.run_path(str(script), run_name='__main__')
     rows = [json.loads(line) for line in (out/'rows.jsonl').read_text().splitlines()]
     assert len(rows) == (1 if fail_later else 24)
-    assert rows[0]['task_id'] == select_tasks('hard', 'all', 'evaluation', limit=12)[0]['id']
+    expected = stratified_limit(select_tasks('hard', 'all', 'evaluation'), 12)
+    assert [row['id'] for row in json.loads((out/'tasks.json').read_text())] == [row['id'] for row in expected]
+    assert {row['id'] for row in expected} == {
+        f'{group}-{truth}' for group in ('boundary-0-1', 'boundary-1-1', 'nattrap-sub-sub',
+                                       'residue-n^3+2*n+7-37', 'sat-8-1', 'satsmall-4-2')
+        for truth in ('T', 'F')}
+    assert rows[0]['task_id'] == expected[0]['id']
     assert all(not r['truncated'] and r['raw'] == 'saved completion' for r in rows)
     summary = json.loads((out/'summary.json').read_text())
     assert summary['status'] == ('failed' if fail_later else 'completed')
