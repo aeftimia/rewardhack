@@ -23,7 +23,7 @@ repos:
         stages: [pre-commit]
       - id: semantic-dry-audit
         name: Semantic DRY review of staged Python computations
-        entry: dry-audit --run-hook dry-audit --hook-args --semantic-hook --root . --block divergent
+        entry: dry-audit --run-hook dry-audit --hook-args --semantic-hook --root . --block same divergent
         language: system
         pass_filenames: false
         always_run: true

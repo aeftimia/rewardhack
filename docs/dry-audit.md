@@ -27,9 +27,26 @@ limits are documented upstream.
 ## Semantic pre-commit review
 
 The `semantic-dry-audit` pre-commit entry reviews new staged Python computations
-with the OpenAI judge. An unresolved divergent-policy finding stops a commit.
-Matching-computation suggestions appear as warnings. The structural checker
-also enforces new structural duplication.
+with the OpenAI judge. Both independently implemented matching computations
+(`same`) and divergent implementations of a shared policy (`divergent`) block
+the commit. Consolidate the implementations, correct the mismatch, or explain
+why the two sites need separate code with a peer-specific `dry-ok` comment.
+The structural checker also enforces new structural duplication.
+
+The managed auditor reviews independent batches concurrently. Primary verdicts
+and follow-up reviews of explanations share a worker pool, with up to eight
+requests in flight by default. The installed auditor supplies this default on
+each hook update. It uses the API's request and token rate-limit headers to pace
+workers and honors retry delays across the pool. Transient throttling and service
+unavailability get bounded retries. An exhausted retry budget or a billing error
+fails the review.
+
+For a lower cap, append `--workers 2` to the `semantic-dry-audit` entry in
+`.pre-commit-config.yaml`. To use that cap for a single review of the Git index:
+
+```bash
+dry-audit --run-hook dry-audit --hook-args --semantic-hook --root . --block same divergent --workers 2
+```
 
 The historical replay at `bf84486` produced four divergent verdicts from twelve
 candidate pairs for the Qwen task selector. The trainer's stratified selection
@@ -44,10 +61,27 @@ excuse the downstream call while the mismatch was present. Repeating the
 four comparisons on the corrected `7a85d4b` yielded zero divergent verdicts.
 These results describe the tested snapshots and model runs.
 
+The RunPod operations integration produced 39 matching-computation warnings and
+6 divergence findings in its original 240-pair review. Replaying those 45
+findings with GPT-5.4 and the 0.8.0 caller-contract evidence produced
+13 matching computations, 30 independent pairs, and 2 uncertain pairs. None of
+the six earlier blockers retained a divergent verdict. Both runs flagged the
+separate driver-environment filters in `gates.driver_launch` and
+`runpod_ops.launch` as matching. In the same replay, the judge identified the
+Qwen selector at `bf84486` as divergent and its fix at `7a85d4b` as matching.
+The replay covered the original findings and those two controls.
+
+The 0.9.0 replay included 48 pairs and distinguished a duplicated computation
+from two calls to its shared implementation. It flagged the original RunPod
+driver filters as matching and the original Qwen selector as divergent. It
+classified both corrected pairs as independent, so the stricter gate allows
+their shared-helper calls without an exception.
+
 For a two-site finding, put `# dry-ok: path/to/peer.py::scope | concrete reason`
 on the statement's first line or directly above it. Use the peer's path and scope
-from the finding. Explain the difference in caller contracts and identify code
-that establishes it. The hook removes the comment from the first review, then asks
+from the finding. Explain why the separate computations or their differing
+behavior are intentional, and identify code that establishes the caller contracts.
+The hook removes the comment from the first review, then asks
 the judge to check the explanation against both sites. Only an accepted explanation
 clears that pair. Other findings and the structural check still apply.
 

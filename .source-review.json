@@ -118,7 +118,7 @@
     "path": "ops/remote_job.sh",
     "rule": "sh-default-expansion",
     "text": "OUT=${REMOTE_JOB_OUT:-$HOME/out}",
-    "reason": "These are documented output and PID-file location options for the runner. Omission selects the standard HOME location; filesystem failures are not a request to try another location."
+    "reason": "REMOTE_JOB_OUT selects the runner's output directory. An unset or empty override selects $HOME/out; a nonempty value selects that exact path. The next mkdir attempts the chosen path once, prints the failing path and exits 3 on failure. This justification concerns only that local path choice."
   },
   {
     "path": "ops/remote_job.sh",
