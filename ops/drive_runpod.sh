@@ -337,6 +337,16 @@ ARMED=1  # from here a removal timer runs on the pod, so a pod that stops answer
 ARMED_AT=$(date -u +%FT%TZ)
 # results/ stays behind except the model-read labels, which judge validation on the pod needs (7 MB).
 rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
+if [[ -n ${SMOKE_EXPERIMENT+set} ]]; then
+  on_pod 'mkdir -p pilot-repo/.tools'
+  rsync -az --timeout=120 -e "${SSH[*]}" .tools/experiment.json "root@$HOST:pilot-repo/.tools/"
+  if [[ -d .tools/experiment-parent ]]; then
+    rsync -az --timeout=120 -e "${SSH[*]}" .tools/experiment-parent "root@$HOST:pilot-repo/.tools/"
+  fi
+  if [[ -d .tools/experiment-source ]]; then
+    rsync -az --timeout=120 -e "${SSH[*]}" .tools/experiment-source "root@$HOST:pilot-repo/.tools/"
+  fi
+fi
 # The API judge needs the OpenAI key on the pod. It is sent only on request, over the SSH channel into a mode-600
 # file that the remote script reads once and deletes; it never appears in a command line or in the repo.
 LAUNCH_ID="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM-$RANDOM"

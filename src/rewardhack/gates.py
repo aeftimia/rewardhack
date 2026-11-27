@@ -194,6 +194,8 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
                   deadline_minutes=deadline, basis=basis.strip(), line=line, hourly_usd=hourly, other_usd=other_usd, worst_case_usd=worst,
                   worst_case_minutes=deadline + overhead, settings=dict(sorted(settings.items())),
                   credentials=credentials, written_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
+    if 'SMOKE_EXPERIMENT' in settings:
+        record['experiment_sha256'] = file_sha256(root / '.tools/experiment.json')
     (root/RECORD).parent.mkdir(parents=True, exist_ok=True)
     (root/RECORD).write_text(json.dumps(record, indent=1) + '\n')
     return record, []
@@ -223,6 +225,10 @@ def launch_problems(root, remote=None, deadline=None, settings=None):
         return [f'there is no launch record. Settle the launch first:\n    {READY}']
     record = json.loads((root/RECORD).read_text())
     problems = []
+    if 'SMOKE_EXPERIMENT' in record['settings']:
+        config = root / '.tools/experiment.json'
+        if not config.is_file() or record.get('experiment_sha256') != file_sha256(config):
+            problems.append('the experiment configuration differs from the checked launch')
     if 'credentials' not in record:
         problems.append('the launch record has no credential preflight; rerun ready before deploying')
     else:

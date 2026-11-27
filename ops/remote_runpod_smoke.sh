@@ -217,7 +217,9 @@ log "probe: $PROBE_LINE; training with --max-completion-length $LIMIT"
 if [[ $CHECK_VERIFIER == 1 ]]; then fail PROBE_VERIFIER_UNDECIDED; fi
 fi
 step() { name=$1; shift; log "start $name"
-  CUDA_VISIBLE_DEVICES=$TRAIN_CARD judged "$PY" entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
+  local config=()
+  if [[ -n ${SMOKE_EXPERIMENT+set} ]]; then config=(--run-config .tools/experiment.json); fi
+  CUDA_VISIBLE_DEVICES=$TRAIN_CARD judged "$PY" entrypoints/run.py train --out ~/out/"$name" "${BASE[@]}" --max-completion-length "$LIMIT" "$@" "${config[@]}" > ~/out/"$name".log 2>&1 || fail "$name FAILED"
   # A run stopped early (deadline, no variation) still exits 0: say so where the job's progress is read.
   status=$("$PY" -c 'import json, sys; s = json.load(open(sys.argv[1])); print("steps", s["global_step"], "early stop", s["early_stop"] if "early_stop" in s else "none")' ~/out/"$name"/summary.json) \
     || fail "$name SUMMARY_UNREADABLE"

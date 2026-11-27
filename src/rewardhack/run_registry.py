@@ -2,9 +2,58 @@
 """Index the recorded settings of past runs and resolve settings for new runs."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from uuid import uuid4
+from .state_files import atomic_json
+
+CONFIG_FILE = 'run-config.json'
+# These changes preserve the shapes and ordering of the saved optimizer and sampler.
+CONTINUATION_OVERRIDES = frozenset({'max_completion_length', 'prompt_variant', 'report_mode', 'arm', 'penalty'})
+
+
+def training_arguments(parser, argv, config):
+    """Resolve the prepared scientific settings through the trainer's own argument parser."""
+    from .hf_grpo import RESUME_SETTINGS
+    permitted = set(RESUME_SETTINGS) | {'steps'}
+    settings = config['settings']
+    unknown = set(settings) - permitted
+    if unknown:
+        raise ValueError(f'unsupported training settings: {sorted(unknown)}')
+    base = parser.parse_args(argv)
+    flags = []
+    for key, value in settings.items():
+        if json.loads(json.dumps(vars(base)[key], default=str)) == value:
+            continue
+        if key in {'adapter', 'rollout_backend', 'model', 'revision', 'judge', 'judge_url', 'judge_model', 'judge_revision'}:
+            raise ValueError(f'{key} conflicts with the provisioned runtime')
+        if value is None:
+            raise ValueError(f'{key} cannot remove an explicit runtime value')
+        option = '--' + key.replace('_', '-')
+        if type(value) is bool:
+            flags.append(option if value else '--no-' + key.replace('_', '-'))
+        else:
+            flags.extend([option, json.dumps(value) if isinstance(value, dict) else str(value)])
+    args = parser.parse_args([*argv, *flags])
+    if config['parent'] is not None:
+        step = config['parent']['checkpoint_step']
+        source = Path('.tools/experiment-parent') / config['checkpoint_arm']
+        args.resume_from = source / 'trainer' / f'checkpoint-{step}'
+        state = json.loads((args.resume_from / 'trainer_state.json').read_text())
+        if state['global_step'] != step:
+            raise ValueError('predecessor checkpoint step differs from the requested step')
+        permitted_changes = set(config['parameters']) | set(config['default_overrides'])
+        inheritance = config['inherit']
+        if inheritance is False:
+            permitted_changes.update(CONTINUATION_OVERRIDES)
+        elif isinstance(inheritance, dict):
+            permitted_changes.update(key for key, enabled in inheritance.items() if not enabled)
+        args.continuation_overrides = permitted_changes & CONTINUATION_OVERRIDES
+    args.out.mkdir(parents=True, exist_ok=True)
+    effective = {key: vars(args)[key] for key in sorted(permitted)}
+    atomic_json(args.out / CONFIG_FILE, {**config, 'settings':json.loads(json.dumps(effective, default=str))})
+    return args, flags
 
 
 def recorded_runs(results):
@@ -25,12 +74,59 @@ def recorded_runs(results):
         # manifest. Historical run settings use filenames as JSON keys.
         source_digests = [[digest, name] for name, digest in settings.pop('code_sha256', {}).items()]
         records[run_id] = {
+            'run_id': run_id,
             'settings': settings,
+            'settings_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
             'source_digests': source_digests,
             'launch_commit': commit_file.read_text().strip() if commit_file.is_file() else None,
             'source': relative.as_posix(),
         }
     return records
+
+
+def historical_index(roots):
+    """Reconcile evidence from multiple checkouts. Conflicting copies need inspection."""
+    index = {}
+    for root in roots:
+        candidates = recorded_runs(root)
+        for summary in sorted(root.glob('*/*/summary.json')):
+            job, arm, _ = summary.relative_to(root).parts
+            key = f'{job}/{arm}'
+            if '-snapshot' in job or '-records-' in job or key in candidates:
+                continue
+            data = json.loads(summary.read_text())
+            if 'model' not in data:
+                continue
+            fields = ('model', 'revision', 'template', 'arm', 'penalty', 'prompt_variant',
+                      'report_mode', 'max_tokens', 'seed', 'samples', 'argv', 'resumed_from')
+            commit = summary.parent.parent / 'launch-commit.txt'
+            candidates[key] = dict(run_id=key, settings={k: data[k] for k in fields if k in data},
+                                   source=summary.relative_to(root).as_posix(),
+                                   launch_commit=commit.read_text().strip() if commit.exists() else None)
+        known_jobs = {key.split('/')[0] for key in candidates}
+        for launch in sorted(root.glob('*/launch-id.txt')):
+            job = launch.parent.name
+            if job in known_jobs or '-snapshot' in job or '-records-' in job:
+                continue
+            commit = launch.parent / 'launch-commit.txt'
+            candidates[job] = dict(run_id=job, settings=None, launch_id=launch.read_text().strip(),
+                                   source=launch.relative_to(root).as_posix(),
+                                   launch_commit=commit.read_text().strip() if commit.exists() else None)
+        for key, record in candidates.items():
+            if key in index:
+                old = index[key]
+                if old['source'] != record['source']:
+                    if record['source'].endswith('summary.json'):
+                        continue
+                elif old['settings'] != record['settings']:
+                    raise ValueError(f'conflicting recorded settings for {key}')
+                if old['launch_commit'] and record['launch_commit'] and old['launch_commit'] != record['launch_commit']:
+                    raise ValueError(f'conflicting launch commits for {key}')
+                if record['launch_commit'] is None:
+                    record['launch_commit'] = old['launch_commit']
+            index[key] = record
+    jobs_with_settings = {key.split('/')[0] for key in index if '/' in key}
+    return {key: index[key] for key in sorted(index) if key not in jobs_with_settings}
 
 
 def resolve(defaults, parameters, *, parent=None, inherit=None):
@@ -41,7 +137,18 @@ def resolve(defaults, parameters, *, parent=None, inherit=None):
     policy = defaults['continuation']
     if inherit is None:
         inherit = policy['inherit']
-    inherited = parent['settings'] if inherit else defaults['fresh']
+    inherited = dict(defaults['fresh'])
+    if isinstance(inherit, dict):
+        flags = dict.fromkeys(parent['settings'], policy['inherit'])
+        for key, flag in inherit.items():
+            if key not in flags or type(flag) is not bool:
+                raise ValueError(f'invalid inheritance rule for {key}')
+            flags[key] = flag
+        inherited.update({key: parent['settings'][key] for key, flag in flags.items() if flag})
+    elif type(inherit) is not bool:
+        raise ValueError('inherit must be a boolean or a per-parameter object')
+    elif inherit:
+        inherited.update(parent['settings'])
     # Runtime provenance describes the parent, and must be measured again by
     # the child. A continuation supplies its own total step count.
     settings = {k: v for k, v in inherited.items() if k not in {'code_sha256', 'libraries', 'steps'}}
@@ -71,10 +178,10 @@ def new_run(defaults, parameters, *, parent=None, checkpoint_step=None, inherit=
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('results', type=Path)
+    parser.add_argument('results', type=Path, nargs='+')
     parser.add_argument('--lookup')
     args = parser.parse_args()
-    records = recorded_runs(args.results)
+    records = historical_index(args.results)
     if args.lookup is not None:
         if args.lookup not in records:
             parser.error(f'unknown run ID {args.lookup!r}')

@@ -171,6 +171,8 @@ def check_resume(args):
     steps_then = saved.pop('steps')  # raising --steps is how a run is extended, so it is not a setting that must match
     now.pop('steps')
     differ = {key: (saved[key], value) for key, value in now.items() if saved[key] != value}
+    if 'continuation_overrides' in vars(args):
+        differ = {key: values for key, values in differ.items() if key not in args.continuation_overrides}
     if differ:
         raise ValueError('--resume-from was written by a run with other settings (saved, now): '
                          + ', '.join(f'{key} {old!r} -> {new!r}' for key, (old, new) in differ.items()))
@@ -581,7 +583,13 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             timing['update'].append(time.perf_counter()-timing['reward_end'])
             (run_args.out/'live.json').write_text(json.dumps({'step': state.global_step, **summary['rollouts'], **summary['training_verifier'], 'mixed_groups': sum(groups)}))
             if state.global_step % run_args.save_every == 0:
-                kwargs['model'].save_pretrained(str(run_args.out/f'adapter-step{state.global_step}'))
+                snapshot = run_args.out / f'adapter-step{state.global_step}'
+                kwargs['model'].save_pretrained(str(snapshot))
+                if 'run_config' in vars(run_args) and run_args.run_config:
+                    from .state_files import atomic_json
+                    atomic_json(snapshot / 'snapshot-files.json', {
+                        file.name: file.stat().st_size for file in snapshot.iterdir() if file.is_file()
+                    })
             if state.global_step >= run_args.stop_no_variation and not any(groups):
                 verifier = summary.setdefault('training_verifier', {})
                 verifier['variation_lost_groups'] = sum(lost)

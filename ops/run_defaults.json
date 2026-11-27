@@ -1,4 +1,5 @@
 {
+  "max_run_usd": 15,
   "fresh": {
     "max_completion_length": 16384
   },
