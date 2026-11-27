@@ -20,6 +20,7 @@ from .prompts import prompt
 from .rates import observed_ratio
 from .sampling import TEMPERATURE, TOP_K, TOP_P
 from .tasks import split, stratified_limit, taskset_rows
+from .training_sampling import FamilyTruthSampler
 from .verifier import controls
 
 
@@ -74,7 +75,7 @@ RESUME_SETTINGS = ('model', 'revision', 'arm', 'penalty', 'report_mode', 'taskse
                    'prompts_per_step', 'max_completion_length', 'seed', 'save_every', 'stop_no_variation', 'stop_saturated', 'rollout_backend',
                    'judge', 'judge_model', 'judge_revision', 'judge_url', 'judge_extra', 'verifier_retry_seconds', 'adapter',
                    # The resumed run carries the original's before-evaluation over, so its after-evaluation must match it.
-                   'eval_limit', 'eval_samples')
+                   'eval_limit', 'eval_samples', 'training_sampler')
 RUN_SETTINGS = 'run-settings.json'
 
 
@@ -634,6 +635,12 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
 
     class VerifiedTrainer(VerifierMaskMixin, GRPOTrainer):
         def _get_train_sampler(self, dataset=None):
+            if args.training_sampler == 'family-truth':
+                return FamilyTruthSampler(tasks, seed=args.seed,
+                    batch_size=self.args.generation_batch_size // self.num_generations,
+                    mini_repeat_count=self.num_generations,
+                    repeat_count=self.num_iterations * self.args.steps_per_generation,
+                    epoch=epochs_done)
             # TRL's sampler draws each pass's task order from its own generator, which a checkpoint does not save and
             # transformers does not fast-forward: without this, a resume past a pass boundary repeats the first pass's order.
             sampler = super()._get_train_sampler(dataset)
@@ -651,6 +658,16 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
 
     trainer = VerifiedTrainer(model=model, args=config, reward_funcs=reward_fn, train_dataset=dataset, processing_class=tokenizer, callbacks=[Instrument()],
                           peft_config=None if args.adapter else lora_config(model, args.lora_rank))
+    summary['training_sampler'] = args.training_sampler
+    if args.training_sampler == 'family-truth':
+        schedule = trainer._get_train_sampler()
+        summary['training_distribution'] = 'equal family/truth stratum mass; minority strata oversampled'
+        summary['sampling_block_prompts'] = schedule.block_size
+        summary['sampling_epoch_prompts'] = schedule.draws_per_epoch
+        (args.out/'training-schedule.json').write_text(json.dumps({
+            'sampler': args.training_sampler, 'seed': args.seed, 'epoch': epochs_done,
+            'block_prompts': schedule.block_size,
+            'task_ids': [tasks[index]['id'] for index in schedule.task_indices(epochs_done)]}, indent=1)+'\n')
     # The callback `report_to` added writes under trainer/runs/<date_host> unless told otherwise: one fixed folder per run.
     # A resumed run adds a new event file beside the first, and TensorBoard reads the folder as one run.
     [board] = [c for c in trainer.callback_handler.callbacks if isinstance(c, TensorBoardCallback)]

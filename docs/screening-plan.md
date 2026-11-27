@@ -2,6 +2,22 @@
 
 ## Priority update (owner, 27 November 2026)
 
+Latest execution rule: check this approved GPT queue every five minutes. Carry
+each requested condition through a six-step pass, then extend toward 60 steps
+when verified refutations appear during training. Initial held-out successes
+alone are not learned training behavior. Run result downloads and S3 checkpoint
+uploads asynchronously; unrelated approved work does not wait for whole-run
+archives. Only a resume's required checkpoint must be available and verified.
+The existing six-step trajectory is never repeated or silently migrated.
+
+New rounds use the approved family/truth-balanced training sampler after its
+tests and reviews pass, explicitly selected with SMOKE_STRATIFIED=1. The target
+distribution gives equal mass to each family/truth stratum, oversampling smaller
+strata. With five families and four prompts per update, each five-update block
+has two draws per stratum. Task and block order are randomized deterministically;
+held-out evaluation remains unchanged. Share this implementation with Qwen for
+its future new runs. Original trajectories retain their recorded sampler.
+
 Prioritize **refutation-permission training followed by neutral continuation**.
 The owner clarified that this is the intended intervention: explicitly tell the
 model verified refutations are acceptable, let it learn that behavior, then

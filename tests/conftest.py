@@ -195,7 +195,7 @@ def priced_test_models(monkeypatch):
 # What a row's provenance needs (rewardhack.provenance.meta), for tests that build run options by hand: given once here,
 # so a test states only the options it is about. A test's own value wins.
 PROVENANCE = dict(model='test/model', revision='test-revision', taskset='hard', tasks='all', part='train', prompt_variant='neutral', variant='neutral',
-                  reasoning_effort=None, thinking='unsupported', extra_body={})
+                  reasoning_effort=None, thinking='unsupported', extra_body={}, training_sampler='uniform')
 
 
 def run_options(**options):

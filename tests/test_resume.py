@@ -113,7 +113,23 @@ SETTINGS = dict(model='m', revision='r', arm='report_correct', penalty=0.5, repo
                 scale_rewards='none', max_grad_norm=1.0, router_aux_loss_coef=0.0, beta=0.0, num_generations=4, prompts_per_step=1,
                 max_completion_length=2048, seed=7, save_every=2, stop_no_variation=99, stop_saturated=True, rollout_backend='vllm', judge='api',
                 judge_model='gpt-5.4-nano', judge_revision=None, judge_url='https://api.openai.com/v1', judge_extra={},
-                verifier_retry_seconds=120.0, adapter=None, eval_limit=12, eval_samples=2)
+                verifier_retry_seconds=120.0, adapter=None, eval_limit=12, eval_samples=2, training_sampler='uniform')
+
+
+@pytest.mark.parametrize('saved_step', [2, 6])
+def test_stratified_real_trainer_resume_matches_uninterrupted(tmp_path, monkeypatch, saved_step):
+    import test_training_integration as integration
+    rows = [dict(row, family='first' if index < 2 else 'second')
+            for index, row in enumerate(integration.TASKS)]
+    monkeypatch.setattr(integration, 'TASKS', rows)
+    options = dict(save_every=2, training_sampler='family-truth')
+    whole = train(tmp_path, monkeypatch, REWARD, steps=8, **options)
+    partial = train(tmp_path, monkeypatch, REWARD, steps=saved_step, **options)
+    resumed = train(tmp_path, monkeypatch, REWARD, steps=8,
+                    resume_from=checkpoint(partial, saved_step), **options)
+    assert torch.equal(resumed.change, whole.change)
+    assert [row['task_id'] for row in resumed.rows] == [row['task_id'] for row in whole.rows]
+    assert [row['raw'] for row in resumed.rows] == [row['raw'] for row in whole.rows]
 
 
 @pytest.fixture

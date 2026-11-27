@@ -33,6 +33,9 @@ SMOKE_PROBE_TASKS=${SMOKE_PROBE_TASKS:-12}  # fallback-ok: optional setting; the
 SMOKE_PROBE_SECONDS=${SMOKE_PROBE_SECONDS:-3300}  # fallback-ok: optional setting; the probe's documented time limit (55 min) when unset
 SMOKE_STEPS=${SMOKE_STEPS:-12}  # fallback-ok: optional setting; the documented preflight length when the launch does not set it
 if [[ -z ${SMOKE_SAVE_EVERY+set} ]]; then SMOKE_SAVE_EVERY=8; fi
+if [[ -z ${SMOKE_STRATIFIED+set} ]]; then SMOKE_STRATIFIED=0; fi
+[[ $SMOKE_STRATIFIED == 0 || $SMOKE_STRATIFIED == 1 ]] || fail 'SMOKE_STRATIFIED must be 0 or 1'
+TRAINING_SAMPLERS=(uniform family-truth)
 # Short measuring passes can preserve each completed update instead of waiting until step eight.
 [[ $SMOKE_SAVE_EVERY =~ ^[1-9][0-9]{0,8}$ ]] || fail 'SMOKE_SAVE_EVERY must be a positive integer of at most nine digits'
 SMOKE_TRAIN_SECONDS=${SMOKE_TRAIN_SECONDS:-3600}  # fallback-ok: optional setting; the documented per-run limit (60 min) when unset
@@ -264,6 +267,7 @@ fi
 # The batch shape of every training step in this script, so that no comparison below changes it by accident.
 SHAPE=(--num-generations "$GENERATIONS" --prompts-per-step "$PROMPTS")
 TRAIN=(--steps "$SMOKE_STEPS" --learning-rate 1e-4 "${SHAPE[@]}" --max-seconds "$SMOKE_TRAIN_SECONDS" --final-eval-seconds "$SMOKE_FINAL_EVAL_SECONDS")
+TRAIN+=(--training-sampler "${TRAINING_SAMPLERS[$SMOKE_STRATIFIED]}")
 if [[ $SMOKE_PART_ONE != 0 ]]; then
   # Part 1 (owner, 26 Nov; issue #2): the job's runs from ops/pod_pins.env, same seed and settings, one after the other.
   # Each keeps resumable checkpoints in <name>/trainer, so a later run can extend it with --resume-from.

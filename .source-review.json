@@ -51,7 +51,7 @@
     "path": "src/rewardhack/pilot_runner.py",
     "rule": "py-except-swallow",
     "text": "except subprocess.TimeoutExpired:",
-    "reason": "The two handlers are distinct. The execution handler returns timed_out=True and exit_code=None, an explicit failed stage. The cleanup handler handles TimeoutExpired from process.wait(timeout=5) by reaping process.pid: the wait and waitpid use the same process object. SIGKILL was sent to its process group immediately above. Other exceptions are not caught by this handler. This cleanup branch does not fabricate a successful stage result; its purpose is to release the killed child after the Popen wait lock times out."
+    "reason": "In _terminate, this handler replaces a timed-out Popen wait with os.waitpid(process.pid, 0) after SIGKILL. Both calls name the same process; the handler returns no result and does not label the stage successful. Only ChildProcessError from that direct reap is suppressed; other errors propagate. In _execute, the separate handler explicitly returns timed_out=True and exit_code=None. Each handler makes its local outcome explicit: direct reaping in the first, a timeout result in the second."
   },
   {
     "path": "src/rewardhack/pilot_runner.py",
