@@ -235,6 +235,11 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 && ${#RUNS[@]} -gt 0 ]]; then
   log start rollout-install  # the wait for the background install started with the training one
   vllm_installed
   log start rollout-server
+  if [[ -n ${SMOKE_BATCH_INVARIANT+set} ]]; then
+    [[ $SMOKE_BATCH_INVARIANT == 1 ]] || fail INVALID_BATCH_INVARIANCE_SETTING
+    export VLLM_BATCH_INVARIANT=1
+    log 'rollout server requested VLLM_BATCH_INVARIANT=1'
+  fi
   # The context holds the prompt (a few hundred tokens) and an answer of up to LIMIT: 2,048 tokens of room for the prompt.
   # A fixed 4,096 refused every request once LIMIT was 4,096 (review round 6); the rollout client also checks each request.
   # CUDA graphs are captured for decode batches of up to 32 tokens (16 sequences use at most 16): the default captured 166
