@@ -230,13 +230,15 @@ finish() {
   # out/ alone is no sign, since the runner creates it before arming (review round 41).
   # HELD is asked before the copy, at the top of this function.
   if [[ $ARMED == 0 && -z $HELD ]] && ! on_pod true; then
-    say "REMINDER: the pod never accepted SSH, so this run armed no removal timer on it (a kept pod keeps its earlier one). Terminate it in the RunPod console now unless out/autostop.log there shows one"; code=97
+    if [[ $SSH_UP == 1 ]]; then why='the pod stopped answering after it accepted SSH, before this run armed a removal timer on it'
+    else why='the pod never accepted SSH, so this run armed no removal timer on it'; fi
+    say "REMINDER: $why (a kept pod keeps its earlier one). Terminate it in the RunPod console now unless out/autostop.log there shows one"; code=97
   elif [[ ( $ARMED == 1 && ( $KEEP == 1 || $CHECKPOINTS == 0 ) ) || ( $ARMED == 0 && $HELD != empty ) ]]; then
     # Left running on purpose: say so only if a removal timer is really armed there. A pod that no longer answers has
     # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
     if ! on_pod true; then
-      say "the pod no longer answers (ssh error above): it has most likely removed itself on its timer. Confirm in the RunPod console"
+      say "the pod no longer answers (ssh error above): it has removed itself on its timer, or the connection failed and its timer (armed $ARMED_AT, at most the provisional 15 minutes before the job's own replaces it) removes it. Confirm in the RunPod console"
     elif on_pod "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
     else say "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
   elif on_pod 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
@@ -255,6 +257,9 @@ finish() {
   exit "$code"
 }
 ARMED=0
+# Set once the pod has accepted SSH: a try that connects ends the wait, and only a wait that never connected makes the
+# final try (review round 37); `finish` tells a pod that never answered from one that stopped answering (round 45).
+SSH_UP=0
 LAUNCH_SENT=0  # set just before the launch call
 LAUNCHED=0  # set once the launch call returned: only then does `finish` copy out/
 trap finish EXIT
@@ -268,19 +273,20 @@ try_ssh() { timeout "$SSH_TRY_SECONDS" "${SSH[@]}" "root@$HOST" true; }
 # the wait (review round 33). The last try starts early enough that it, a pause and the final try end within the wait;
 # the count only keeps a stubbed `sleep` (the tests) from spinning.
 SSH_END=$((SECONDS + SSH_UP_SECONDS - 2 * SSH_TRY_SECONDS - 15))
-SSH_UP=0  # a try that connects ends the wait; only a wait that never connected makes the final try (review round 37)
 for _ in $(seq $((SSH_UP_SECONDS / 15))); do
   ((SECONDS < SSH_END)) || break
   if try_ssh 2>> "$RESULTS/ssh-wait.log"; then SSH_UP=1; break; fi
   sleep 15
 done
 ((SSH_UP)) || try_ssh || { echo "ssh failed: the pod did not accept SSH within $SSH_UP_SECONDS s (each refusal is in $RESULTS/ssh-wait.log: a key that needs a passphrase fails here too)"; exit 1; }
+SSH_UP=1
 # Before anything else on a billing pod: a provisional removal timer, so an interrupted copy or a sleeping laptop is bounded.
 # The job's own timer replaces it when the job starts.
 # Bounded as a whole (ARM_SECONDS, ops/pod_pins.env, counted by the gate): it asks the RunPod API whether the pod can
 # remove itself, and a stalled API would otherwise hold the driver here with no timer armed (review round 34).
 timeout "$ARM_SECONDS" "${SSH[@]}" "root@$HOST" 'bash -s -- --arm-only 900' < ops/remote_job.sh || { echo 'could not arm a provisional removal timer on the pod'; exit 1; }
 ARMED=1  # from here a removal timer runs on the pod, so a pod that stops answering has most likely removed itself
+ARMED_AT=$(date -u +%FT%TZ)
 # results/ stays behind except the model-read labels, which judge validation on the pod needs (7 MB).
 rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
 # The API judge needs the OpenAI key on the pod. It is sent only on request, over the SSH channel into a mode-600

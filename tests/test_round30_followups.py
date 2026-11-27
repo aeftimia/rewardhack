@@ -91,7 +91,7 @@ def test_the_driver_refuses_at_once_without_a_timeout_command(tmp_path):
     assert done.returncode == 2 and 'needs a timeout command' in done.stdout, done.stdout + done.stderr
 
 
-def arm_fails(tmp_path, out_on_pod, fails='--arm-only', rsync=1):
+def arm_fails(tmp_path, out_on_pod, fails='--arm-only', rsync=1, keep='1'):
     """The driver against a pod that answers at once and whose ssh call containing `fails` fails (by default the arm
     call); `out_on_pod`: whether a job ever ran there; `rsync`: the exit status of every copy. Returns the driver's
     output and the ssh calls it made, in order."""
@@ -104,7 +104,7 @@ def arm_fails(tmp_path, out_on_pod, fails='--arm-only', rsync=1):
     for name, body in stubs.items():
         (bin_dir/name).write_text('#!/bin/bash\n' + body)
         (bin_dir/name).chmod(0o755)
-    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none', KEEP_POD='1')
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', LEAN_ISOLATION='none', KEEP_POD=keep)
     done = subprocess.run(['bash', driver_script(tmp_path), 'example.invalid', '22', 'ops/remote_runpod_smoke.sh', str(tmp_path/'results'), '240'],
                           env=env, capture_output=True, text=True, timeout=120)
     assert done.returncode != 0, done.stdout + done.stderr
@@ -156,10 +156,11 @@ def test_a_failed_arm_call_on_a_fresh_pod_leaves_no_trace_of_a_job(tmp_path):
 
 def test_a_run_that_armed_but_did_not_launch_copies_nothing_of_an_earlier_job(tmp_path):
     """Round 43/44: after arming, a failed sync (no launch sent) or a failed launch call (sent, unconfirmed) must not copy
-    out/ into this run's folder, where an earlier job's rows would be counted twice; the pod keeps its timer."""
-    output, sent = arm_fails(tmp_path/'sync', 'held', fails='--never--', rsync=1)  # the sync is the first rsync
+    out/ into this run's folder, where an earlier job's rows would be counted twice; the pod keeps its timer, and is not
+    removed with KEEP_POD=0, since what it holds was not copied (review round 45)."""
+    output, sent = arm_fails(tmp_path/'sync', 'held', fails='--never--', rsync=1, keep='0')  # the sync is the first rsync
     assert "holds an earlier job's results" in output and 'copying results' not in output, output
     assert not any('--remove-now' in line for line in sent), sent
-    output, sent = arm_fails(tmp_path/'launch', 'held', fails='nohup', rsync=0)
+    output, sent = arm_fails(tmp_path/'launch', 'held', fails='nohup', rsync=0, keep='0')
     assert 'whether this run' in output and 'copying results' not in output, output
     assert not any('--remove-now' in line for line in sent), sent
