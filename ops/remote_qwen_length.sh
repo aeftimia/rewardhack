@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deadline: 125
+# deadline: 140
 # Inference only: same pinned base model and evaluation draws as the 8k run.
 set -euo pipefail
 cd ~/pilot-repo
@@ -13,15 +13,15 @@ SERVER_PID=
 cleanup() { if [[ -n $SERVER_PID ]] && kill -0 "$SERVER_PID"; then stop_server "$SERVER_PID"; fi; }
 trap cleanup EXIT
 pod_self_test 1 95 2 "$ROLLOUT_PORT"
-log install
+log "creating uv bootstrap environment"
 python -m venv /workspace/uv-venv
 # cap: 2x estimated 60 s
-timeout 120 /workspace/uv-venv/bin/pip install -q uv==0.13.8 > ~/out/install-uv.log 2>&1
+timeout 120 /workspace/uv-venv/bin/pip install uv==0.13.8 > ~/out/install-uv.log 2>&1
 UV=/workspace/uv-venv/bin/uv
 export UV_CACHE_DIR=/workspace/uv-cache
 grep '^numpy==' requirements-vllm.txt > /workspace/probe-override.txt
-# cap: 2x measured 222 s
-INSTALL_WAIT=600 make_env probe -r requirements-vllm.txt -e . --override /workspace/probe-override.txt > ~/out/install-probe.log 2>&1
+# cap: 2x measured 600 s (previous install was still running at its timeout)
+INSTALL_WAIT=1200 make_env probe -r requirements-vllm.txt -e . --override /workspace/probe-override.txt > ~/out/install-probe.log 2>&1
 HF=$(env_bin probe hf)
 log download
 # cap: 2x measured 232 s (latest Qwen download, 27 Nov)

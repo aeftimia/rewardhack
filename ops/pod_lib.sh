@@ -42,9 +42,18 @@ env_bin() { echo "/workspace/$1-venv/bin/$2"; }
 # with the wait's basis in a cap comment beside the call. Needs UV and UV_CACHE_DIR from the caller.
 make_env() {
   local name=$1; shift
-  "$UV" venv -q --clear --python "$(command -v python)" "/workspace/$name-venv" \
-    && timeout "${INSTALL_WAIT:?the caller sets INSTALL_WAIT}" "$UV" pip install -q --python "$(env_bin "$name" python)" "$@" \
-    && "$UV" pip freeze --python "$(env_bin "$name" python)" > ~/out/pip-freeze-"$name".txt
+  local code
+  log "creating $name environment"
+  "$UV" venv --clear --python "$(command -v python)" "/workspace/$name-venv" || return $?
+  log "installing $name dependencies (limit ${INSTALL_WAIT:?the caller sets INSTALL_WAIT}s)"
+  if timeout "$INSTALL_WAIT" "$UV" -v pip install --python "$(env_bin "$name" python)" "$@"; then
+    log "installed $name dependencies; recording package versions"
+  else
+    code=$?
+    log "$name dependency install exited $code (limit ${INSTALL_WAIT}s)"
+    return "$code"
+  fi
+  "$UV" pip freeze --python "$(env_bin "$name" python)" > ~/out/pip-freeze-"$name".txt
 }
 
 # Run a command of an environment with that environment's bin first on PATH. vLLM's FlashInfer builds kernels with the
