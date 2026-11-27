@@ -1,5 +1,55 @@
 # One-seed screening plan (owner, 26 November 2026)
 
+## Priority update (owner, 27 November 2026)
+
+Prioritize **refutation-permission training followed by neutral continuation**.
+The owner clarified that this is the intended intervention: explicitly tell the
+model verified refutations are acceptable, let it learn that behavior, then
+remove that wording and test whether the behavior persists. Do not inject exploit
+or refutation demonstrations and do not add random seeds. Keep random seed 42.
+
+The neutral/typed lambda-zero GPT cell has now completed all 60 steps. Preserve
+its ongoing snapshot and checkpoint backups; do not rerun it. Queue six GPT
+permission-training cells: baseline, report_correct lambda=0, and report_correct
+lambda=0.5, each with prose (unformatted) and typed (formatted) reports. Baseline
+is one condition per report format, not repeated for each lambda. These are jobs
+8 through 13 in ops/pod_pins.env. None of these permission-training cells has
+been completed. The remaining neutral/typed lambda=0.5 cell is deferred.
+
+For each cell, train with the existing refute prompt variant and evaluate on
+held-out tasks. If verified refutations emerge, evaluate and continue from those
+learned weights with the neutral prompt, keeping model, reward, report format,
+task split, and token ceiling matched. Record the parent checkpoint and an
+explicit optimizer reset if using an adapter warm start; do not weaken strict
+resume validation to silently change prompts. If no refutations emerge, record
+that result rather than claiming to have tested persistence of learned behavior.
+Separate demonstration seeding can be considered afterwards, not silently added.
+Use the agreed 8,192-token ceiling for future matched comparisons; retain the
+completed 2,048-token pilots separately and do not automatically repeat them.
+The $15-per-run cap, launch gates, stop-on-bug rule, and S3 backup requirements
+continue to apply. The separately coordinated Qwen measurement is unchanged.
+
+First launch: job 13, GPT refute/typed report_correct lambda=0.5, six completed
+updates at the common 8,192-token ceiling, with a checkpoint every step. This is
+a memory/timing measurement for the new ceiling, not a completed 60-step cell.
+Use four prompts and four generations, the existing learning rate, and seed 42.
+Resume that trajectory rather than repeating its completed updates if timing,
+memory and results justify extending it. Do not silently pool a short measuring
+pass with completed 60-step runs.
+
+Provisional launch bounds: 5,520 seconds for the trainer including 600 seconds
+reserved for final evaluation, 136 minutes for the remote job, and the existing
+8,100-second copy grace. Six updates at four times the earlier 61 seconds/update
+estimate take 24.4 minutes before evaluation; these bounds leave ample timing
+margin but do not guarantee that the longer attention tensors fit GPU memory.
+At $2.725/hour with no typed-report API judge charge, the gated worst case is
+$13.49 including setup and shutdown overhead. Recheck the actual offered rate
+and live credentials before deployment. Stop on OOM or invalid initial results;
+do not silently lower the token ceiling or alter batch shape.
+
+The original screen below remains the deferred inventory; its earlier queue
+order and statement that seeded comparisons are later work are superseded here.
+
 This replaces the immediate survey schedule in notes section 82 on GitHub commit
 `2afa01492005e651177e261d1ff88c06fb39c9ab`. That commit's broader 30-run core and
 roughly 55–65-run aspiration remain a planning horizon, not a queue to execute.
