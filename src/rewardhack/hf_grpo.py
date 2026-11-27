@@ -738,6 +738,13 @@ def train(model, tokenizer, tasks, args, summary):
     return prepare_training(model, tokenizer, tasks, args, summary)()
 
 
+def check_completion_limit(evaluation):
+    """Refuse optimization when the initial evaluation calls for longer answers or cannot decide."""
+    if evaluation['raise_token_limit'] is not False:
+        raise ValueError('before-evaluation does not establish an adequate completion limit; '
+                         'inspect its truncation evidence and resize the run before training')
+
+
 def run(args):
     """`args.mode` is controls, probe or train. Writes summary.json under `args.out` whatever happens."""
     # Before anything is written or loaded: a refused resume leaves the original run's folder untouched and costs nothing.
@@ -809,6 +816,7 @@ def run(args):
             # On the vLLM server: the served base model, or the adapter a run started from.
             summary['before'] = evaluate(model, tokenizer, evaluation, args, 'before', rollouts=rollouts, adapter_model=model if args.adapter else None)
         print('before', summary['before'], flush=True)
+        check_completion_limit(summary['before'])
         model = fit()
         # Stops between tasks if training ran into its reserve: a shorter after-evaluation is kept, a killed one loses its summary.
         summary['after'] = evaluate(model, tokenizer, evaluation, args, 'after', stop_at=hard_deadline-60, rollouts=rollouts, adapter_model=model)

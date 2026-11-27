@@ -83,3 +83,21 @@ Do not change step count, precision, or task settings just to squeeze them in.
 After the screen, select follow-ups using the observed behavior and cost. More
 seeds, λ values, seeding doses, and longer trajectories require an updated plan;
 the historical full-grid estimate is not an instruction to run every combination.
+
+## First Qwen measurement: stopped on truncation
+
+The λ=0 neutral/prose measuring pass was stopped after its initial evaluation:
+21/24 answers hit the 2,048-token limit, only three parsed, and one was a genuine
+proof. Samples were still inside their thinking text when cut off. All 28 verifier
+controls passed. This is not a completed training cell or a usable estimate of
+optimizer-step cost. Evidence and cancellation details are in
+`results/runpod-qwen-lambda0-measure-20261126/`.
+
+The pod was removed and the console confirmed no pods and $0.000/hour spend.
+The GPU accounting allowance is $1.73 (0.32 hours × $5.415/hour, rounded), with
+the $0.25 judge cap held as an upper bound because the cancelled run did not
+write its final meter. Preserve the evaluation; do not restart the same setup.
+Qwen needs a longer-answer measurement and a new cost estimate, for the owner's
+morning reassessment. Before resuming the approved 20b cells, add and validate
+an automatic stop before optimization when initial-evaluation truncation calls
+for a larger token limit, using the existing advice rule.

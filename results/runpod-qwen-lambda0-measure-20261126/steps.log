@@ -1,0 +1,12 @@
+2026-11-27T03:12:28Z self-test passed: NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB
+NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 250 GB free
+2026-11-27T03:12:28Z WARNING: no network namespace; Lean runs as an unprivileged user with an empty environment (LEAN_ISOLATION=none)
+2026-11-27T03:12:28Z start lean
+Lean (version 4.19.0, x86_64-unknown-linux-gnu, commit 6caaee842e94, Release)
+2026-11-27T03:12:31Z start install
+2026-11-27T03:13:12Z start download Qwen/Qwen3-32B
+2026-11-27T03:20:45Z verifier controls passed
+2026-11-27T03:20:45Z probe skipped (run earlier); training with --max-completion-length 2048
+2026-11-27T03:20:45Z start rollout-install
+2026-11-27T03:20:45Z start rollout-server
+2026-11-27T03:23:55Z start train-lambda0
