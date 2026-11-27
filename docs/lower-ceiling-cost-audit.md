@@ -83,3 +83,24 @@ rate, judge meter and source paths. The associated ledger is
 is in the main checkout's `results/runpod-part1-60step-20261126/` and
 `results/runpod-part1-lambda05-20261126/`. GPT typed baseline evidence is in the
 coordinator's `results/runpod-20b-neutral-typed-baseline-retry1-20261126/`.
+
+## Invalid 16k task-selection attempt, 27 November
+
+The inference-only runner at `bf84486` incorrectly selected the first 12
+held-out tasks rather than the trainer's stratified 12-task subset. Pod
+`fzojosvkjj21c5` was stopped during generation (exit 143) and removed after
+copying its output locally. It returned 11 answers totaling 94,098 tokens;
+none hit 16,384, but these are a completion-biased partial residue-task sample,
+not a matched comparison with the 8k evaluation. No training ran.
+
+The pod was deployed around 19:45 UTC and removal was requested around 20:04
+UTC at $2.725/hour: approximately $0.9 of avoidable compute, pending provider
+attribution. Concurrent GPT billing prevents assigning the account balance
+delta to this pod. This is an orchestration mistake, not lower-ceiling waste.
+
+`7a85d4b` fixes selection using the trainer's `stratified_limit` and adds a
+regression assertion for all 12 historical task IDs. Outputs are preserved
+under `results/runpod-qwen-16384-inference-20261127/`. S3 upload was attempted
+but not verified because the shared AWS SSO session expired. Do not describe
+this attempt as archived. A corrected retry has not launched. GPT's completion
+window stays unchanged, as the owner requested.
