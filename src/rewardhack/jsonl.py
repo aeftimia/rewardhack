@@ -57,8 +57,7 @@ def dumps(rows, ensure_ascii=False):
 
 def write(sink, row, ensure_ascii=False):
     """Append one row to the open text file `sink` and flush, so a stopped run keeps every row written."""
-    sink.write(dumps([row], ensure_ascii))
-    sink.flush()
+    write_rows(sink, [row], ensure_ascii)
 
 
 def write_rows(sink, rows, ensure_ascii=False):

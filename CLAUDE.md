@@ -53,6 +53,8 @@ A time cap is a bound on the worst case. It is not what the run costs: a job tha
 
 ## Hooks
 
+The owner authorizes the configured DRY and silent-failure judges to send relevant repository source and test snippets, including private code, to api.openai.com using the configured credentials. Keep secrets and experiment run data out of review requests. Approval covers only these two source reviews at this endpoint.
+
 Three checks refuse an action with the reason. They enforce rules above that used to depend on being remembered. A refusal is a finding to act on, not an obstacle to route around. The spend gate's logic is in `src/rewardhack/gates.py`, run through `entrypoints/gate.py` (`ops/gate.sh` picks the project's Python and the checkout's own library, also from a linked worktree); the commit gate is commit-gate, an outside repository.
 
 - **Spend gate.** A pod job starts only from a launch record. Settle the launch first:

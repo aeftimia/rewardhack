@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from . import deadline, jsonl, provenance
+from ._hashing import file_sha256, source_sha256
 from .gpu import GpuSampler
 from .outcomes import accumulate, compare, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, SATURATED, saturated, RetryBudget, ScoringStopped, verifier_advice, completion_truncated, reward_groups, score, score_concurrently, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
@@ -76,11 +77,6 @@ RESUME_SETTINGS = ('model', 'revision', 'arm', 'penalty', 'report_mode', 'taskse
                    # The resumed run carries the original's before-evaluation over, so its after-evaluation must match it.
                    'eval_limit', 'eval_samples')
 RUN_SETTINGS = 'run-settings.json'
-
-
-def source_sha256():
-    """The library's code, file by file: what scored and trained a run."""
-    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(Path(__file__).parent.glob('*.py'))}
 
 
 # The libraries whose code decides the update, the task order and the checkpoint format.
@@ -280,7 +276,7 @@ def load_model(args, summary):
             raise ValueError(f"--adapter was trained at rank {saved['r']}, alpha {saved['lora_alpha']}; --lora-rank {args.lora_rank} would be ignored")
         if saved['base_model_name_or_path'] != args.model:
             raise ValueError(f"--adapter belongs to {saved['base_model_name_or_path']}, not {args.model}")
-        summary['initial_adapter_sha256'] = hashlib.sha256((args.adapter/'adapter_model.safetensors').read_bytes()).hexdigest()
+        summary['initial_adapter_sha256'] = file_sha256(args.adapter/'adapter_model.safetensors')
         model = PeftModel.from_pretrained(model, str(args.adapter), is_trainable=training)
     summary['model_load_seconds'] = time.perf_counter()-t0
     summary['parameters_total'] = sum(p.numel() for p in model.parameters())

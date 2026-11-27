@@ -5,7 +5,6 @@ is reserved before starting and is never automatically refunded. Existing child
 budget caps still apply; the wrapper bounds subprocess time, not provider billing.
 """
 import contextlib
-import hashlib
 import multiprocessing
 import os
 from pathlib import Path
@@ -15,6 +14,7 @@ import threading
 import time
 
 from . import budget, pilot
+from ._hashing import file_sha256, source_sha256
 from .state_files import atomic_json as _write, file_lock as _lock
 
 _read = pilot.read_json
@@ -28,15 +28,6 @@ CLEANUP_POLL_SECONDS = 0.01
 def _usd(value):
     """Use the same conservative ledger precision as consumable launch claims."""
     return budget.claim_cost(0, 0, value)
-
-
-def _hash_file(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def _sources():
-    root = Path(__file__).parent
-    return {path.name: _hash_file(path) for path in sorted(root.glob('*.py'))}
 
 
 def _reserve(spec, out, stage, spec_hash):
@@ -220,7 +211,7 @@ def _verify_inputs(spec, spec_path):
                 if Path(arg).resolve() != Path(spec_path).resolve() and str(Path(arg).resolve()) not in declared:
                     raise ValueError('script arguments must be declared in stage inputs')
         for path, expected in stage['inputs'].items():
-            if _hash_file(path) != expected:
+            if file_sha256(path) != expected:
                 raise ValueError('static stage input changed')
 
 
@@ -246,7 +237,7 @@ def run(spec_path, out, *, execute=False):
     _verify_inputs(spec, spec_path)
     spec_hash = pilot.digest(spec)
     out = Path(out).resolve()
-    sources = _sources()
+    sources = source_sha256()
     invocation_wall, invocation_mono = time.time(), time.monotonic()
     out.mkdir(parents=True, exist_ok=True)
     with _lock(out/'pilot.lock'):
@@ -334,7 +325,7 @@ def run(spec_path, out, *, execute=False):
                     break
                 return finish(result['failure_reason'], stage_id=stage['id'], stage_result=result)
             evidence = Path(stage['evidence'])
-            if not evidence.is_file() or _hash_file(evidence) != result.get('evidence_sha256'):
+            if not evidence.is_file() or file_sha256(evidence) != result.get('evidence_sha256'):
                 raise ValueError('completed stage evidence changed or disappeared')
             paths.append(evidence)
             evidence_hashes[evidence] = result['evidence_sha256']
@@ -369,7 +360,7 @@ def run(spec_path, out, *, execute=False):
             if decision['stop']:
                 return finish(decision['reason'], decision=decision)
         for index, stage in enumerate(spec['stages'][completed:], completed):
-            if _sources() != sources:
+            if source_sha256() != sources:
                 raise ValueError('pilot source code changed during execution')
             _verify_inputs(spec, spec_path)
             elapsed = elapsed_time()
@@ -387,7 +378,7 @@ def run(spec_path, out, *, execute=False):
             charged = _usd(charged + _usd(stage['max_usd']))
             try:
                 _verify_inputs(spec, spec_path)
-                if _sources() != sources:
+                if source_sha256() != sources:
                     raise ValueError('pilot source code changed before dispatch')  # noqa: TRY301  the handler below records the stage as failed, then re-raises
                 remaining = spec['budget']['max_seconds']-elapsed_time()
                 if remaining <= 0:
@@ -398,16 +389,16 @@ def run(spec_path, out, *, execute=False):
                 if result['timed_out'] or result['exit_code'] != 0:
                     result.update(status='failed', failure_reason='stage_failure')
                 else:
-                    if _sources() != sources:
+                    if source_sha256() != sources:
                         raise ValueError('pilot source code changed during stage execution')  # noqa: TRY301  the handler below records the stage as failed, then re-raises
                     _verify_inputs(spec, spec_path)
                     try:
                         for evidence, expected_hash in evidence_hashes.items():
-                            if _hash_file(evidence) != expected_hash:
+                            if file_sha256(evidence) != expected_hash:
                                 raise ValueError('completed stage evidence changed during execution')  # noqa: TRY301  recorded below as a measurement failure
                         candidate_paths = paths + [Path(stage['evidence'])]
                         decision = _analyze(spec, candidate_paths, spec['budget']['max_seconds']-elapsed_time())
-                        result.update(status='completed', evidence_sha256=_hash_file(stage['evidence']), decision=decision)
+                        result.update(status='completed', evidence_sha256=file_sha256(stage['evidence']), decision=decision)
                     except TimeCap as error:
                         result.update(status='failed', failure_reason='time_cap', error=str(error))
                     except (ValueError, OSError) as error:

@@ -16,6 +16,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from . import jsonl
+from ._hashing import file_sha256
 from .provenance import VIEWS, preferred, views
 from .prompts import follow_on, prompt
 from .reporting import report_text, stored_mode
@@ -405,7 +406,7 @@ def export(results, out, tasks=None):
                     jsonl.write(sink, record)
                     counts[(run, provenance, axis, disclosure)] += 1
                     n += 1
-    manifest = dict(schema=SCHEMA, rows=n, repo_commit=commit, results=str(results), out_sha256=hashlib.sha256(out.read_bytes()).hexdigest(),
+    manifest = dict(schema=SCHEMA, rows=n, repo_commit=commit, results=str(results), out_sha256=file_sha256(out),
                     skipped=dict(skipped), read=sum(v for k, v in counts.items() if k[3] != 'unread'),
                     cells=[dict(run=k[0], provenance=k[1], cheat=k[2], disclosure=k[3], n=v) for k, v in sorted(counts.items())])
     with atomic_text(out.with_name(out.name + '.manifest.json')) as handle:

@@ -10,7 +10,6 @@ script the project owns stays in a Claude Code PreToolUse hook on Bash (`command
 with a raw `runpodctl create`, a job script started over SSH around `remote_job.sh` or without
 `REQUIRE_AUTOSTOP=1`, and a metered API judge with no spend cap. Removing a pod is never refused.
 """
-import hashlib
 import json
 import math
 import os
@@ -21,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .budget import check, read_ledger
+from ._hashing import file_sha256
 
 RECORD = Path('.tools') / 'launch-ready.json'
 LEDGER = Path('spending') / 'ledger.csv'
@@ -97,10 +97,6 @@ def unsized_limits(text):
 
 def dirty_paths(root):
     return [line for line in git(root, 'status', '--porcelain', '--untracked-files=all', '--', *SHIPPED).splitlines() if line.strip()]
-
-
-def file_sha256(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def pod_pin(root, name):

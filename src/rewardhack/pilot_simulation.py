@@ -1,6 +1,5 @@
 """Free deterministic pilot fixtures; never imports a trainer or calls an API."""
 import csv
-import hashlib
 import json
 import math
 import random
@@ -8,6 +7,7 @@ import sys
 from pathlib import Path
 
 from . import jsonl
+from ._hashing import file_sha256
 from .budget import FIELDS
 from .pilot import SCHEMA, digest, load_spec
 
@@ -64,6 +64,6 @@ def example_spec(directory):
     spec['stages'] = [dict(id=f'compute-{p}', checkpoint=p,
                            argv=[sys.executable,str(script),'--spec',str(spec_path),'--checkpoint',str(p),'--scenario','delayed'],
                            evidence=str(directory/f'evidence-{p}.jsonl'), max_seconds=10.,max_usd=0.,
-                           inputs={str(script): hashlib.sha256(script.read_bytes()).hexdigest()}) for p in spec['checkpoints']]
+                           inputs={str(script): file_sha256(script)}) for p in spec['checkpoints']]
     spec_path.write_text(json.dumps(spec, indent=2)+'\n')
     return spec_path

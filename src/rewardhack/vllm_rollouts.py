@@ -4,7 +4,6 @@ TRL 1.19.0's native backend merges and transfers the entire model and imports vL
 into the training environment. Here only generation is replaced; TRL still owns
 log-probability recomputation, importance ratios, rewards, and the GRPO loss.
 """
-import hashlib
 import importlib.metadata
 import json
 import math
@@ -17,6 +16,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .sampling import TEMPERATURE, TOP_K, TOP_P
+from ._hashing import file_sha256
 
 SEED_STRIDE = 10**6
 
@@ -203,7 +203,7 @@ class AdapterRollouts:
         record = dict(record, seed=seed, adapter_sha256=None, status='failed')
         if adapter_model is not None:
             adapter_model.save_pretrained(self.path, safe_serialization=True)
-            record['adapter_sha256'] = hashlib.sha256((self.path/'adapter_model.safetensors').read_bytes()).hexdigest()
+            record['adapter_sha256'] = file_sha256(self.path/'adapter_model.safetensors')
         # No live activations exist between steps. Return cached blocks to CUDA
         # before waking the second process; its weights sleep during the update.
         if torch.cuda.is_available():

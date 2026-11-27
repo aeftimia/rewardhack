@@ -152,7 +152,7 @@ def test_spec_and_source_changes_refuse_resume(tmp_path, cheap_decision, monkeyp
         runner.run(path, tmp_path/'out', execute=True)
     spec['question'] = 'synthetic test'
     path.write_text(json.dumps(spec))
-    monkeypatch.setattr(runner, '_sources', lambda: {})
+    monkeypatch.setattr(runner, 'source_sha256', lambda: {})
     with pytest.raises(ValueError, match='specification, source code'):
         runner.run(path, tmp_path/'out', execute=True)
 
@@ -294,7 +294,7 @@ def test_invalid_shared_registry_cannot_weaken_budget(tmp_path, cheap_decision):
 def test_child_cannot_change_frozen_inputs_before_scientific_decision(tmp_path, cheap_decision, monkeypatch, changed):
     path, spec = fixture_spec(tmp_path)
     real_execute = runner._execute
-    source_hashes = runner._sources()
+    source_hashes = runner.source_sha256()
     calls = []
     def mutate_after_child(stage, log, timeout=None, **options):
         result = real_execute(stage, log, timeout, **options)
@@ -306,7 +306,7 @@ def test_child_cannot_change_frozen_inputs_before_scientific_decision(tmp_path, 
             script = Path(next(iter(stage['inputs'])))
             script.write_text(script.read_text()+'\n# mutated while running\n')
         else:
-            monkeypatch.setattr(runner, '_sources', lambda: dict(source_hashes, changed='yes'))
+            monkeypatch.setattr(runner, 'source_sha256', lambda: dict(source_hashes, changed='yes'))
         return result
     monkeypatch.setattr(runner, '_execute', mutate_after_child)
     monkeypatch.setattr(pilot, 'decide', lambda *a: pytest.fail('mutated inputs reached a scientific decision'))
