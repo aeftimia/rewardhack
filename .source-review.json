@@ -93,7 +93,7 @@
     "path": "src/rewardhack/verifier.py",
     "rule": "py-or-default",
     "text": "axioms = {a.strip() for a in (found['axioms'] or '').split(',') if a.strip()}",
-    "reason": "The regex has an optional capture for the axiom list. A valid Lean response stating no axioms leaves that capture None; an unmatched or malformed response is rejected earlier."
+    "reason": "REPORT.fullmatch accepts exactly two alternatives: the literal does not depend on any axioms (whose axioms group is necessarily None), or depends on axioms: [ followed by the captured list and ]. This converts the valid no-axioms alternative to the empty set. Missing, unmatched, multiple or malformed reports return no axiom report above; there is no optional capture in the depends-on-axioms alternative."
   },
   {
     "path": "entrypoints/gate.py",

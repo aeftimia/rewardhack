@@ -2,7 +2,8 @@
 
 Direct pod-to-S3 backup completed on 2026-11-27. Every uploaded object was
 checked against its SHA-256 and byte count before publishing the receipt at
-`s3-direct/completed.json`.
+`s3-direct/completed.json`. An identical copy, `archive.json`, uses
+the receipt filename required by the existing archive resume command.
 
 Archive: `s3://rewardhack-run-archive/20261127T165359Z-gpt-train-baseline-completed-728fd051/`.
 This includes all six adapter snapshots, the final adapter, and resumable
