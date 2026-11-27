@@ -145,6 +145,18 @@ def test_a_run_that_fails_in_training_still_writes_its_summary_and_adapter(stage
     assert [bool(row.get('partial_batch')) for row in rows] == [False]*4+[True], 'the rollout scored before the failure was lost or not marked'
 
 
+def test_measurement_saves_each_completed_update_before_later_failure(staged, tmp_path):
+    _, state = staged
+    args = run_args(tmp_path, steps=4, save_every=1)
+    state['fail_at'] = 4+4+2
+    with pytest.raises(RuntimeError, match='scripted failure'):
+        hf_grpo.run(args)
+    checkpoint = args.out/'trainer'/'checkpoint-1'
+    assert json.loads((checkpoint/'trainer_state.json').read_text())['global_step'] == 1
+    assert (checkpoint/'optimizer.pt').is_file()
+    assert (args.out/'adapter-step1'/'adapter_model.safetensors').is_file()
+
+
 def test_truncated_initial_evaluation_stops_before_any_training(staged, tmp_path, monkeypatch):
     events, _ = staged
     args = run_args(tmp_path)

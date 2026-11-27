@@ -130,6 +130,9 @@ if [[ -n ${AUTOSTOP_GRACE_SECONDS:-} ]]; then
   }
 fi
 # SMOKE_* settings for the remote smoke script are passed through, and only if they are plain numbers.
+if [[ -n ${SMOKE_SAVE_EVERY+set} && ! $SMOKE_SAVE_EVERY =~ ^[1-9][0-9]{0,8}$ ]]; then
+  echo 'SMOKE_SAVE_EVERY must be a positive integer of at most nine digits'; exit 2
+fi
 # Only the names the chosen remote script itself mentions are accepted, read from its text so the list cannot drift: a misspelt
 # name, or any SMOKE_* setting with a script that reads none, would be forwarded and ignored.
 SMOKE_READ=$(awk '{ while (match($0, /SMOKE_[A-Z_]+/)) { print substr($0, RSTART, RLENGTH); $0 = substr($0, RSTART+RLENGTH) } }' "$REMOTE" | sort -u | tr '\n' ' ')

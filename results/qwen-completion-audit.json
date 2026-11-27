@@ -1,0 +1,102 @@
+{
+  "measurement": "/private/tmp/rewardhack-refute-permission/results/runpod-qwen-lambda0-measure-20261126/train-lambda0",
+  "reference": "/Users/aeftimia/Rapid Grant Reward Hacking/results/runpod-open-reasoning/qwen32-think",
+  "interpretation": "Offline whole-completion replay, not fresh generations; AWQ reference uses different tasks.",
+  "measurement_samples": 24,
+  "measurement_advice": {
+    "truncated": {
+      "n": 21,
+      "of": 24,
+      "mean": 0.86,
+      "low": 0.7027052961422066,
+      "high": 0.9635026719134075
+    },
+    "truncated_rate": 0.875,
+    "raise_token_limit": true
+  },
+  "guard": {
+    "refused": true,
+    "reason": "before-evaluation does not establish an adequate completion limit; inspect its truncation evidence and resize the run before training"
+  },
+  "truncated_before_thinking_closed": 21,
+  "measurement_parseable": 3,
+  "reference_generation_seconds": 385.1975363539532,
+  "caps": [
+    {
+      "cap": 2048,
+      "samples": 120,
+      "complete": 42,
+      "cut_off": 78,
+      "parseable_complete": 40,
+      "sampled_tokens": 207821,
+      "advice": {
+        "truncated": {
+          "n": 78,
+          "of": 120,
+          "mean": 0.6487603305785123,
+          "low": 0.5618988662605142,
+          "high": 0.730963101551744
+        },
+        "truncated_rate": 0.65,
+        "raise_token_limit": true
+      }
+    },
+    {
+      "cap": 4096,
+      "samples": 120,
+      "complete": 78,
+      "cut_off": 42,
+      "parseable_complete": 76,
+      "sampled_tokens": 329463,
+      "advice": {
+        "truncated": {
+          "n": 42,
+          "of": 120,
+          "mean": 0.3512396694214876,
+          "low": 0.26903689844825596,
+          "high": 0.43810113373948584
+        },
+        "truncated_rate": 0.35,
+        "raise_token_limit": true
+      }
+    },
+    {
+      "cap": 6144,
+      "samples": 120,
+      "complete": 103,
+      "cut_off": 17,
+      "parseable_complete": 101,
+      "sampled_tokens": 383350,
+      "advice": {
+        "truncated": {
+          "n": 17,
+          "of": 120,
+          "mean": 0.1446280991735537,
+          "low": 0.08805836739755085,
+          "high": 0.2123014702354065
+        },
+        "truncated_rate": 0.14166666666666666,
+        "raise_token_limit": true
+      }
+    },
+    {
+      "cap": 8192,
+      "samples": 120,
+      "complete": 116,
+      "cut_off": 4,
+      "parseable_complete": 114,
+      "sampled_tokens": 406245,
+      "advice": {
+        "truncated": {
+          "n": 4,
+          "of": 120,
+          "mean": 0.0371900826446281,
+          "low": 0.011354004480647946,
+          "high": 0.07729631589267233
+        },
+        "truncated_rate": 0.03333333333333333,
+        "raise_token_limit": false
+      }
+    }
+  ]
+}

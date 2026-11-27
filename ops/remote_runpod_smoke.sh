@@ -32,6 +32,9 @@ SMOKE_PART_ONE=${SMOKE_PART_ONE:-0}  # fallback-ok: optional setting; unset mean
 SMOKE_PROBE_TASKS=${SMOKE_PROBE_TASKS:-12}  # fallback-ok: optional setting; the probe's documented size when the launch does not set it
 SMOKE_PROBE_SECONDS=${SMOKE_PROBE_SECONDS:-3300}  # fallback-ok: optional setting; the probe's documented time limit (55 min) when unset
 SMOKE_STEPS=${SMOKE_STEPS:-12}  # fallback-ok: optional setting; the documented preflight length when the launch does not set it
+if [[ -z ${SMOKE_SAVE_EVERY+set} ]]; then SMOKE_SAVE_EVERY=8; fi
+# Short measuring passes can preserve each completed update instead of waiting until step eight.
+[[ $SMOKE_SAVE_EVERY =~ ^[1-9][0-9]{0,8}$ ]] || fail 'SMOKE_SAVE_EVERY must be a positive integer of at most nine digits'
 SMOKE_TRAIN_SECONDS=${SMOKE_TRAIN_SECONDS:-3600}  # fallback-ok: optional setting; the documented per-run limit (60 min) when unset
 SMOKE_FINAL_EVAL_SECONDS=${SMOKE_FINAL_EVAL_SECONDS:-600}  # fallback-ok: optional setting; time reserved for the after-evaluation when unset
 SMOKE_MEMORY_SECONDS=${SMOKE_MEMORY_SECONDS:-1800}  # fallback-ok: optional setting; the memory check's documented limit when unset
@@ -187,7 +190,7 @@ fi
 # Questions 2 and 3. Low reasoning effort: the unprompted base rate (12/60) was measured there, and high
 # effort truncated 89/120 at 8k tokens. Hard task set, neutral prompt, no hint: unseeded exploration.
 BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" "${MODEL_OPTIONS[@]}" --taskset hard
-      --max-completion-length 2048 --num-generations 8 --eval-limit "$SMOKE_EVAL_LIMIT" --eval-samples 2 --save-every 8 --stop-no-variation 99
+      --max-completion-length 2048 --num-generations 8 --eval-limit "$SMOKE_EVAL_LIMIT" --eval-samples 2 --save-every "$SMOKE_SAVE_EVERY" --stop-no-variation 99
       "${JUDGE_ARGS[@]}")
 # The funded arm at λ=0.5: the probe and the preflight training steps. A Part 1 job (SMOKE_PART_ONE above 0) trains its runs instead (below).
 FUNDED=(--arm report_correct --penalty 0.5)
