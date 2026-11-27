@@ -8,7 +8,7 @@ import httpx
 import pytest
 from conftest import run_options
 
-from rewardhack.vllm_rollouts import AdapterRollouts, check_args, pinned_vllm
+from rewardhack.vllm_rollouts import AdapterRollouts, RELOAD_PROBE_TOKENS, check_args, pinned_vllm
 
 
 @pytest.fixture
@@ -139,6 +139,47 @@ def test_reload_requires_changed_weights_and_restoration(backend, monkeypatch):
         backend.verify_reload([8])
 
 
+@pytest.mark.parametrize('restored', [-2.0, -2.1])
+def test_reload_uses_later_tokens_and_records_failed_restoration(backend, monkeypatch, restored):
+    import torch
+    from safetensors.torch import save_file
+    save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
+    (backend.path/'adapter_config.json').write_text('{}')
+    monkeypatch.setattr(backend, 'load', lambda path: None)
+    values = iter([-2.0, -3.0, restored])
+    def sample(*args, **kwargs):
+        assert kwargs['max_tokens'] == RELOAD_PROBE_TOKENS
+        return [[200005, 3]], [[0.0, next(values)]], None
+    monkeypatch.setattr(backend, 'completions', sample)
+    if restored == -2.0:
+        backend.verify_reload([8])
+        assert backend.checked_reload
+    else:
+        with pytest.raises(RuntimeError, match='original_restored=False'):
+            backend.verify_reload([8])
+        assert not backend.checked_reload
+    row = json.loads((backend.args.out/'adapter-reload-checks.jsonl').read_text())
+    assert row['changed_ok'] and row['restored_ok'] == (restored == -2.0)
+    assert row['before'][1] == [[0.0, -2.0]]
+
+
+def test_reload_restores_original_after_probe_request_failure(backend, monkeypatch):
+    import torch
+    from safetensors.torch import save_file
+    save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
+    (backend.path/'adapter_config.json').write_text('{}')
+    active = [backend.path]
+    monkeypatch.setattr(backend, 'load', lambda path: active.__setitem__(0, path))
+    def sample(*args, **kwargs):
+        if active[0] != backend.path:
+            raise RuntimeError('probe request failed')
+        return [[3]], [[-1]], None
+    monkeypatch.setattr(backend, 'completions', sample)
+    with pytest.raises(RuntimeError, match='probe request failed'):
+        backend.verify_reload([8])
+    assert active[0] == backend.path and not backend.checked_reload
+
+
 def test_untruncated_rollouts_reach_real_trl_loss(tmp_path, monkeypatch):
     torch = pytest.importorskip('torch')
     from test_training_integration import train, REWARDS, cosine
@@ -200,9 +241,9 @@ def test_every_batch_reloads_current_adapter_and_sleeps(backend):
             assert not sleeping[0]
             params = json.loads(request.content)['sampling_params']
             assert (params['temperature'], params['top_p'], params['top_k']) == (1.0, 1.0, 0)
-            if params['max_tokens'] == 1:
-                row = dict(token_ids=[3], finish_reason='length',
-                           logprobs={'content': [dict(token_id=3, logprob=-1-loaded[0])]})
+            if params['max_tokens'] == RELOAD_PROBE_TOKENS:
+                row = dict(token_ids=[3] * RELOAD_PROBE_TOKENS, finish_reason='length',
+                           logprobs={'content': [dict(token_id=3, logprob=-1-loaded[0])] * RELOAD_PROBE_TOKENS})
             else:
                 seeds.append(params['seed'])
                 assert loaded[0] == pytest.approx(value[0])

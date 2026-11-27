@@ -22,6 +22,7 @@ SEED_STRIDE = 10**6
 ROLLOUT_REFERENCE_SECONDS = 330  # 3x longest measured 106 s, rounded up
 ROLLOUT_REFERENCE_TOKENS = 2048
 ROLLOUT_REFERENCE_BATCH = 16
+RELOAD_PROBE_TOKENS = 8
 
 
 def completion_timeout(prompt_count, max_tokens):
@@ -175,9 +176,11 @@ class AdapterRollouts:
         if not kinds['linear']:
             raise ValueError('adapter has no LoRA B matrices for the synchronization check')
         def sample():
-            return self.completions([prompt], seed=0, max_tokens=1, model=self.name)
+            return self.completions([prompt], seed=0, max_tokens=RELOAD_PROBE_TOKENS, model=self.name)
         def matches(left, right):
-            return left[0] == right[0] and math.isclose(left[1][0][0], right[1][0][0], abs_tol=1e-4, rel_tol=0)
+            return (left[0] == right[0] and len(left[1][0]) == len(right[1][0])
+                    and all(math.isclose(a, b, abs_tol=1e-4, rel_tol=0)
+                            for a, b in zip(left[1][0], right[1][0], strict=True)))
         checks = {}
         for kind, changed in kinds.items():
             if not changed:
@@ -188,12 +191,22 @@ class AdapterRollouts:
             save_file(state, str(probe_path/'adapter_model.safetensors'))
             before = sample()
             self.load(probe_path)
-            changed_output = sample()
-            self.load(self.path)
+            try:
+                changed_output = sample()
+            finally:
+                self.load(self.path)
             restored = sample()
-            if matches(before, changed_output) or not matches(before, restored):
-                raise RuntimeError(f'adapter A/B/A reload of the {kind} tensors did not change and then restore the sampled token/logprob')
-            checks[kind] = dict(tensors=len(changed), before=before, changed=changed_output, restored=restored)
+            changed_ok, restored_ok = not matches(before, changed_output), matches(before, restored)
+            checks[kind] = dict(tensors=len(changed), before=before, changed=changed_output, restored=restored,
+                                changed_ok=changed_ok, restored_ok=restored_ok)
+            # Persist before rejecting: a failed check must retain the evidence
+            # distinguishing insensitive perturbations from failed restoration.
+            with (self.args.out / 'adapter-reload-checks.jsonl').open('a') as sink:
+                sink.write(json.dumps(dict(kind=kind, prompt_ids=prompt, max_tokens=RELOAD_PROBE_TOKENS,
+                                           **checks[kind]), allow_nan=False) + '\n')
+            if not changed_ok or not restored_ok:
+                raise RuntimeError(f'adapter A/B/A reload of the {kind} tensors failed: '
+                                   f'perturbation_changed={changed_ok}, original_restored={restored_ok}')
         self.checked_reload = True
         return checks
 
