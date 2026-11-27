@@ -5,6 +5,14 @@ default_install_hook_types: [pre-commit, commit-msg]  # pre-push: `commit-gate i
 repos:
   - repo: local
     hooks:
+      - id: dry-audit
+        name: DRY audit of new staged duplication
+        entry: bash ops/gate.sh dry-audit
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        stages: [pre-commit]
       - id: no-silent-failures
         name: Full source scan with mandatory LLM judge
         entry: bash ops/gate.sh scan-sources

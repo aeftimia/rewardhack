@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 from rewardhack import codex_hooks as adapter
@@ -46,11 +47,49 @@ def test_delete_and_append(tmp_path):
 
 
 @pytest.fixture
-def checker():
+def checker(monkeypatch):
     dependency = Path.home() / '.claude/hooks/no-silent-fallbacks/no_silent_fallbacks.py'
     if not dependency.exists():
         pytest.skip('integration test requires the installed shared checker')
+    # Network/update behavior has its own tests; these exercise the installed scanner.
+    monkeypatch.setattr(adapter, 'load_hook_updater',
+                        lambda: SimpleNamespace(source_module=lambda name: dependency))
     return adapter.load_checker()
+
+
+def test_uv_upgrades_runtime_before_checker_is_loaded(tmp_path, monkeypatch):
+    events = []
+    checker = object()
+    def source(name):
+        events.append(('source', name))
+        return tmp_path / 'no_silent_fallbacks.py'
+    def load(name, path):
+        events.append(('load', name))
+        if name == 'shared_hook_updater':
+            return SimpleNamespace(source_module=source)
+        assert path == tmp_path / 'no_silent_fallbacks.py'
+        return checker
+    monkeypatch.setattr(adapter, 'load_source_module', load)
+    def run(arguments, **kwargs):
+        events.append(('command', tuple(arguments[:3])))
+        if arguments[:3] == ['uv', 'tool', 'dir']:
+            return SimpleNamespace(returncode=0, stdout=str(tmp_path), stderr='')
+        return SimpleNamespace(returncode=0, stdout=str(tmp_path / 'updater.py'), stderr='')
+    monkeypatch.setattr(adapter.subprocess, 'run', run)
+    assert adapter.load_checker() is checker
+    assert events[0] == ('command', ('uv', 'tool', 'upgrade'))
+    assert events[-3:] == [('load', 'shared_hook_updater'), ('source', 'no-silent-fallbacks'),
+                          ('load', 'shared_no_silent_fallbacks')]
+
+
+def test_missing_updater_is_an_error(tmp_path, monkeypatch):
+    def run(arguments, **kwargs):
+        if arguments[0] == 'uv':
+            return SimpleNamespace(returncode=0, stdout=str(tmp_path), stderr='')
+        raise FileNotFoundError(arguments[0])
+    monkeypatch.setattr(adapter.subprocess, 'run', run)
+    with pytest.raises(FileNotFoundError):
+        adapter.load_hook_updater()
 
 
 def test_actual_checker_refuses_new_swallowed_error(tmp_path, checker):

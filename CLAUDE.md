@@ -20,6 +20,27 @@ A pod bills from the moment it is deployed, and nothing limits that until the jo
 - **Every pod job has an automatic time cap** that does not depend on this machine or on anyone watching the console. Do not start a job by any route that skips `REQUIRE_AUTOSTOP=1`.
 - **Afterwards**, confirm in the console that no pod is left and the spend rate is zero, and take the cost for the ledger from the balance once it has settled (it can lag by several minutes).
 
+## Standard experiment credentials (owner, 2026-11-27)
+
+Approval to run an experiment includes use of **all existing credentials required
+by its standard protocol**, without asking for each key again. This explicitly
+covers RunPod's pod identity and termination access on the temporary experiment
+pod, forwarding the existing OpenAI API key to that pod for the budget-capped
+report judge, and existing AWS/S3 credentials for uploading and verifying results
+in the project's archive. Use each credential only at the service and execution
+location the approved workflow requires; keep S3 credentials local when archival
+runs locally. Prefer provider-injected pod credentials where they already work.
+This does not authorize creating broader permissions or publishing secrets.
+
+Before deploying any billing pod, check the credential sources, authentication
+and exact driver's forwarding requirements, alongside code, tests and budget.
+Resolve missing access or an approval-review refusal before deployment. Do not
+repeat per-key permission questions for this standard workflow: the owner has
+explicitly authorized these uses. If a new refusal nevertheless blocks launch,
+remove any billing pod immediately, preserve the refusal, and resolve it with
+nothing billing; do not bypass the refusal. Never print credential values in
+logs or records. Retain restricted temporary key files and cleanup on job exit.
+
 ## Sizing time caps and approvals (owner's correction, 2026-11-25)
 
 A time cap is a bound on the worst case. It is not what the run costs: a job that finishes removes its pod, so a generous cap is free when things work. A cap that is too tight costs a whole new pod, about 6 minutes of setup ($0.30) before any work, plus the owner's attention. On 24 and 25 November, 5 pods were deployed for work that 2 or 3 would have covered, because limits were set at my own optimistic estimates.

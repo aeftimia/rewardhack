@@ -3,8 +3,11 @@
 import importlib.util
 import json
 import os
+import subprocess
 from pathlib import Path
 import sys
+
+HOOK_COMMAND_TIMEOUT = 60
 
 
 def proposed_files(patch, cwd):
@@ -93,12 +96,33 @@ def proposed_files(patch, cwd):
         yield destination, before, '\n'.join(output) + ('\n' if output else '')
 
 
+def load_source_module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_hook_updater():
+    def command(arguments, check=True):
+        return subprocess.run(arguments, check=check, capture_output=True, text=True, timeout=HOOK_COMMAND_TIMEOUT)
+    try:
+        update = command(['uv', 'tool', 'upgrade', 'dry-audit'], check=False)
+    except subprocess.TimeoutExpired as error:
+        print(f'hook-update: runtime update timed out ({error}); loading the installed tool', file=sys.stderr)
+    else:
+        if update.returncode:
+            print(f'hook-update: runtime update unavailable; loading the installed tool\n{update.stderr}', file=sys.stderr)
+    tool_root = Path(command(['uv', 'tool', 'dir']).stdout.strip()) / 'dry-audit'
+    locate = "import importlib.util; print(importlib.util.find_spec('dry_audit.update_hooks').origin)"
+    path = Path(command([str(tool_root / 'bin/python'), '-c', locate]).stdout.strip())
+    return load_source_module('shared_hook_updater', path)
+
+
 def load_checker():
-    path = Path.home() / '.claude/hooks/no-silent-fallbacks/no_silent_fallbacks.py'  # Missing checker raises; never skip it.
-    spec = importlib.util.spec_from_file_location('shared_no_silent_fallbacks', path)
-    checker = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(checker)
-    return checker
+    # fallback-ok: This names the existing scanner repository and source file; no exception is caught or substituted for a successful scan.
+    path = load_hook_updater().source_module('no-silent-fallbacks')
+    return load_source_module('shared_no_silent_fallbacks', path)
 
 
 def check(call, checker):
@@ -133,4 +157,8 @@ def check(call, checker):
 
 def main():
     # entrypoints/gate.py reports any exception and exits 2, refusing the call.
-    return check(json.load(sys.stdin), load_checker())
+    call = json.load(sys.stdin)
+    for required in ('tool_name', 'tool_input'):
+        if required not in call:
+            raise ValueError(f'missing hook input: {required}')
+    return check(call, load_checker())

@@ -8,6 +8,18 @@
   },
   "review_evidence": [
     {
+      "path": "src/rewardhack/pilot_runner.py",
+      "rule": "py-except-swallow",
+      "text": "except subprocess.TimeoutExpired:",
+      "obligations": [{
+        "claim": "The pilot treats timed_out=True as stage_failure, stops further stages, and records the failed stage; subprocess cleanup kills and reaps the process group.",
+        "sources": [
+          {"path": "src/rewardhack/pilot_runner.py", "symbol": "run"},
+          {"path": "src/rewardhack/pilot_runner.py", "symbol": "_terminate"}
+        ]
+      }]
+    },
+    {
       "path": "src/rewardhack/outcomes.py",
       "rule": "py-getattr-default",
       "text": "kwargs = {'retries': retries} if getattr(judge, 'accepts_retry_budget', False) else {}",

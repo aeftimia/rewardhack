@@ -1,110 +1,75 @@
-# DRY audit prototype
+# DRY audits and hook updates
 
-`rewardhack.dry_audit` discovers candidates for consolidation without modifying
-code, calling a model, or blocking edits. `entrypoints/audit_dry.py` provides the
-repository CLI. It is an experimental library module so its snapshot API can later
-be used by an edit or commit hook without duplicating the scanner.
+The scanner lives in [aeftimia/dry-audit](https://github.com/aeftimia/dry-audit).
+This project contains only its integration, not a second implementation.
+It detects repeated constants, exact/renamed Python AST clones, and
+expression-sorted anti-unification with reconstructable substitutions.
 
-From the checkout root, using the project's Python:
+## Install and run
+
+Both scanners are standard uv-managed tools installed from their main branches:
 
 ```bash
-PYTHONPATH=src .tools/venv/bin/python entrypoints/audit_dry.py
-PYTHONPATH=src .tools/venv/bin/python entrypoints/audit_dry.py --json
-PYTHONPATH=src .tools/venv/bin/python entrypoints/audit_dry.py --revision '5683bf3^' --json
+uv tool install --from git+https://github.com/aeftimia/dry-audit.git@main dry-audit
+uv tool install --from git+https://github.com/aeftimia/no-silent-fallbacks.git@main no-silent-fallbacks
 ```
 
-In a linked worktree, use the main checkout's `.tools/venv/bin/python` with
-`PYTHONPATH=src`. `--root` must identify the repository root. The working-tree
-scan includes tracked and non-ignored untracked sources; a revision scan reads
-Git blobs without checking out or executing historical code. Tests and vendor
-directories are excluded by default; `--include-tests` includes test expectations
-as candidates too. Independent expected values often belong in tests.
+The DRY pre-commit entry runs `bash ops/gate.sh dry-audit`. It audits the complete
+Git index and refuses new candidate groups relative to HEAD. Unstaged fixes cannot
+hide staged duplication. Existing unchanged findings are grandfathered; content
+changes or another copy require review again. The first commit has an empty
+baseline. The DRY hook does not perform model adjudication or automatic refactoring.
 
-The normal exit status is zero even with candidates. `--check` returns one when
-candidates exist. Input/read/parse errors fail the command; they are not clean
-audits. No hook configuration is changed by installing or running this tool.
+Run `dry-audit --root . --json` for a full working-tree backlog report, or add
+`--revision <commit>` for a historical snapshot. Thresholds, evidence and coverage
+limits are documented upstream.
 
-## Detection
+## Standard update management
 
-| Finding | Evidence | Review needed |
-| --- | --- | --- |
-| `constant-repeat` | Equal typed literals assigned to the same policy-like name, or the same callee's policy keyword | Names can coincide across independent policies |
-| `constant-drift` | Different typed literals in those roles | Values may differ intentionally; this is suspected drift |
-| `literal-repeat` | A repeated substantial single-line string in assignments or keyword arguments | Shared model IDs and revisions are useful targets; repeated prose may be intentional |
-| `function-clone` | Identical Python function ASTs, optionally after renaming local bindings | Similar structure does not prove equivalent behavior or safe extraction |
+The invocation trigger uses **uv tool upgrade**. uv owns Git fetching, dependency
+resolution, builds, environment locking and installation; there is no custom
+checkout updater or polling cache. A push to either tool's main branch becomes
+available on the next hook invocation when connectivity permits.
 
-Thresholds live in `src/rewardhack/dry_audit.py`; `--min-clone-nodes` overrides the
-function-size threshold. There is no arbitrary pairwise similarity threshold:
-the first version uses hashes of structural representations. Reports group all
-matching occurrences, carry source locations and excerpts, and distinguish exact
-from renamed function matches. Output ordering is deterministic.
+The project bootstrap upgrades the DRY runtime and loads its installed updater
+module through the tool environment's own interpreter. That module locates the
+silent-failure scanner for the existing Python adapter, or executes DRY as a tool.
+The actual source of both scanners remains their separate upstream repositories.
 
-Names assigned repeatedly within a Python scope are not treated as constant
-definitions. The shell subset conservatively counts writes by name within a file.
-Repeated long string values still participate even when their variable is reused
-for another model. Booleans and null values are not policy constants. Equal numeric
-values with unrelated names do not produce a finding.
+An unavailable upgrade is reported and the installed scanner still runs. Its
+failure is never replaced with a successful result. Missing tools, missing uv,
+failed module discovery and scanner failures are errors. Registered development
+checkouts under `~/.claude/hooks/` with dirty files or commits ahead of their local
+`origin/main` are selected with an explicit diagnostic, preserving ongoing work.
+Those checkouts are never reset, stashed, merged or rewritten by the trigger.
+After publishing development work, refresh that checkout's remote tracking ref
+if necessary so the managed installation can take over.
 
-Python renaming preserves which references use the same binding, external name
-spellings, operators, literal values, keyword names, decorators, annotations and
-defaults in the function signature. Canonical local names cannot collide with real
-external identifiers. Imports, global/nonlocal declarations, pattern matching,
-comprehensions and nested scopes make a function eligible for exact matching only;
-the report names each such limitation. Nested functions are also inspected on their
-own. External names are not resolved across modules, and recursive references are
-not normalized to a common function name.
+Check for updates explicitly:
 
-## Coverage and deliberate limits
+```bash
+uv tool upgrade dry-audit no-silent-fallbacks
+```
 
-Supported files are Python and scalar-definition text in `.sh`, `.bash`, and `.env`.
-The shell extractor accepts a complete line of literal assignments separated by
-spaces or semicolons, optionally prefixed by `export`, `local`, or `readonly`.
-It does not parse shell control flow, expansions, arrays, embedded languages, or
-function clones. Assignment-looking lines in multiline strings or heredocs can
-therefore produce candidates; shell findings require source review. Unsupported
-file formats, such as TOML, requirements files and documentation, are not scanned.
-Source symlinks are rejected rather than followed or interpreted as source.
+The global Claude registration uses `dry-audit --run-hook no-silent-fallbacks`
+with its existing environment setup and stdin. It refreshes the shared runtime
+and target scanner through the same standard manager.
 
-The Python pass currently handles scalar assignments to names and literal keyword
-arguments. It does not match positional arguments, dictionary values, function
-parameter defaults, computed constants, units, aliases, or data flow. These limits
-mean that even a report with no findings is not proof that a repository is DRY.
+For consumers preferring pinned versions, the standalone repository also exports
+a normal remote pre-commit hook. Its standard updater is
+`pre-commit autoupdate --bleeding-edge --freeze`; that updates the consuming
+configuration's revision rather than loading the newest main branch at invocation.
 
-Function matching is whole-function matching. It does not yet generalize differing
-literals into parameters, search consecutive statement blocks, compare reordered
-operations, or establish equivalence. Reflection and differently resolved imports
-can make even identical function text behave differently.
+## Evaluation
 
-The scanner does not approve exceptions or infer that an equality test justifies a
-copy. For example, this repository intentionally keeps some standalone shell values
-in sync through `tests/test_shared_constants.py`; those copies still appear as
-candidates. It also groups repeated keyword names without inspecting other arguments:
-different subprocess commands can legitimately have different `timeout` policies.
+The constant detector finds four model/revision repetition groups in `5683bf3^`
+that disappear after `5683bf3` consolidates them. Anti-unification finds the shared
+write-and-flush structure of `jsonl.write` and `jsonl.write_rows`, with `[row]`
+versus `rows` as the substitution. Exact matching also finds two file-hashing
+helpers. These remain review candidates; this task does not fuse them.
 
-## Historical check and next step
-
-The first historical check compares `5683bf3^` with `5683bf3`. Before the change,
-the scanner finds repeated model/revision strings for both gpt-oss models in pod
-scripts (four groups). Those groups disappear after the consolidation into
-`ops/pod_pins.env`. Remaining findings include copies deliberately protected by
-equality tests. Total finding counts alone are not a quality metric: consolidation
-can move a value into a source this limited scanner can recognize for the first time.
-
-The helper extraction in `6ae7e54` is a known miss: it concerns shell workflows,
-which this version does not structurally analyze. Synthetic positive and negative
-Python cases exercise exact/renamed functions, binding identity, external calls,
-scope limits, independent numeric values, mutable state, and complete-snapshot edits.
-
-The next detector should anti-unify candidate ASTs: produce the shared template and
-explicit differing subtrees, then assess how much shared logic remains relative to
-the needed parameters. Shell workflow matching needs a real shell parser first.
-Historical refactors supply positive examples; independent policies and test
-expectations supply negative examples. Tune precision before making findings block.
-
-For hook integration, `audit(sources)` accepts the complete proposed path-to-text
-snapshot. Apply all edits in memory before calling it, so introducing a helper and
-replacing its callers is one operation. A commit adapter must read staged blobs,
-not the working tree. Neither adapter is implemented here. A future judged exception
-must bind to the specific occurrences and context, invalidate when they change,
-and explain why independent definitions are justified. This prototype does not
-claim semantic review or enforcement.
+The shell helper extraction in `6ae7e54` remains outside structural coverage.
+Shell support extracts literal assignments. Python generalization currently
+compares whole functions with matching signatures and statement layout. Upstream
+tests cover reconstruction of both ASTs, repeated holes, binding identity,
+unhelpfully broad generalizations, partial staging and the uv update trigger.

@@ -57,6 +57,11 @@ def scan_sources(args):
     return full_scan(ROOT)
 
 
+def dry_audit(args):
+    from rewardhack.codex_hooks import load_hook_updater
+    return load_hook_updater().run_hook('dry-audit', ['--root', str(ROOT), '--staged', '--new-only', '--check'])
+
+
 def settle(args):
     if not all('=' in setting for setting in args.settings):
         raise SystemExit('--set takes NAME=VALUE')
@@ -80,6 +85,7 @@ def main():
     sub.add_parser('hook').set_defaults(run=hook)
     sub.add_parser('codex-hook').set_defaults(run=codex_hook)
     sub.add_parser('scan-sources', help='full source scan; a fresh LLM verdict is required').set_defaults(run=scan_sources)
+    sub.add_parser('dry-audit', help='audit new staged duplication using the updating external scanner').set_defaults(run=dry_audit)
     started = sub.add_parser('launch')
     started.add_argument('--remote', required=True, help='the ops/*.sh script given to the driver')
     started.add_argument('--deadline', type=int, required=True, help='the deadline in minutes given to the driver')
