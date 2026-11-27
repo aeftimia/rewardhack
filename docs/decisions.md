@@ -26,6 +26,8 @@ changes, edit its entry and link the note that changed it.
   prompts after a seeded phase, with a dose ablation (one seeded step against several), by a hint and by injected
   verified refutations. Prior evidence, for the exploit only: local Qwen3-8B, one seeded example took held-out exploits
   from 3/24 to 15/24 after one update on the neutral prompt.
+- **Run plan and ballpark costs (2026-11-26).** Core grid 30 runs (about $315), full plan with add-ons about 55–65
+  (about $630), most of it Qwen3-32B, whose cost is unmeasured. Planning figures, not an approval. Notes section 82.
 - **Start without the λ sweep (2026-11-26).** Its budget is held in reserve until Part 1 calls for it.
   `docs/preflight-plan.md`, notes section 68.
 - **Run length (2026-11-26).** 60 steps per survey cell: behaviour settled by about step 30 on gpt-oss-20b. Extend a
