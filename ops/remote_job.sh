@@ -10,6 +10,7 @@ set -euo pipefail
 # tests/test_shared_constants.py keeps the two equal.
 KILL_AFTER_SECONDS=30
 OUT=${REMOTE_JOB_OUT:-$HOME/out}
+echo "runner output directory: $OUT (REMOTE_JOB_OUT overrides the standard HOME/out path)"
 GRACE=${AUTOSTOP_GRACE_SECONDS:-600}  # time for the driver to copy results before the pod is removed
 echo "runner grace period: ${GRACE}s (AUTOSTOP_GRACE_SECONDS overrides the standard copy window)"
 mkdir -p "$OUT" || { echo "cannot create runner output directory: $OUT" >&2; exit 3; }

@@ -91,12 +91,6 @@
     "reason": "The regex has an optional capture for the axiom list. A valid Lean response stating no axioms leaves that capture None; an unmatched or malformed response is rejected earlier."
   },
   {
-    "path": "entrypoints/gate.py",
-    "rule": "keyword",
-    "text": "Codex PreToolUse adapter for the shared no-silent-fallbacks checker.",
-    "reason": "This docstring names the installed checker used by the adapter. It introduces no alternate execution path or error handling."
-  },
-  {
     "path": "entrypoints/validate_judge.py",
     "rule": "py-else-label",
     "text": "result.update(validation_kind='human_audit' if args.audit else 'human_heldout' if args.holdout else 'development', **provenance)",

@@ -8,6 +8,17 @@
   },
   "review_evidence": [
     {
+      "path": "ops/remote_job.sh",
+      "rule": "sh-default-expansion",
+      "text": "OUT=${REMOTE_JOB_OUT:-$HOME/out}",
+      "obligations": [{
+        "claim": "The runner's default output path is part of its contract. A launch with REMOTE_JOB_OUT absent stores the actual exit status under HOME/out/EXIT_CODE.",
+        "sources": [
+          {"path": "tests/test_round30_followups.py", "symbol": "test_launch_transaction_rotates_output_and_preserves_real_status"}
+        ]
+      }]
+    },
+    {
       "path": "src/rewardhack/pilot_runner.py",
       "rule": "py-except-swallow",
       "text": "except subprocess.TimeoutExpired:",

@@ -11,6 +11,11 @@ such as a changed or removed function, argument, default, file format, or traini
 
 ## Paid pods (RunPod or any other metered machine)
 
+Keep the exact source commit for every experiment, including failed attempts and retries. Record the full
+launch SHA with each run's results. Preserve that commit when integrating the experiment branch by merging
+its original history into `main`. After pushing, fetch and verify each recorded SHA with
+`git merge-base --is-ancestor <launch-sha> origin/main`.
+
 A pod bills from the moment it is deployed, and nothing limits that until the job's runner arms the pod's own removal timer (`ops/remote_job.sh`, started by `ops/drive_runpod.sh`). These rules close that gap.
 
 - **Settle everything before deploying.** Every question for the owner, every code change, the local test run, the budget check (`entrypoints/budget.py check`) and the exact driver command come first. Deploy only when the driver can start the moment the pod accepts SSH.
