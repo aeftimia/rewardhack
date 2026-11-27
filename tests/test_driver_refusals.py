@@ -42,7 +42,7 @@ def drive(tmp_path, remote='ops/remote_runpod_smoke.sh', deadline='240', **setti
                                         SMOKE_TRAIN_SECONDS='6000'), 'SMOKE_PART_ONE=1 needs'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='1', SMOKE_SKIP_PROBE='1', SMOKE_SECOND_RUN='0',
                                         SMOKE_STEPS='60', SMOKE_TRAIN_SECONDS='6000', SMOKE_MEMORY_LIMIT='4096'), 'SMOKE_PART_ONE=1 needs'),
-    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='5'), "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to 4)"),
+    ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PART_ONE='14'), "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to 13)"),
     # The permission probe follows a Part 1 job's training, on its vLLM path.
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PROBE_LARGE='1'), 'SMOKE_PROBE_LARGE=1 runs after a Part 1 job'),
     ('ops/remote_runpod_smoke.sh', dict(LEAN_ISOLATION='none', SMOKE_PROBE_LARGE='3'), 'SMOKE_PROBE_LARGE must index PROBE_SET_NAMES'),

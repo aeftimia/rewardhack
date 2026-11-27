@@ -267,8 +267,13 @@ if [[ $SMOKE_PART_ONE != 0 ]]; then
   # No saturation stop (owner, 26 Nov; notes section 77): the event Part 1 looks for, a first refutation, is a rare escape
   # from a plateau, and a stopped run can no longer show it. All 60 steps, as the 26 Nov pair ran before the stop existed.
   for run in "${RUNS[@]}"; do
-    IFS=: read -r name arm penalty <<< "$run"
-    step "train-$name" "${TRAIN[@]}" --no-stop-saturated --arm "$arm" --penalty "$penalty"
+    IFS=: read -r name arm penalty variant report <<< "$run"
+    # Typed reports are scored from their Boolean flag, without an LLM judge.
+    # This override follows BASE's prose judge options in step's argv.
+    REPORT_JUDGE=()
+    if [[ $report == typed ]]; then REPORT_JUDGE=(--judge none); fi
+    step "train-$name" "${TRAIN[@]}" --no-stop-saturated --arm "$arm" --penalty "$penalty" \
+      --prompt-variant "$variant" --report-mode "$report" "${REPORT_JUDGE[@]}"
   done
 else
   step train-lr1e-4 "${TRAIN[@]}" "${FUNDED[@]}"

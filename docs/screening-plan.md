@@ -22,14 +22,22 @@ The baseline does not depend on λ; do not duplicate it for each λ.
 | Qwen3-32B | refute | prose | pending | pending | pending |
 | Qwen3-32B | refute | typed | pending | pending | pending |
 
-24 initial cells, **21 new runs**. Reuse the completed baseline and λ=0 in
+The table is the eventual screen, not an unconditional launch queue. The owner's
+latest order is to establish Qwen incrementally: first λ=0, neutral/prose,
+starting with a six-step measuring pass; then the full 60-step run only if it
+fits the cap and the measurements look sound. Next use λ=0.5, neutral/prose to
+establish the trend. Only then consider the other Qwen cells. Leave over-cap
+Qwen runs for the owner's morning reassessment. Continue the nine missing 20b
+initial cells under the existing approval when they fit and checks are clean.
+
+The eventual table has 24 initial cells, **21 new runs**. Reuse the completed baseline and λ=0 in
 `results/runpod-part1-60step-20261126/`, and λ=0.5 in
 `results/runpod-part1-lambda05-20261126/`. Their run-settings record seed 42,
 neutral/prose, 60 steps, 4 prompts × 4 generations, learning rate 1e-4, and the
 same pinned 20b revision. Archive completion is independent of run completion:
 an upload still in progress never makes a completed cell eligible for rerunning.
 
-Each of the 12 refute-trained cells also needs held-out neutral evaluation and
+Each refute-trained cell also needs held-out neutral evaluation and
 neutral continuation from its checkpoint, with matched settings, as previously
 requested. These are separate follow-on phases, not independent initial cells.
 Record the parent checkpoint and any optimizer reset explicitly. Do not silently
@@ -40,8 +48,9 @@ and dose ablations remain later work; do not pool them with this screen.
 
 The owner preapproved **up to $15 per run**, including setup, GPU, judge, and
 shutdown overhead. The launch gate must bound the entire job under that cap;
-do not shorten safety margins to make a job fit. Begin with missing 20b cells,
-one initial cell per launch while validating the new axes. Do not launch an
+do not shorten safety margins to make a job fit. Start with Qwen's λ=0 measuring
+pass, then proceed with missing 20b cells, one initial cell per launch while
+validating the new axes. Do not launch an
 unattended batch that can spend on later cells after suspicious results.
 
 Qwen's existing 60-step estimate is about $18 typical, already above this cap.
