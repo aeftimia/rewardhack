@@ -173,5 +173,39 @@ def test_a_run_that_armed_but_did_not_launch_copies_nothing_of_an_earlier_job(tm
     output, sent = arm_fails(tmp_path/'not-started', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '1 0'))
     assert 'did not start' in output and "holds an earlier job's results" in output and 'copying results' not in output, output
     assert not any('--remove-now' in line for line in sent), sent
+    # Moved aside, then the connection dropped before the job started: no fresh remote.log, so not started (round 47).
+    output, sent = arm_fails(tmp_path/'moved-only', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '0 1'))
+    assert 'did not start' in output and 'copying results' not in output, output
+    # Started: the driver follows the job (here the fake pod's exit-code answer ends it), not copy-and-remove at once.
     output, sent = arm_fails(tmp_path/'started', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '1 1'))
-    assert 'the job started on the pod' in output and 'copying results' in output, output
+    assert 'the job started on the pod: following it' in output, output
+    assert any('cat out/EXIT_CODE' in line for line in sent), sent  # polled like any launched job
+
+
+def test_the_launch_question_and_its_reading_run_for_real(tmp_path):
+    """Round 47: LAUNCH_TRACES was only ever answered by a stub. Here the driver's own command runs in a folder shaped like
+    a pod's home before and after a real launch's moves, and the driver's own launch_ran reads the answers."""
+    import re
+    driver = (ROOT/'ops/drive_runpod.sh').read_text()
+    traces = re.search(r"^LAUNCH_TRACES='([^']*)'$", driver, re.M).group(1)
+    reader = re.search(r'^launch_ran\(\) \{\n.*?^\}\n', driver, re.M | re.S).group(0)
+
+    def ask():
+        return subprocess.run(['sh', '-c', traces], cwd=tmp_path, capture_output=True, text=True, check=True).stdout.strip()
+
+    def ran(before, after):
+        return subprocess.run(['bash', '-c', reader + 'launch_ran "$1" "$2"', 'launch_ran', before, after]).returncode == 0
+
+    fresh = ask()
+    (tmp_path/'out').mkdir()  # what a failed --arm-only leaves
+    assert fresh == ask() == '0 0'
+    (tmp_path/'out'/'remote.log').write_text('')  # a launch on a fresh pod
+    assert ask() == '1 0' and ran('0 0', '1 0')
+    before = ask()  # a relaunch: the earlier job's out/ is moved aside, then a fresh remote.log is written
+    (tmp_path/'out').rename(tmp_path/'out.prev.1764100000')
+    moved_only = ask()
+    assert moved_only == '0 1' and not ran(before, moved_only)  # the connection dropped between the move and the start
+    (tmp_path/'out').mkdir()
+    (tmp_path/'out'/'remote.log').write_text('')
+    assert ask() == '1 1' and ran(before, '1 1')
+    assert not ran('1 1', '1 1')  # nothing changed: not started

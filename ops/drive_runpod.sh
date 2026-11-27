@@ -176,13 +176,15 @@ JOB_TRACES='set -- out.prev.*; if [ -e out/remote.log ] || [ -e "$1" ]; then ech
 # shellcheck disable=SC2016  # expanded by the pod's shell, not here
 LAUNCH_TRACES='set -- out.prev.*; if [ -e "$1" ]; then n=$#; else n=0; fi; if [ -e out/remote.log ]; then r=1; else r=0; fi; echo "$r $n"'
 LAUNCH_TRACE_FORM='^[01] [0-9]+$'
-# Whether the launch ran, from the answers before ($1) and after ($2): it did if out/remote.log appeared or out.prev.* grew.
-# shellcheck disable=SC2329  # run by `finish` below
+# Whether the launch ran, from the answers before ($1) and after ($2). The launch moves an earlier out/ aside and then
+# writes a fresh out/remote.log as it starts the job, so the job started only if out/remote.log is there now and is new:
+# there was none before, or out.prev.* grew. A connection lost between the move and the start leaves no remote.log, and
+# counts as not started (review round 47).
 launch_ran() {
   local before_log before_prev after_log after_prev
   read -r before_log before_prev <<< "$1"
   read -r after_log after_prev <<< "$2"
-  ((after_prev > before_prev || (before_log == 0 && after_log == 1)))
+  ((after_log == 1 && (before_log == 0 || after_prev > before_prev)))
 }
 # One command on the pod, bounded as a whole: the cleanup below asks the RunPod API too (`--remove-now`), and a stalled
 # API must end in the reminders, not hold the driver with the pod billing (review round 35). ARM_SECONDS: ops/pod_pins.env.
@@ -198,17 +200,9 @@ finish() {
   # (review round 42), and once more if no answer came (round 43). The last line only: a login shell on the pod may
   # print its own text before the answer. Only this run's own job is copied: an earlier job's out/ on a kept pod was
   # copied by its own driver, and copying it again into this run's folder would count its rows twice (round 43).
-  # A launch call that did not return: the pod's state now, against its state just before, says whether the launch ran.
-  # If it did, this run's out/ is copied as after any launch; if not, this run launched nothing. Without an answer, it
-  # stays unknown (review round 46).
-  if [[ $LAUNCH_SENT == 1 && $LAUNCHED == 0 ]]; then
-    AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1)
-    if ! [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1); fi
-    if [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then
-      if launch_ran "$BEFORE_LAUNCH" "$AFTER_LAUNCH"; then say 'the launch call failed, but the job started on the pod: its results are copied'; LAUNCHED=1
-      else say 'the launch call failed and the job did not start on the pod'; LAUNCH_SENT=0; fi
-    fi
-  fi
+  # A launch call that failed is settled where it failed (below, after the launch): a job that started is followed as
+  # any other, and one that did not leaves LAUNCH_SENT=0. Only a launch whose pod gave no answer arrives here sent but
+  # unconfirmed (review rounds 46 and 47).
   HELD=unknown
   if [[ $LAUNCH_SENT == 0 ]]; then
     HELD=$(on_pod "$JOB_TRACES" | tail -n 1)
@@ -263,7 +257,11 @@ finish() {
     # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
     if ! on_pod true; then
-      say "the pod no longer answers (ssh error above): it has removed itself on its timer, or the connection failed and its timer (armed $ARMED_AT, at most the provisional 15 minutes before the job's own replaces it) removes it. Confirm in the RunPod console"
+      if [[ $ARMED == 1 ]]; then
+        say "the pod no longer answers (ssh error above): it has removed itself on its timer, or the connection failed and its timer (armed $ARMED_AT, at most the provisional 15 minutes before the job's own replaces it) removes it. Confirm in the RunPod console"
+      else  # a kept pod with an earlier job's results, which this run armed no timer on (review round 47)
+        say "REMINDER: the pod no longer answers, and this run armed no removal timer on it; a kept pod keeps its earlier one. Check in the RunPod console now that it is gone or has a timer (out/autostop.log there)"; code=97
+      fi
     elif on_pod "pgrep -f '[r]unpodctl remove pod' > /dev/null"; then say "pod left running; a removal timer is running on it (out/autostop.log)"
     else say "REMINDER: the pod is running with NO removal timer. Terminate it in the RunPod console now"; code=97; fi
   elif on_pod 'bash -s -- --remove-now' < ops/remote_job.sh; then  # sent over the connection: the repo may not be on the pod yet
@@ -325,9 +323,27 @@ if ! BEFORE_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1) || ! [[ $BEFORE_LAUNCH
   echo "could not read the pod's state before the launch (got '$BEFORE_LAUNCH'); not launching"; exit 1
 fi
 LAUNCH_SENT=1
+# fallback-ok: off for the one launch call below; the next lines read its status, exit 1 unless the pod shows the job started, and turn exit-on-error back on
+set +e
 # A fresh out/ every run: a reused pod must not hand back the previous run's summaries. Models live in /workspace.
 # The remote log goes inside it so the runner's own errors are pulled with the results.
 "${SSH[@]}" "root@$HOST" "if [ -e out ]; then mv out out.prev.\$(date +%s); fi; mkdir -p out; JUDGE_KIND=${JUDGE_KIND:-api} LEAN_ISOLATION=${LEAN_ISOLATION:-required} JUDGE_MAX_USD=${JUDGE_MAX_USD:-1} REQUIRE_AUTOSTOP=1 AUTOSTOP_GRACE_SECONDS=${AUTOSTOP_GRACE_SECONDS:-600} ${SMOKE_ENV}nohup bash pilot-repo/ops/remote_job.sh pilot-repo/$REMOTE $((DEADLINE*60)) > out/remote.log 2>&1 < /dev/null &"
+LAUNCH_STATUS=$?
+set -e
+# The call runs the job in the background, so it fails only when ssh did, which may be before or after the job started.
+# The pod's state against its state just before says which: a job that started is followed like any other (copying it
+# in the exit trap would copy nothing yet, and with KEEP_POD=0 remove the pod and the job with it); one that did not
+# means this run launched nothing (review rounds 46 and 47). With no answer, `finish` reports it unknown.
+if ((LAUNCH_STATUS != 0)); then
+  AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1)
+  if ! [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1); fi
+  if ! [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then echo "the launch call failed (exit $LAUNCH_STATUS) and the pod did not say whether the job started"; exit 1; fi
+  if ! launch_ran "$BEFORE_LAUNCH" "$AFTER_LAUNCH"; then
+    LAUNCH_SENT=0
+    echo "the launch call failed (exit $LAUNCH_STATUS) and the job did not start on the pod"; exit 1
+  fi
+  say "the launch call failed (exit $LAUNCH_STATUS), but the job started on the pod: following it"
+fi
 LAUNCHED=1
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60+90))  # the remote timeout is DEADLINE; the extra time is for it to write EXIT_CODE
