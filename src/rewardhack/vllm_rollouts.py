@@ -181,6 +181,26 @@ class AdapterRollouts:
             return (left[0] == right[0] and len(left[1][0]) == len(right[1][0])
                     and all(math.isclose(a, b, abs_tol=1e-4, rel_tol=0)
                             for a, b in zip(left[1][0], right[1][0], strict=True)))
+        def record_check(row):
+            with (self.args.out / 'adapter-reload-checks.jsonl').open('a') as sink:
+                sink.write(json.dumps(dict(prompt_ids=prompt, max_tokens=RELOAD_PROBE_TOKENS,
+                                           **row), allow_nan=False) + '\n')
+        # Establish repeatability separately from replacement. Reset the cache
+        # identically before every observation; never infer a reload defect from
+        # a comparison that already drifts with unchanged weights.
+        def reset_and_sample():
+            if self.request('POST', '/reset_prefix_cache').json()['success'] is not True:
+                raise RuntimeError('vLLM did not reset the diagnostic prefix cache')
+            return sample()
+        before = reset_and_sample()
+        for stage in ('unchanged-repeat', 'identical-reload'):
+            if stage == 'identical-reload':
+                self.load(self.path)
+            after = reset_and_sample()
+            matched = matches(before, after)
+            record_check(dict(stage=stage, before=before, after=after, matched=matched))
+            if not matched:
+                raise RuntimeError(f'adapter repeatability check failed at {stage}')
         checks = {}
         for kind, changed in kinds.items():
             if not changed:
@@ -189,21 +209,19 @@ class AdapterRollouts:
             for name in changed:
                 state[name].fill_(0.1)
             save_file(state, str(probe_path/'adapter_model.safetensors'))
-            before = sample()
+            before = reset_and_sample()
             self.load(probe_path)
             try:
-                changed_output = sample()
+                changed_output = reset_and_sample()
             finally:
                 self.load(self.path)
-            restored = sample()
+            restored = reset_and_sample()
             changed_ok, restored_ok = not matches(before, changed_output), matches(before, restored)
             checks[kind] = dict(tensors=len(changed), before=before, changed=changed_output, restored=restored,
                                 changed_ok=changed_ok, restored_ok=restored_ok)
             # Persist before rejecting: a failed check must retain the evidence
             # distinguishing insensitive perturbations from failed restoration.
-            with (self.args.out / 'adapter-reload-checks.jsonl').open('a') as sink:
-                sink.write(json.dumps(dict(kind=kind, prompt_ids=prompt, max_tokens=RELOAD_PROBE_TOKENS,
-                                           **checks[kind]), allow_nan=False) + '\n')
+            record_check(dict(kind=kind, **checks[kind]))
             if not changed_ok or not restored_ok:
                 raise RuntimeError(f'adapter A/B/A reload of the {kind} tensors failed: '
                                    f'perturbation_changed={changed_ok}, original_restored={restored_ok}')

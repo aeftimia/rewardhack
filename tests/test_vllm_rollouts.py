@@ -121,6 +121,7 @@ def test_generation_failure_sleeps_server_and_propagates(backend, monkeypatch):
 
 
 def test_reload_requires_changed_weights_and_restoration(backend, monkeypatch):
+    connect(backend, lambda request: httpx.Response(200, json={'success': True}))
     import torch
     from safetensors.torch import save_file, load_file
     save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
@@ -141,12 +142,13 @@ def test_reload_requires_changed_weights_and_restoration(backend, monkeypatch):
 
 @pytest.mark.parametrize('restored', [-2.0, -2.1])
 def test_reload_uses_later_tokens_and_records_failed_restoration(backend, monkeypatch, restored):
+    connect(backend, lambda request: httpx.Response(200, json={'success': True}))
     import torch
     from safetensors.torch import save_file
     save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
     (backend.path/'adapter_config.json').write_text('{}')
     monkeypatch.setattr(backend, 'load', lambda path: None)
-    values = iter([-2.0, -3.0, restored])
+    values = iter([-2.0, -2.0, -2.0, -2.0, -3.0, restored])
     def sample(*args, **kwargs):
         assert kwargs['max_tokens'] == RELOAD_PROBE_TOKENS
         return [[200005, 3]], [[0.0, next(values)]], None
@@ -158,12 +160,13 @@ def test_reload_uses_later_tokens_and_records_failed_restoration(backend, monkey
         with pytest.raises(RuntimeError, match='original_restored=False'):
             backend.verify_reload([8])
         assert not backend.checked_reload
-    row = json.loads((backend.args.out/'adapter-reload-checks.jsonl').read_text())
+    row = json.loads((backend.args.out/'adapter-reload-checks.jsonl').read_text().splitlines()[-1])
     assert row['changed_ok'] and row['restored_ok'] == (restored == -2.0)
     assert row['before'][1] == [[0.0, -2.0]]
 
 
 def test_reload_restores_original_after_probe_request_failure(backend, monkeypatch):
+    connect(backend, lambda request: httpx.Response(200, json={'success': True}))
     import torch
     from safetensors.torch import save_file
     save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
@@ -178,6 +181,28 @@ def test_reload_restores_original_after_probe_request_failure(backend, monkeypat
     with pytest.raises(RuntimeError, match='probe request failed'):
         backend.verify_reload([8])
     assert active[0] == backend.path and not backend.checked_reload
+
+
+@pytest.mark.parametrize('stage,values', [
+    ('unchanged-repeat', [-1.0, -1.2]),
+    ('identical-reload', [-1.0, -1.0, -1.2]),
+])
+def test_reload_refuses_drift_before_perturbation(backend, monkeypatch, stage, values):
+    import torch
+    from safetensors.torch import save_file
+    connect(backend, lambda request: httpx.Response(200, json={'success': True}))
+    save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
+    (backend.path/'adapter_config.json').write_text('{}')
+    loaded = []
+    monkeypatch.setattr(backend, 'load', loaded.append)
+    sequence = iter(values)
+    monkeypatch.setattr(backend, 'completions', lambda *a, **kw: ([[3]], [[next(sequence)]], None))
+    with pytest.raises(RuntimeError, match=stage):
+        backend.verify_reload([8])
+    assert not backend.checked_reload
+    assert all(path == backend.path for path in loaded)
+    rows = [json.loads(line) for line in (backend.args.out/'adapter-reload-checks.jsonl').read_text().splitlines()]
+    assert rows[-1]['stage'] == stage and rows[-1]['matched'] is False
 
 
 def test_untruncated_rollouts_reach_real_trl_loss(tmp_path, monkeypatch):
@@ -293,6 +318,7 @@ def test_each_training_process_registers_its_own_adapter_name(tmp_path, backend)
 
 
 def test_reload_checks_expert_tensors_on_their_own(backend, monkeypatch):
+    connect(backend, lambda request: httpx.Response(200, json={'success': True}))
     # A server that applies the attention adapter but ignores the experts must not pass on the attention tensors.
     import torch
     from safetensors.torch import save_file, load_file

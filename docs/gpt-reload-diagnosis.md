@@ -38,3 +38,14 @@ adapter digests, cache resets, token IDs and log probabilities. Each failed
 stage must stop before training. Investigate upstream CPU-testable state logic
 first; a future GPU diagnostic needs its own reviewed, bounded launch within
 the remaining cell allowance. Existing trajectories retain their original code.
+
+## Local orchestration check
+
+`/tmp/check-vllm-reload-state.py` extracted the pinned upstream worker
+`add_adapter` and manager activation/removal methods and exercised them locally
+with recording layer stubs and two occupied slots. A/B/A reread all three
+paths, cleared an absent expert module in B, and restored exactly the original
+copied slot values and slot identities. This did not reproduce a Python manager
+state defect. It does not test real checkpoint deserialization, GPU layer copies,
+quantized kernels, cache behavior or inference, and is not clearance to resume
+paid training.
