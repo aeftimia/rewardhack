@@ -71,5 +71,5 @@ def test_the_pod_pins_have_no_unchecked_limit_and_stage_times_name_checked_ones(
                             check=True, capture_output=True, text=True).stdout.split('\n')[:-1]
     checked = {int(value) for value in re.findall(r'^[A-Z_]+_SECONDS=(\d+)\b', text, re.M)}
     assert stages and all(int(stage.split()[1]) in checked for stage in stages), stages
-    raw = re.search(r'^PROBE_LARGE_STAGES=\((.*)\)$', text, re.M).group(1)
+    raw = re.search(r'^PROBE_LARGE_STAGES=\((.*?)^\)', text, re.M | re.S).group(1)
     assert not re.search(r'"\w+ \d', raw), 'a stage time is written as a number; name a *_SECONDS limit instead'

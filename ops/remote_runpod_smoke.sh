@@ -63,12 +63,12 @@ OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
 LARGE_CACHE=$HF_HOME/hub/models--${GPT_OSS_120B/\//--}
 # The size field only: the path du prints after it has digits of its own (gpt-oss-120b), which `tr` alone kept (round 29).
 # A failed or unreadable du ends the job with its reason in the log, not with stderr alone (review round 30).
-if [[ $SMOKE_PROBE_LARGE == 1 && -d $LARGE_CACHE ]]; then  # sized only for the job that needs it
+if [[ $SMOKE_PROBE_LARGE != 0 && -d $LARGE_CACHE ]]; then  # sized only for the job that needs it
   LARGE_HERE_GB=$(du -s -BG "$LARGE_CACHE" | cut -f1 | tr -dc 0-9) || fail "SELF_TEST: du could not size the partial $GPT_OSS_120B download in $LARGE_CACHE"
   [[ $LARGE_HERE_GB =~ ^[0-9]+$ ]] || fail "SELF_TEST: du sized the partial $GPT_OSS_120B download in $LARGE_CACHE as '$LARGE_HERE_GB'"
 else LARGE_HERE_GB=0; fi
-LARGE_NEED_GB=(0 $((LARGE_HERE_GB < 70 ? 70 - LARGE_HERE_GB : 0)))  # indexed by SMOKE_PROBE_LARGE
-WORKSPACE_NEED_GB=$((${MODEL_WORKSPACE_GB[$M]} + ${LARGE_NEED_GB[$SMOKE_PROBE_LARGE]}))
+LARGE_NEED_GB=$((SMOKE_PROBE_LARGE != 0 ? (LARGE_HERE_GB < 70 ? 70 - LARGE_HERE_GB : 0) : 0))
+WORKSPACE_NEED_GB=$((${MODEL_WORKSPACE_GB[$M]} + LARGE_NEED_GB))
 pod_self_test "$GPUS" "$WORKSPACE_NEED_GB" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
 JUDGE=$POD_JUDGE; JUDGE_REV=$POD_JUDGE_REV
 # The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
@@ -162,7 +162,7 @@ done
 # the project pins 2.5.5, so the project's numpy is overridden with requirements-vllm.txt's (uv resolves the rest; the
 # 0.33.0 probe pin no longer installs with the project at all). With --lean none the probe runs none of the scoring code.
 # HF_HUB_DISABLE_XET: the 5 Nov download of this repository failed twice in the xet transfer ("File reconstruction error").
-if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
+if [[ $SMOKE_PROBE_LARGE != 0 ]]; then
   log "start download $GPT_OSS_120B (background)"
   # The limit and its basis are in ops/pod_pins.env (LARGE_DOWNLOAD_SECONDS), where the driver counts it.
   HF_HUB_DISABLE_XET=1 DOWNLOAD_WAIT=$LARGE_DOWNLOAD_SECONDS fetch_model "$GPT_OSS_120B" "$GPT_OSS_120B_REV" &
@@ -262,7 +262,7 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 && ${#RUNS[@]} -gt 0 ]]; then
   curl -fsS --max-time 120 -X POST "http://127.0.0.1:$ROLLOUT_PORT/sleep?level=1" > ~/out/rollout-initial-sleep.txt || fail ROLLOUT_SLEEP_FAILED
   BASE+=(--rollout-backend vllm --rollout-url "http://127.0.0.1:$ROLLOUT_PORT")
 fi
-if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
+if [[ $SMOKE_PROBE_LARGE != 0 ]]; then
   # The gpt-oss-120b probe's environment is checked now, not after the training: a broken one found then would cost a
   # relaunch. It installs beside the model download (cap in its own line above) and has had minutes since.
   log start probe-install
@@ -298,10 +298,10 @@ elif [[ ${SMOKE_SECOND_RUN:-1} == 1 ]]; then
 # 8 steps at 61 s, plus a before and an after evaluation of up to 4.6 minutes each: about 17 minutes measured, so twice that.
 step train-lr1e-5 --steps 8 --learning-rate 1e-5 "${SHAPE[@]}" --max-seconds 2100 --final-eval-seconds 600 "${FUNDED[@]}"
 fi
-if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
-  # Does gpt-oss-120b, unprompted and untrained, ever declare or prove a refutation (owner, 26 Nov; notes section 77)? The 80
-  # false statements of the training split, the neutral prompt, inference only: rows are scored on the laptop with
-  # entrypoints/rescore.py (--lean none), so pod time goes to sampling only. It needs the whole card: the rollout server goes first.
+if [[ $SMOKE_PROBE_LARGE != 0 ]]; then
+  # Selected inference stages (notes sections 77 and 79). Set 2 crosses model with neutral/refute permission on all
+  # training statements. Rows are scored later on the laptop, so pod time goes to sampling only. The rollout server
+  # goes first: each probe owns the whole card.
   if [[ -n $ROLLOUT_PID ]]; then stop_server "$ROLLOUT_PID"; ROLLOUT_PID=; fi
   wait "$LARGE_DOWNLOAD_PID" || fail "DOWNLOAD_FAILED $GPT_OSS_120B"
   # The stages (ops/pod_pins.env) are independent: a failed one is recorded and the next still runs; the job fails at the
@@ -312,15 +312,15 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   # fetch failed in the xet transfer.
   PROBE_FAILED=()
   for stage in "${PROBE_LARGE_STAGES[@]}"; do
-    read -r effort seconds samples tokens chunk <<< "$stage"
-    name=probe-120b-$effort
+    read -r effort seconds samples tokens chunk stage_set probe_model probe_revision variant tasks name <<< "$stage"
+    [[ $stage_set == "$SMOKE_PROBE_LARGE" ]] || continue
     # A stage that overran is ended by its timeout, which sends TERM and then KILL to its whole process group, vLLM's
     # renamed engine process included. Nothing else is killed here: inside a container nvidia-smi reports host process ids
     # (round 29). A card that still does not come free fails this stage only.
     if ! (wait_card_free "$name"); then PROBE_FAILED+=("$name"); continue; fi
     log "start $name"
     if HF_HUB_OFFLINE=1 in_env probe timeout $((seconds + PROBE_LARGE_EXIT_SECONDS)) python entrypoints/probe_vllm.py --out ~/out/"$name" --lean none \
-         --model "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" --taskset hard --tasks false --max-seconds "$seconds" --samples "$samples" \
+         --model "$probe_model" --revision "$probe_revision" --variant "$variant" --seed "$PROBE_SEED" --taskset hard --tasks "$tasks" --part train --max-seconds "$seconds" --samples "$samples" \
          --max-tokens "$tokens" --max-model-len $((tokens + PROMPT_ROOM_TOKENS)) --chunk-prompts "$chunk" --template-kwargs "{\"reasoning_effort\": \"$effort\"}" > ~/out/"$name".log 2>&1; then
       log "end $name passed"
     else
