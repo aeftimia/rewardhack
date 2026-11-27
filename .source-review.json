@@ -81,7 +81,7 @@
     "path": "src/rewardhack/verifier.py",
     "rule": "py-except-swallow",
     "text": "except subprocess.TimeoutExpired:",
-    "reason": "Verifier timeout is explicitly returned with why=timeout, an INCONCLUSIVE value. The scorer retries within budget, then excludes still-undecided results from training and behavior rates."
+    "reason": "The timeout handler immediately returns an explicit failure record with ok=False, axioms=None and why=timeout. It does not continue into the successful subprocess-output path or invent a proof result. This justification is limited to the visible function's failure reporting."
   },
   {
     "path": "src/rewardhack/verifier.py",

@@ -79,6 +79,20 @@ recommended for future matched comparisons; the running GPT sweep is not
 modified by this Qwen measurement. Equal token ceilings do not equate GPU cost
 or reasoning effort across model families.
 
+On the owner's subsequent instruction, the credential workflow is enforced in
+code: `gate.py ready` authenticates the judge key and performs an S3
+write/read/delete roundtrip before issuing a launch record. Failed checks remove
+any stale record. The driver refuses a changed judge key or an expired receipt.
+The OpenAI check is a non-generating model lookup, not a guarantee of future
+quota or permission to every endpoint; S3 authentication can also expire later.
+RunPod's injected credentials are necessarily checked on the first SSH
+connection by the existing removal-timer proof. No user credential is printed.
+
+The inherited login-shell OpenAI key returned HTTP 401; explicitly sourcing the
+existing `~/.zshrc` loaded the current key and passed authentication. Use that
+same environment for readiness and the driver. Do not silently choose a second
+key or launch from a different, unauthenticated environment.
+
 Reproduce the offline audit from this branch with the shared project Python:
 
 ```sh

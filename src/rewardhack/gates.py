@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .budget import check, read_ledger
+from .launch_credentials import CredentialError, preflight, receipt_problems
 
 RECORD = Path('.tools') / 'launch-ready.json'
 LEDGER = Path('spending') / 'ledger.csv'
@@ -148,6 +149,9 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     """
     root = Path(root)
     problems = []
+    # A refused replacement must not leave an earlier deployable record behind.
+    if (root/RECORD).exists():
+        (root/RECORD).unlink()
     if not re.fullmatch(r'ops/[A-Za-z0-9_-]+\.sh', remote) or not (root/remote).is_file():
         return None, [f'{remote} is not an existing ops/*.sh script']
     unknown = sorted(name for name in settings if not DRIVER_SETTINGS.fullmatch(name))
@@ -178,6 +182,10 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     problems += [f'budget: {reason}' for reason in refused]
     if problems:
         return None, problems
+    try:
+        credentials = preflight(settings)
+    except CredentialError as error:
+        return None, [f'credential preflight: {error}']
     tests = subprocess.run(test_command, cwd=root, capture_output=True, text=True, check=False)
     if tests.returncode != 0:
         tail = '\n    '.join((tests.stdout + tests.stderr).strip().splitlines()[-12:])
@@ -185,7 +193,7 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     record = dict(head=git(root, 'rev-parse', 'HEAD').strip(), ledger_sha256=file_sha256(root/LEDGER), remote=remote,
                   deadline_minutes=deadline, basis=basis.strip(), line=line, hourly_usd=hourly, other_usd=other_usd, worst_case_usd=worst,
                   worst_case_minutes=deadline + overhead, settings=dict(sorted(settings.items())),
-                  written_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
+                  credentials=credentials, written_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
     (root/RECORD).parent.mkdir(parents=True, exist_ok=True)
     (root/RECORD).write_text(json.dumps(record, indent=1) + '\n')
     return record, []
@@ -215,6 +223,13 @@ def launch_problems(root, remote=None, deadline=None, settings=None):
         return [f'there is no launch record. Settle the launch first:\n    {READY}']
     record = json.loads((root/RECORD).read_text())
     problems = []
+    if 'credentials' not in record:
+        problems.append('the launch record has no credential preflight; rerun ready before deploying')
+    else:
+        try:
+            problems += receipt_problems(record['credentials'], record['settings'], os.environ)
+        except CredentialError as error:
+            problems.append(str(error))
     if 'launched_at' in record:
         problems.append(f"the launch record already started a launch at {record['launched_at']}; its budget check counted one")
     if settings is not None and settings != record['settings']:

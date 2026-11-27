@@ -167,7 +167,7 @@ if [[ $JUDGE_KIND == api ]]; then
 # share only cuts each run's allowance, and 4 prompt groups per step make a run's judge use about 4 times larger.
 # Indexed by whether this is a Part 1 job; the inference probe calls no judge, and a probe-only job's single share is unused.
 JUDGE_PROCESSES=(3 $((${#RUNS[@]} > 0 ? ${#RUNS[@]} : 1)))
-JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano
+JUDGE_ARGS=(--judge api --judge-model "$("$PY" -c 'from rewardhack.judge import API_JUDGE_MODEL; print(API_JUDGE_MODEL)')"
             --judge-max-usd "$(awk -v cap="${JUDGE_MAX_USD:?the driver passes JUDGE_MAX_USD}" -v n="${JUDGE_PROCESSES[$((SMOKE_PART_ONE > 0))]}" 'BEGIN { printf "%.4f", cap / n }')")
 else
 # --- Judge server: a small model in a fixed slice of the card, OpenAI-compatible on localhost.
