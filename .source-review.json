@@ -51,7 +51,7 @@
     "path": "src/rewardhack/pilot_runner.py",
     "rule": "py-except-swallow",
     "text": "except subprocess.TimeoutExpired:",
-    "reason": "A TimeoutExpired is handled explicitly rather than reported as success. For the handler whose body returns a result dictionary, that dictionary directly marks timed_out=True and exit_code=None. For the handler whose body calls os.waitpid, this is cleanup after SIGKILL and a bounded Popen.wait; waitpid directly reaps that child when Popen's internal wait lock times out. Each handler's own body provides the distinct timeout handling; neither creates a successful stage result."
+    "reason": "The two handlers are distinct. The execution handler returns timed_out=True and exit_code=None, an explicit failed stage. The cleanup handler handles TimeoutExpired from process.wait(timeout=5) by reaping process.pid: the wait and waitpid use the same process object. SIGKILL was sent to its process group immediately above. Other exceptions are not caught by this handler. This cleanup branch does not fabricate a successful stage result; its purpose is to release the killed child after the Popen wait lock times out."
   },
   {
     "path": "src/rewardhack/pilot_runner.py",
@@ -117,7 +117,7 @@
     "path": "ops/drive_runpod.sh",
     "rule": "sh-errexit-off",
     "text": "set +e",
-    "reason": "Cleanup deliberately keeps running after failures so results can be copied and pod removal attempted. It preserves the remote code and marks copy/removal failures nonzero before returning; disabling errexit cannot turn those failures into success."
+    "reason": "This is an EXIT cleanup function, with the original status captured in code=$? immediately above. set +e deliberately permits later copy and removal attempts even when a logging command fails, instead of aborting cleanup. Copy success is separately tracked by SMALL_COPIED, COPIED and CHECKPOINTS, and the final branches set codes 96, 94 and 95 respectively if a required copy failed while code was zero. Failed removal confirmation sets code=97. finish exits with that recorded code. This exception permits best-effort cleanup sequencing, not suppression of the job or required-copy result."
   },
   {
     "path": "ops/remote_job.sh",

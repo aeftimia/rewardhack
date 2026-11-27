@@ -64,7 +64,7 @@ The baseline does not depend on λ; do not duplicate it for each λ.
 | Model | Prompt | Report | Baseline | λ=0 | λ=0.5 |
 |---|---|---|---|---|---|
 | gpt-oss-20b | neutral | prose | completed | completed | completed |
-| gpt-oss-20b | neutral | typed | completed; backup incomplete | pending | pending |
+| gpt-oss-20b | neutral | typed | completed; final checkpoint unavailable | completed; backups ongoing | deferred |
 | gpt-oss-20b | refute | prose | pending | pending | pending |
 | gpt-oss-20b | refute | typed | pending | pending | pending |
 | Qwen3-32B | neutral | prose | pending | pending | pending |
@@ -77,10 +77,10 @@ latest order is to establish Qwen incrementally: first λ=0, neutral/prose,
 starting with a six-step measuring pass; then the full 60-step run only if it
 fits the cap and the measurements look sound. Next use λ=0.5, neutral/prose to
 establish the trend. Only then consider the other Qwen cells. Leave over-cap
-Qwen runs for the owner's morning reassessment. Eight 20b initial cells remain
+Qwen runs for the owner's morning reassessment. Seven 20b initial cells remain
 under the existing approval; resume only after the backup defect below is fixed.
 
-The eventual table has 24 initial cells, **20 remaining runs**. The new typed
+The eventual table has 24 initial cells, **19 remaining runs**. The new typed
 baseline is completed in `results/runpod-20b-neutral-typed-baseline-retry1-20261126/`.
 Reuse the completed prose baseline and λ=0 in
 `results/runpod-part1-60step-20261126/`, and λ=0.5 in
