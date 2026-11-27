@@ -42,7 +42,7 @@ def test_the_multiples_are_stated_only_in_gates():
 
 
 def test_every_time_limit_in_the_pod_pins_states_its_basis():
-    """The gpt-oss-120b probe's limits live in ops/pod_pins.env, read by the smoke script and the driver, under names the
+    """The inference probe's limits live in ops/pod_pins.env, read by the smoke script and the driver, under names the
     script scan does not match (review round 25): each `*_SECONDS=` there states its basis on the line above."""
     import re
     lines = (ROOT/'ops/pod_pins.env').read_text().splitlines()

@@ -33,20 +33,20 @@ if [[ -n ${SMOKE_PART_ONE+set} ]]; then PART_ONE=$SMOKE_PART_ONE; else PART_ONE=
 # At most three digits: a 20-digit number wraps to a negative index, which bash 4.3+ reads from the end of the table.
 [[ $PART_ONE =~ ^(0|[1-9][0-9]{0,2})$ && -n ${PART_ONE_RUNS[$PART_ONE]+set} ]] || { echo "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to $((${#PART_ONE_RUNS[@]} - 1)))"; exit 2; }
 read -ra PART_ONE_JOB <<< "${PART_ONE_RUNS[$PART_ONE]}"
-if [[ -n ${SMOKE_PROBE_LARGE+set} ]]; then PROBE_LARGE=$SMOKE_PROBE_LARGE; else PROBE_LARGE=0; fi  # unset: no gpt-oss-120b probe
+if [[ -n ${SMOKE_PROBE_LARGE+set} ]]; then PROBE_LARGE=$SMOKE_PROBE_LARGE; else PROBE_LARGE=0; fi  # unset: no inference probe
 [[ $PROBE_LARGE =~ ^(0|[1-9][0-9]{0,2})$ && -n ${PROBE_SET_NAMES[$PROBE_LARGE]+set} ]] || { echo 'SMOKE_PROBE_LARGE must index PROBE_SET_NAMES in ops/pod_pins.env'; exit 2; }
 # A Part 1 job with no runs is the probe alone; without the probe it would do nothing but setup.
 [[ $PART_ONE == 0 || ${#PART_ONE_JOB[@]} -gt 0 || $PROBE_LARGE != 0 ]] || { echo "SMOKE_PART_ONE=$PART_ONE has no training runs: it needs a nonzero SMOKE_PROBE_LARGE stage set"; exit 2; }
 # The probe runs after a Part 1 job's training, on the vLLM path that job already requires.
 [[ $PROBE_LARGE == 0 || $PART_ONE != 0 ]] || { echo 'SMOKE_PROBE_LARGE=1 runs after a Part 1 job: set SMOKE_PART_ONE too'; exit 2; }
-# The job's training model (ops/pod_pins.env). The gpt-oss-120b probe takes one whole card after a one-card job's training.
+# The job's training model (ops/pod_pins.env). The 20b permission probe takes a whole card after a one-card job's training.
 MODEL_INDEX=${PART_ONE_MODEL[$PART_ONE]}
 [[ $PROBE_LARGE == 0 || ${MODEL_GPUS[$MODEL_INDEX]} == 1 ]] || { echo "SMOKE_PROBE_LARGE=1 follows a one-card job; SMOKE_PART_ONE=$PART_ONE trains ${MODEL_REPOS[$MODEL_INDEX]} on ${MODEL_GPUS[$MODEL_INDEX]} cards"; exit 2; }
 # The preflight run's own limits add up to about 150 minutes plus setup (ops/remote_runpod_smoke.sh's header); the script's
 # `# deadline:` line is the floor for every job, so this minimum is held here (notes section 80).
 [[ $REMOTE != ops/remote_runpod_smoke.sh || $PART_ONE != 0 || ! $DEADLINE =~ ^[0-9]+$ || $DEADLINE -ge 170 ]] || { echo 'the preflight run (SMOKE_PART_ONE unset or 0) needs a deadline of at least 170 minutes'; exit 2; }
 if [[ $PART_ONE != 0 ]]; then
-  # A Part 1 job's runs are the whole training (the gpt-oss-120b probe may follow): no preflight probe, no funded-arm runs, and its length and time limit stated, not
+  # A Part 1 job's runs are the whole training (the inference probe may follow): no preflight probe, no funded-arm runs, and its length and time limit stated, not
   # taken from the preflight defaults (12 steps, 60 minutes). ${X+set} tests whether the launch set X (bash 3.2 has no -v).
   # vLLM samples the rollouts and evaluations: without it the runs would use the trainer's own sampler, many times
   # slower, and record a run on the wrong backend (review round 16).
@@ -73,12 +73,10 @@ if [[ $PART_ONE != 0 ]]; then
   # retries (4 x 60 s): 490 s, and the OpenAI client's waits between retries on top (review round 14).
   # cap: 1.5x estimated 540 s
   SCORING_TAIL_SECONDS=810
-  # The gpt-oss-120b probe after training (ops/pod_pins.env): the part of its download's limit the training could not
-  # cover (all of it for the probe-only job), then for each stage a wait for a freed card and the stage's outer limit.
+  # The selected probe stages use the model already fetched during setup; each has its own card wait and outer limit.
   TRAINING_SECONDS=$((${#PART_ONE_JOB[@]} * (SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS)))
   # Before the training, its environment's check (with the kill-after of its timeout).
-  PROBE_LARGE_SECONDS=$((LARGE_DOWNLOAD_SECONDS > TRAINING_SECONDS ? LARGE_DOWNLOAD_SECONDS - TRAINING_SECONDS : 0))
-  PROBE_LARGE_SECONDS=$((PROBE_LARGE_SECONDS + PROBE_ENV_CHECK_SECONDS + KILL_AFTER_SECONDS))
+  PROBE_LARGE_SECONDS=$((PROBE_ENV_CHECK_SECONDS + KILL_AFTER_SECONDS))
   for stage in "${PROBE_LARGE_STAGES[@]}"; do
     read -r _ seconds _ _ _ stage_set _ <<< "$stage"
     [[ $stage_set == "$PROBE_LARGE" ]] || continue
@@ -86,7 +84,7 @@ if [[ $PART_ONE != 0 ]]; then
   done
   RUNS_SECONDS=$((TRAINING_SECONDS + (PROBE_LARGE != 0) * PROBE_LARGE_SECONDS))
   ((DEADLINE*60 >= PART1_SETUP_MINUTES*60 + RUNS_SECONDS)) || {
-    echo "SMOKE_PART_ONE=$PART_ONE needs a deadline of at least $((PART1_SETUP_MINUTES + (RUNS_SECONDS+59)/60)) minutes: setup, ${#PART_ONE_JOB[@]} run(s) of SMOKE_TRAIN_SECONDS each with its scoring tail, and the gpt-oss-120b probe if set"; exit 2;
+    echo "SMOKE_PART_ONE=$PART_ONE needs a deadline of at least $((PART1_SETUP_MINUTES + (RUNS_SECONDS+59)/60)) minutes: setup, ${#PART_ONE_JOB[@]} run(s) of SMOKE_TRAIN_SECONDS each with its scoring tail, and the selected inference probe if set"; exit 2;
   }
 fi
 [[ $REMOTE =~ ^ops/[a-zA-Z0-9_-]+\.sh$ && -f $REMOTE && $DEADLINE =~ ^[1-9][0-9]*$ ]] || { echo 'the remote script must be an existing ops/*.sh and the deadline a whole number of minutes'; exit 2; }

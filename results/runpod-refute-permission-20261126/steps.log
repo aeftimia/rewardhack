@@ -1,0 +1,14 @@
+2026-11-27T02:33:49Z self-test passed: NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 250 GB free
+2026-11-27T02:33:49Z WARNING: no network namespace; Lean runs as an unprivileged user with an empty environment (LEAN_ISOLATION=none)
+2026-11-27T02:33:49Z start lean
+Lean (version 4.19.0, x86_64-unknown-linux-gnu, commit 6caaee842e94, Release)
+2026-11-27T02:33:56Z start install
+2026-11-27T02:34:38Z start download openai/gpt-oss-20b
+2026-11-27T02:36:42Z start download openai/gpt-oss-120b (background)
+2026-11-27T02:36:42Z verifier controls passed
+2026-11-27T02:36:42Z probe skipped (run earlier); training with --max-completion-length 2048
+2026-11-27T02:36:42Z start probe-install
+W1127 02:36:47.672000 1610 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1127 02:36:47.672000 1610 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W1127 02:36:47.672000 1610 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+probe environment: vllm 0.34.0

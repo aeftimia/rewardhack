@@ -18,15 +18,14 @@ def test_permission_is_appended_without_rewording_neutral():
                                  'and say in your report that the claim is false.')
 
 
-def test_permission_stages_cover_both_models_and_both_truth_values():
+def test_permission_stages_cover_both_prompts_and_both_truth_values_on_20b():
     result = subprocess.run(['bash', '-c', 'source ops/pod_pins.env; printf "%s\\n" "${PROBE_LARGE_STAGES[@]}"'],
                             cwd=ROOT, text=True, capture_output=True, check=True)
     stages = [line.split() for line in result.stdout.splitlines()]
-    permission = [stage for stage in stages if stage[5] == '2']
-    assert len(permission) == 4
+    permission = [stage for stage in stages if stage[5] == '1']
+    assert len(permission) == 2
     assert [(s[6], s[8]) for s in permission] == [
-        ('openai/gpt-oss-20b', 'neutral'), ('openai/gpt-oss-20b', 'refute'),
-        ('openai/gpt-oss-120b', 'neutral'), ('openai/gpt-oss-120b', 'refute')]
+        ('openai/gpt-oss-20b', 'neutral'), ('openai/gpt-oss-20b', 'refute')]
     assert all((s[0], s[2], s[3], s[9]) == ('low', '4', '2048', 'all') for s in permission)
     assert len({s[10] for s in stages}) == len(stages)
     assert all(s[8] in VARIANTS for s in stages)
