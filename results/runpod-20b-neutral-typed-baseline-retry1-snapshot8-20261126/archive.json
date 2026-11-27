@@ -1,0 +1,17 @@
+[
+ {
+  "run_id": "20261127T050306Z-runpod-20b-neutral-typed-baseline-retry1-snapshot8-20261126-c59028f4",
+  "uri": "s3://rewardhack-run-archive/20261127T050306Z-runpod-20b-neutral-typed-baseline-retry1-snapshot8-20261126-c59028f4/",
+  "storage_class": "STANDARD_IA",
+  "commit": "c9b5dd1e13a3834f80f9df0b3489c3bfed01129e",
+  "uploaded_at": "2026-11-27T05:09:29.448061+00:00",
+  "sha256": {
+   "launch-commit.txt": "c7c0a74b00fc91a874118417b10e808e9a65fcd52face2c0fd0090063da48d84",
+   "train-baseline/adapter-step8/README.md": "1e62b02d8aae65fecb6762c864cef9581838146be1ebc79675ed2dac6d73e960",
+   "train-baseline/adapter-step8/adapter_config.json": "434f68d77a1daefae4faad6a7da55959fb50ee3833ccf98d25b975b1a47c8732",
+   "train-baseline/adapter-step8/adapter_model.safetensors": "ff041065a7301a11d9b6b7e73c96fe1b1421d1f7bd1dafb5dd45cfbf8790fc0f",
+   "train-baseline/run-settings.json": "a55f4afebdbed2064849fa689f71f234145b0e8f2e1e1f6a729ad02dafe006b5",
+   "train-baseline/tasks.json": "7e17dc99b4bdaf7ed118d3a018e41cdcf323569fa58f391c5c54efa5e2cef5e1"
+  }
+ }
+]

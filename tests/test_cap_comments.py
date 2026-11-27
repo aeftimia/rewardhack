@@ -42,7 +42,7 @@ def test_the_multiples_are_stated_only_in_gates():
 
 
 def test_every_time_limit_in_the_pod_pins_states_its_basis():
-    """The gpt-oss-120b probe's limits live in ops/pod_pins.env, read by the smoke script and the driver, under names the
+    """The inference probe's limits live in ops/pod_pins.env, read by the smoke script and the driver, under names the
     script scan does not match (review round 25): each `*_SECONDS=` there states its basis on the line above."""
     import re
     lines = (ROOT/'ops/pod_pins.env').read_text().splitlines()
@@ -71,5 +71,5 @@ def test_the_pod_pins_have_no_unchecked_limit_and_stage_times_name_checked_ones(
                             check=True, capture_output=True, text=True).stdout.split('\n')[:-1]
     checked = {int(value) for value in re.findall(r'^[A-Z_]+_SECONDS=(\d+)\b', text, re.M)}
     assert stages and all(int(stage.split()[1]) in checked for stage in stages), stages
-    raw = re.search(r'^PROBE_LARGE_STAGES=\((.*)\)$', text, re.M).group(1)
+    raw = re.search(r'^PROBE_LARGE_STAGES=\((.*?)^\)', text, re.M | re.S).group(1)
     assert not re.search(r'"\w+ \d', raw), 'a stage time is written as a number; name a *_SECONDS limit instead'

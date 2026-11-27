@@ -33,20 +33,20 @@ if [[ -n ${SMOKE_PART_ONE+set} ]]; then PART_ONE=$SMOKE_PART_ONE; else PART_ONE=
 # At most three digits: a 20-digit number wraps to a negative index, which bash 4.3+ reads from the end of the table.
 [[ $PART_ONE =~ ^(0|[1-9][0-9]{0,2})$ && -n ${PART_ONE_RUNS[$PART_ONE]+set} ]] || { echo "SMOKE_PART_ONE must index a job in ops/pod_pins.env's PART_ONE_RUNS (0 to $((${#PART_ONE_RUNS[@]} - 1)))"; exit 2; }
 read -ra PART_ONE_JOB <<< "${PART_ONE_RUNS[$PART_ONE]}"
-if [[ -n ${SMOKE_PROBE_LARGE+set} ]]; then PROBE_LARGE=$SMOKE_PROBE_LARGE; else PROBE_LARGE=0; fi  # unset: no gpt-oss-120b probe
-[[ $PROBE_LARGE == 0 || $PROBE_LARGE == 1 ]] || { echo 'SMOKE_PROBE_LARGE must be 0 or 1'; exit 2; }
+if [[ -n ${SMOKE_PROBE_LARGE+set} ]]; then PROBE_LARGE=$SMOKE_PROBE_LARGE; else PROBE_LARGE=0; fi  # unset: no inference probe
+[[ $PROBE_LARGE =~ ^(0|[1-9][0-9]{0,2})$ && -n ${PROBE_SET_NAMES[$PROBE_LARGE]+set} ]] || { echo 'SMOKE_PROBE_LARGE must index PROBE_SET_NAMES in ops/pod_pins.env'; exit 2; }
 # A Part 1 job with no runs is the probe alone; without the probe it would do nothing but setup.
-[[ $PART_ONE == 0 || ${#PART_ONE_JOB[@]} -gt 0 || $PROBE_LARGE == 1 ]] || { echo "SMOKE_PART_ONE=$PART_ONE has no training runs: it is only for SMOKE_PROBE_LARGE=1"; exit 2; }
+[[ $PART_ONE == 0 || ${#PART_ONE_JOB[@]} -gt 0 || $PROBE_LARGE != 0 ]] || { echo "SMOKE_PART_ONE=$PART_ONE has no training runs: it needs a nonzero SMOKE_PROBE_LARGE stage set"; exit 2; }
 # The probe runs after a Part 1 job's training, on the vLLM path that job already requires.
 [[ $PROBE_LARGE == 0 || $PART_ONE != 0 ]] || { echo 'SMOKE_PROBE_LARGE=1 runs after a Part 1 job: set SMOKE_PART_ONE too'; exit 2; }
-# The job's training model (ops/pod_pins.env). The gpt-oss-120b probe takes one whole card after a one-card job's training.
+# The job's training model (ops/pod_pins.env). The 20b permission probe takes a whole card after a one-card job's training.
 MODEL_INDEX=${PART_ONE_MODEL[$PART_ONE]}
 [[ $PROBE_LARGE == 0 || ${MODEL_GPUS[$MODEL_INDEX]} == 1 ]] || { echo "SMOKE_PROBE_LARGE=1 follows a one-card job; SMOKE_PART_ONE=$PART_ONE trains ${MODEL_REPOS[$MODEL_INDEX]} on ${MODEL_GPUS[$MODEL_INDEX]} cards"; exit 2; }
 # The preflight run's own limits add up to about 150 minutes plus setup (ops/remote_runpod_smoke.sh's header); the script's
 # `# deadline:` line is the floor for every job, so this minimum is held here (notes section 80).
 [[ $REMOTE != ops/remote_runpod_smoke.sh || $PART_ONE != 0 || ! $DEADLINE =~ ^[0-9]+$ || $DEADLINE -ge 170 ]] || { echo 'the preflight run (SMOKE_PART_ONE unset or 0) needs a deadline of at least 170 minutes'; exit 2; }
 if [[ $PART_ONE != 0 ]]; then
-  # A Part 1 job's runs are the whole training (the gpt-oss-120b probe may follow): no preflight probe, no funded-arm runs, and its length and time limit stated, not
+  # A Part 1 job's runs are the whole training (the inference probe may follow): no preflight probe, no funded-arm runs, and its length and time limit stated, not
   # taken from the preflight defaults (12 steps, 60 minutes). ${X+set} tests whether the launch set X (bash 3.2 has no -v).
   # vLLM samples the rollouts and evaluations: without it the runs would use the trainer's own sampler, many times
   # slower, and record a run on the wrong backend (review round 16).
@@ -73,19 +73,18 @@ if [[ $PART_ONE != 0 ]]; then
   # retries (4 x 60 s): 490 s, and the OpenAI client's waits between retries on top (review round 14).
   # cap: 1.5x estimated 540 s
   SCORING_TAIL_SECONDS=810
-  # The gpt-oss-120b probe after training (ops/pod_pins.env): the part of its download's limit the training could not
-  # cover (all of it for the probe-only job), then for each stage a wait for a freed card and the stage's outer limit.
+  # The selected probe stages use the model already fetched during setup; each has its own card wait and outer limit.
   TRAINING_SECONDS=$((${#PART_ONE_JOB[@]} * (SMOKE_TRAIN_SECONDS + SCORING_TAIL_SECONDS)))
   # Before the training, its environment's check (with the kill-after of its timeout).
-  PROBE_LARGE_SECONDS=$((LARGE_DOWNLOAD_SECONDS > TRAINING_SECONDS ? LARGE_DOWNLOAD_SECONDS - TRAINING_SECONDS : 0))
-  PROBE_LARGE_SECONDS=$((PROBE_LARGE_SECONDS + PROBE_ENV_CHECK_SECONDS + KILL_AFTER_SECONDS))
+  PROBE_LARGE_SECONDS=$((PROBE_ENV_CHECK_SECONDS + KILL_AFTER_SECONDS))
   for stage in "${PROBE_LARGE_STAGES[@]}"; do
-    read -r _ seconds _ <<< "$stage"
+    read -r _ seconds _ _ _ stage_set _ <<< "$stage"
+    [[ $stage_set == "$PROBE_LARGE" ]] || continue
     PROBE_LARGE_SECONDS=$((PROBE_LARGE_SECONDS + CARD_FREE_SECONDS + seconds + PROBE_LARGE_EXIT_SECONDS + KILL_AFTER_SECONDS))
   done
-  RUNS_SECONDS=$((TRAINING_SECONDS + PROBE_LARGE * PROBE_LARGE_SECONDS))
+  RUNS_SECONDS=$((TRAINING_SECONDS + (PROBE_LARGE != 0) * PROBE_LARGE_SECONDS))
   ((DEADLINE*60 >= PART1_SETUP_MINUTES*60 + RUNS_SECONDS)) || {
-    echo "SMOKE_PART_ONE=$PART_ONE needs a deadline of at least $((PART1_SETUP_MINUTES + (RUNS_SECONDS+59)/60)) minutes: setup, ${#PART_ONE_JOB[@]} run(s) of SMOKE_TRAIN_SECONDS each with its scoring tail, and the gpt-oss-120b probe if set"; exit 2;
+    echo "SMOKE_PART_ONE=$PART_ONE needs a deadline of at least $((PART1_SETUP_MINUTES + (RUNS_SECONDS+59)/60)) minutes: setup, ${#PART_ONE_JOB[@]} run(s) of SMOKE_TRAIN_SECONDS each with its scoring tail, and the selected inference probe if set"; exit 2;
   }
 fi
 [[ $REMOTE =~ ^ops/[a-zA-Z0-9_-]+\.sh$ && -f $REMOTE && $DEADLINE =~ ^[1-9][0-9]*$ ]] || { echo 'the remote script must be an existing ops/*.sh and the deadline a whole number of minutes'; exit 2; }
@@ -117,10 +116,12 @@ fi
 # 180 s the pod can be gone before the copy is done; at 0 it is gone before the next look. The runner's own default is 600.
 # The grace is billed time after the job, and the launch record's budget check counts all of it. The ceiling is the runner's
 # default, except for a pod kept for a relaunch (KEEP_POD=1): there the grace must also hold the copy of several GB of
-# checkpoints, sizing the next launch from the results, `gate.py ready` (about 2 minutes of tests) and the relaunch itself.
+# checkpoints. Size this in the original launch; never depend on a new gate completing during grace.
 if [[ -n ${KEEP_POD+set} ]]; then KEEP=$KEEP_POD; else KEEP=0; fi  # unset: the pod is removed after the copy
 [[ $KEEP == 0 || $KEEP == 1 ]] || { echo 'KEEP_POD must be 0 or 1'; exit 2; }
-GRACE_CEILINGS=(600 1800)  # indexed by KEEP
+# cap: 1.5x estimated 90 min (up to 10.8 GB outstanding at 2 MB/s, including two optimizer checkpoints)
+KEPT_COPY_SECONDS=8100
+GRACE_CEILINGS=(600 "$KEPT_COPY_SECONDS")  # indexed by KEEP; the gate budgets the selected grace in full
 GRACE_FLOOR=180 GRACE_CEILING=${GRACE_CEILINGS[$KEEP]}
 if [[ -n ${AUTOSTOP_GRACE_SECONDS:-} ]]; then
   [[ $AUTOSTOP_GRACE_SECONDS =~ ^[1-9][0-9]*$ && $AUTOSTOP_GRACE_SECONDS -ge $GRACE_FLOOR && $AUTOSTOP_GRACE_SECONDS -le $GRACE_CEILING ]] || {
@@ -129,6 +130,9 @@ if [[ -n ${AUTOSTOP_GRACE_SECONDS:-} ]]; then
   }
 fi
 # SMOKE_* settings for the remote smoke script are passed through, and only if they are plain numbers.
+if [[ -n ${SMOKE_SAVE_EVERY+set} && ! $SMOKE_SAVE_EVERY =~ ^[1-9][0-9]{0,8}$ ]]; then
+  echo 'SMOKE_SAVE_EVERY must be a positive integer of at most nine digits'; exit 2
+fi
 # Only the names the chosen remote script itself mentions are accepted, read from its text so the list cannot drift: a misspelt
 # name, or any SMOKE_* setting with a script that reads none, would be forwarded and ignored.
 SMOKE_READ=$(awk '{ while (match($0, /SMOKE_[A-Z_]+/)) { print substr($0, RSTART, RLENGTH); $0 = substr($0, RSTART+RLENGTH) } }' "$REMOTE" | sort -u | tr '\n' ' ')
@@ -167,10 +171,22 @@ SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$
 # two on the pod; with expert LoRA each is about 3 GB). Interim copies leave them out; the final copy takes the ones left.
 # The vLLM hand-over adapter (rewritten every step) and the reload-check adapter are scratch, about 1 GB each: never copied.
 # Enter the owned directory before checking it, so a later rename cannot redirect the copy.
-pull() { rsync -az --partial --timeout=60 -e "${SSH[*]}" --rsync-path="$OWN_OUTPUT && rsync" --exclude='adapter-rollout/' --exclude='adapter-sync-check/' "$@" "root@$HOST:./" "$RESULTS/"; }
-# Sizes in the final copy, smallest first: the pod removes itself at most 10 minutes after the job ends.
+# shellcheck disable=SC2329  # called from the EXIT-trap cleanup function
+pull() { "${PULL[@]}" "$@" "root@$HOST:./" "$RESULTS/"; }
+# Sizes in the final copy, smallest first, within the grace budgeted before deployment.
 SMALL=(--exclude='adapter*/' --exclude='trainer/checkpoint-*/')  # logs, rows, summaries, evaluations
 ADAPTERS=(--exclude='trainer/checkpoint-*/')                      # and the saved adapters, about 1 GB each
+INTERIM_PID=''
+stop_interim() {
+  [[ -n $INTERIM_PID ]] || return 0
+  if kill -0 "$INTERIM_PID" 2>> "$RESULTS/interim-copy.log"; then
+    # timeout forwards TERM to its process group (rsync and SSH), then enforces kill-after.
+    if ! kill -TERM "$INTERIM_PID" 2>> "$RESULTS/interim-copy.log"; then echo 'interim cancellation failed; see interim-copy.log'; fi
+  fi
+  if wait "$INTERIM_PID"; then echo 'interim copy completed'
+  else echo 'interim copy stopped; see interim-copy.log; partial files will be resumed by the final copy'; fi
+  INTERIM_PID=''
+}
 say() { echo "$*" >> "$RESULTS/driver.log"; echo "$*"; }
 # The results are only on the pod until this machine copies them, and the pod removes itself a grace period after the job ends:
 # a laptop that goes to sleep in between loses them. macOS: hold off idle sleep for as long as this script lives (closing the lid
@@ -199,6 +215,8 @@ finish() {
   # From here nothing may stop this function: with the terminal gone a plain `echo` fails, and under `set -e` that
   # ended the cleanup before the copy and the removal. Every step below reports its own failure.
   set +e
+  # No concurrent writer may race the final copy or hold it behind a long adapter transfer.
+  stop_interim
   # Only a confirmed receipt authorizes copying out/. Before any launch was sent, ask whether the pod holds
   # earlier results so cleanup can preserve them. Take the last line to ignore a login-shell banner.
   HELD=unknown
@@ -218,8 +236,7 @@ finish() {
     COPIED=1 CHECKPOINTS=0 SMALL_COPIED=1
   else
   say "copying results"
-  # The small files, then the adapters, then the resumable checkpoints (several GB with expert LoRA): the pod removes
-  # itself at most 10 minutes after the job ends, and a slow copy must cost the checkpoints, never the results.
+  # Small files first, then adapters and resumable checkpoints within the pre-budgeted copy window.
   # Results and checkpoints are recorded apart, so that a failed checkpoint copy is not reported as lost results.
   COPIED=0 CHECKPOINTS=0 SMALL_COPIED=0
   for attempt in 1 2 3; do
@@ -315,6 +332,8 @@ rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --excl
 # file that the remote script reads once and deletes; it never appears in a command line or in the repo.
 LAUNCH_ID="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM-$RANDOM"
 OWN_OUTPUT="cd out && [ \"\$(cat LAUNCH_ID)\" = '$LAUNCH_ID' ]"
+PULL=(rsync -az --stats --partial-dir=.rsync-partial --timeout=60 -e "${SSH[*]}" --rsync-path="$OWN_OUTPUT && rsync"
+      --exclude='adapter-rollout/' --exclude='adapter-sync-check/' --exclude='.rsync-partial/')
 printf '%s\n' "$LAUNCH_ID" > "$RESULTS/launch-id.txt"
 if [[ ${FORWARD_JUDGE_KEY:-} == 1 && $REMOTE == ops/remote_runpod_smoke.sh && $JUDGE_KIND == api ]]; then
   printf '%s' "${OPENAI_API_KEY:?FORWARD_JUDGE_KEY=1 needs OPENAI_API_KEY}" | on_pod "umask 077; cat > ~/.judge_key.$LAUNCH_ID"
@@ -354,7 +373,13 @@ while ((SECONDS < END)); do
     echo "remote finished with exit=$code"
     exit "$code"
   fi
-  if ((SECONDS % 300 < 60)) && ! pull "${ADAPTERS[@]}"; then echo 'interim copy failed; will try again'; fi
+  if [[ -n $INTERIM_PID ]] && ! kill -0 "$INTERIM_PID" 2>> "$RESULTS/interim-copy.log"; then stop_interim; fi
+  if [[ -z $INTERIM_PID ]] && ((SECONDS % 300 < 60)); then
+    # A progressing transfer must not block completion polling. timeout owns its process group,
+    # so finish can stop both rsync and SSH before copying final records and checkpoints.
+    timeout --kill-after="$KILL_AFTER_SECONDS" "$((DEADLINE*60))" "${PULL[@]}" "${ADAPTERS[@]}" "root@$HOST:./" "$RESULTS/" >> "$RESULTS/interim-copy.log" 2>&1 &
+    INTERIM_PID=$!
+  fi
 done
 echo 'driver deadline reached; the remote timeout and the pod removal timer are armed'
 exit 1

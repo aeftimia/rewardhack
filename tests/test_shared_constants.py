@@ -52,16 +52,31 @@ def test_every_part_one_job_names_known_arms_and_numeric_penalties():
     """A typo in ops/pod_pins.env's PART_ONE_RUNS would surface only on the pod, after setup was paid (review round 25)."""
     import subprocess
     from rewardhack.outcomes import ARMS
+    from rewardhack.prompts import VARIANTS
+    from rewardhack.reporting import MODES
     rows = subprocess.run(['bash', '-c', 'source ops/pod_pins.env; printf "%s\\n" "${PART_ONE_RUNS[@]}"'], cwd=ROOT,
                           check=True, capture_output=True, text=True).stdout.split('\n')[:-1]
     assert rows[0] == '' and len(rows) >= 2  # row 0 is the preflight run, not a Part 1 job
     for row in rows[1:]:
         names = []
         for run in row.split():
-            name, arm, penalty = run.split(':')
+            name, arm, penalty, variant, report = run.split(':')
             assert re.fullmatch(r'[a-z0-9]+', name) and arm in ARMS and 0 <= float(penalty) <= 1, run
+            assert variant in VARIANTS and report in MODES, run
             names.append(name)
         assert len(names) == len(set(names)), row
+
+    # The approved missing 20b cells cover the three rewards across the three new
+    # prompt/format combinations exactly once. Completed neutral/prose cells stay out.
+    from itertools import product
+    pending = [tuple(row.split(':')[1:]) for row in rows[5:]]
+    expected = {(arm, penalty, variant, report)
+                for (arm, penalty), (variant, report) in product(
+                    [('baseline', '0'), ('report_correct', '0'), ('report_correct', '0.5')],
+                    [('neutral', 'typed'), ('refute', 'prose'), ('refute', 'typed')])}
+    assert len(pending) == len(set(pending)) == 9
+    assert set(pending) == expected
+    assert rows[4] == 'lambda0:report_correct:0:neutral:prose'
 
 
 def test_the_runner_kills_after_the_pinned_wait():

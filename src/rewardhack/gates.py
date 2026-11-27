@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .budget import check, read_ledger
 from ._hashing import file_sha256
+from .launch_credentials import CredentialError, preflight, receipt_problems
 
 RECORD = Path('.tools') / 'launch-ready.json'
 LEDGER = Path('spending') / 'ledger.csv'
@@ -123,6 +124,11 @@ def grace_seconds(settings):
     return int(settings['AUTOSTOP_GRACE_SECONDS'])
 
 
+def driver_settings(environment):
+    """Settings controlled by the launch record, selected from CLI input or the actual driver environment."""
+    return {name: value for name, value in sorted(environment.items()) if DRIVER_SETTINGS.fullmatch(name)}
+
+
 def driver_check(root, remote, deadline, settings):
     """Run the driver's own validation of this launch, with nothing deployed. Returns the reasons it refuses."""
     driver = root/'ops'/'drive_runpod.sh'
@@ -144,9 +150,13 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     """
     root = Path(root)
     problems = []
+    # A refused replacement must not leave an earlier deployable record behind.
+    if (root/RECORD).exists():
+        (root/RECORD).unlink()
     if not re.fullmatch(r'ops/[A-Za-z0-9_-]+\.sh', remote) or not (root/remote).is_file():
         return None, [f'{remote} is not an existing ops/*.sh script']
-    unknown = sorted(name for name in settings if not DRIVER_SETTINGS.fullmatch(name))
+    allowed_settings = driver_settings(settings)
+    unknown = sorted(settings.keys() - allowed_settings.keys())
     if unknown:
         return None, [f"not settings ops/drive_runpod.sh reads: {', '.join(unknown)}"]
     floor = re.search(r'^# deadline: (\d+)\b', (root/remote).read_text(), re.M)
@@ -174,14 +184,18 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     problems += [f'budget: {reason}' for reason in refused]
     if problems:
         return None, problems
+    try:
+        credentials = preflight(settings)
+    except CredentialError as error:
+        return None, [f'credential preflight: {error}']
     tests = subprocess.run(test_command, cwd=root, capture_output=True, text=True, check=False)
     if tests.returncode != 0:
         tail = '\n    '.join((tests.stdout + tests.stderr).strip().splitlines()[-12:])
         return None, [f"the tests do not pass ({' '.join(test_command)} exited {tests.returncode}):\n    {tail}"]
     record = dict(head=git(root, 'rev-parse', 'HEAD').strip(), ledger_sha256=file_sha256(root/LEDGER), remote=remote,
                   deadline_minutes=deadline, basis=basis.strip(), line=line, hourly_usd=hourly, other_usd=other_usd, worst_case_usd=worst,
-                  worst_case_minutes=deadline + overhead, settings=dict(sorted(settings.items())),
-                  written_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
+                  worst_case_minutes=deadline + overhead, settings=allowed_settings,
+                  credentials=credentials, written_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
     (root/RECORD).parent.mkdir(parents=True, exist_ok=True)
     (root/RECORD).write_text(json.dumps(record, indent=1) + '\n')
     return record, []
@@ -211,6 +225,13 @@ def launch_problems(root, remote=None, deadline=None, settings=None):
         return [f'there is no launch record. Settle the launch first:\n    {READY}']
     record = json.loads((root/RECORD).read_text())
     problems = []
+    if 'credentials' not in record:
+        problems.append('the launch record has no credential preflight; rerun ready before deploying')
+    else:
+        try:
+            problems += receipt_problems(record['credentials'], record['settings'], os.environ)
+        except CredentialError as error:
+            problems.append(str(error))
     if 'launched_at' in record:
         problems.append(f"the launch record already started a launch at {record['launched_at']}; its budget check counted one")
     if settings is not None and settings != record['settings']:
@@ -234,7 +255,7 @@ def launch_problems(root, remote=None, deadline=None, settings=None):
 
 def driver_launch(root, remote, deadline, environment):
     """The driver's own check, made before it reaches for a pod. Returns the reasons to refuse; a launch let through is marked as started."""
-    settings = {name: value for name, value in environment.items() if DRIVER_SETTINGS.fullmatch(name)}
+    settings = driver_settings(environment)
     problems = launch_problems(root, remote, deadline, settings)
     if not problems:
         mark_launched(root)
@@ -350,6 +371,7 @@ def remote_problems(root, settings, words):
 def local_problems(root, words):
     name = os.path.basename(words[0])
     if name in STARTS_A_MACHINE and STARTS_A_MACHINE[name](words):
+        # dry-ok: src/rewardhack/gates.py::driver_launch | A provider create command has no job script, deadline or settings to compare. test_a_job_with_the_timer_and_a_new_machine_still_need_the_record exercises this provision-only check. test_a_launch_needs_a_record_for_this_script_deadline_and_settings requires the later driver call to reject mismatches before starting the actual job.
         problems = launch_problems(root)
         return problems and ['a machine that bills is started only once its job can start at once:'] + problems
     return judge_problems(words)

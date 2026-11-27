@@ -124,7 +124,9 @@ def _prove(lean, proposition, proof, timeout, options=''):
     found = REPORT.fullmatch(reports[0]['data'].strip()) if len(reports) == 1 and reports[0]['severity'] == 'information' else None
     if not found or found['name'] != name:
         return {'ok': False, 'axioms': None, 'why': 'no axiom report', 'diagnostic': diagnostic}
-    axioms = {a.strip() for a in (found['axioms'] or '').split(',') if a.strip()}
+    if found['axioms'] is None:  # The full match selected the explicit no-axioms sentence.
+        return {'ok': True, 'axioms': [], 'why': ''}
+    axioms = {a.strip() for a in found['axioms'].split(',') if a.strip()}
     extra = sorted(axioms - ALLOWED_AXIOMS)
     return {'ok': not extra, 'axioms': sorted(axioms), 'why': f'forbidden axioms {extra}' if extra else ''}
 

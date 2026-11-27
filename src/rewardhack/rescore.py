@@ -26,7 +26,9 @@ def scored_as_cut_off(old):
         if old['termination_schema'] != 'cutoff-v1' or type(old['truncated']) is not bool:
             raise ValueError('versioned termination needs cutoff-v1 and a Boolean truncated flag')
         return old['truncated']
-    return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None
+    if 'truncated' not in old or 'genuine_why' not in old:
+        return None  # Historical rows without termination evidence remain explicitly unknown.
+    return True if old['truncated'] and old['genuine_why'] == 'truncated' else None
 
 
 def stored_reading(old):
@@ -59,6 +61,7 @@ def rescore_file(path, lean, tasks=None):
         replay = (lambda row, old=old: stored_reading(old)) if mode == 'prose' and old.get('claim') is not None else None
         # Only report_correct uses a penalty; its absence cannot be interpreted as lambda=0.
         penalty = old['penalty'] if old['arm'] == 'report_correct' else 0.0
+        # dry-ok: src/rewardhack/formal_audit.py::audit_row | holdout_collection.collect stores the exact Boolean used to score each fresh holdout, without termination_schema. Its formal audit must replay that flag. Historical experiment rows used the same field for looser metadata; test_rescore_reads_the_answer_under_a_legacy_cutoff_flag requires a complete legacy answer to retain reward 1.
         new = score(lean, tasks[old['task_id']], old['raw'], old['arm'], penalty, replay,
                     truncated=scored_as_cut_off(old), report_mode=mode)
         new.update({k: old[k] for k in CARRIED if k in old})

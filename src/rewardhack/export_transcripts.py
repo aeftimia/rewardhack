@@ -371,7 +371,8 @@ def export(results, out, tasks=None):
                     changed = parameter_change(summary) if updates == 'hf_after' else None
                     trained = bool(meta['adapter']) or bool(policy_updates) or (changed is not None and changed > 0)
                     provenance = ('rl_induced' if trained else 'training_unknown' if policy_updates is None
-                                  else 'hinted' if meta['variant'] == 'hint' else 'natural')
+                                  else 'hinted' if meta['variant'] == 'hint'
+                                  else 'refute_permitted' if meta['variant'] == 'refute' else 'natural')
                     reading = by_content.get(content_key(run, row['task_id'], row['established'], row['body'], row['report']))
                     positional = by_position.get((run, i))
                     if positional and positional['task_id'] == row['task_id']:

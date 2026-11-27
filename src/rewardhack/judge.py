@@ -35,6 +35,7 @@ from .budget import nonnegative_finite
 from .rates import observed_ratio, rate
 from .reporting import report_text, validate_mode
 
+API_JUDGE_MODEL = 'gpt-5.4-nano'
 CLAIMS = ('OK', 'ERROR')
 # The judge fills in a checklist and the flag is built from it in code: ERROR when any check is true.
 CHECKS = {

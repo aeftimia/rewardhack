@@ -14,12 +14,43 @@ import pytest
 import yaml
 
 from rewardhack import gates
+from rewardhack import launch_credentials
+from datetime import datetime, timezone
 
 PROJECT = Path(__file__).resolve().parent.parent
 GATE = ['bash', str(PROJECT / 'ops' / 'gate.sh')]
 PASS, FAIL = [sys.executable, '-c', 'pass'], [sys.executable, '-c', 'raise SystemExit("3 failed")']
 DRIVER = 'bash ops/drive_runpod.sh 1.2.3.4 22 ops/remote_runpod_smoke.sh results/x 60'
 TERM = 'ZEBRA'
+
+
+@pytest.fixture(autouse=True)
+def authenticated_services(monkeypatch):
+    """Gate plumbing tests use a receipt; actual authentication failures have their own tests."""
+    monkeypatch.setenv('OPENAI_API_KEY', 'test-only-judge-key')
+    monkeypatch.setattr(gates, 'preflight', lambda settings: dict(
+        checked_at=datetime.now(timezone.utc).isoformat(),
+        judge_sha256=launch_credentials.judge_fingerprint(settings, os.environ),
+        archive_bucket=launch_credentials.BUCKET, archive_region=launch_credentials.REGION))
+
+
+def test_failed_authentication_removes_old_launch_record(repo, monkeypatch):
+    assert settle(repo)[1] == []
+    def reject(settings):
+        raise gates.CredentialError('OpenAI judge authentication failed: HTTP 401')
+    monkeypatch.setattr(gates, 'preflight', reject)
+    record, refused = settle(repo)
+    assert record is None and 'HTTP 401' in refused[0]
+    assert not (repo/gates.RECORD).exists()
+
+
+def test_changed_judge_key_refuses_launch_without_consuming_record(repo, monkeypatch):
+    settings = dict(FORWARD_JUDGE_KEY='1')
+    assert settle(repo, settings=settings, other_usd=1)[1] == []
+    monkeypatch.setenv('OPENAI_API_KEY', 'different-test-only-key')
+    refused = gates.driver_launch(repo, 'ops/remote_runpod_smoke.sh', 60, settings)
+    assert any('key differs' in reason for reason in refused)
+    assert 'launched_at' not in json.loads((repo/gates.RECORD).read_text())
 
 
 def run(repo, *args):

@@ -1,0 +1,73 @@
+{
+  "completed_cells": [
+    {
+      "cell": "neutral/prose baseline",
+      "path": "/Users/aeftimia/Rapid Grant Reward Hacking/results/runpod-part1-60step-20261126/train-baseline",
+      "steps": 60,
+      "completion_limit": 2048,
+      "rollouts": 960,
+      "truncated": 6,
+      "elapsed_seconds": 2689.511344216997,
+      "hourly_usd": 2.71,
+      "compute_time_usd": 2.024604373007795,
+      "judge_usd": 0.2999423
+    },
+    {
+      "cell": "neutral/prose lambda0",
+      "path": "/Users/aeftimia/Rapid Grant Reward Hacking/results/runpod-part1-60step-20261126/train-lambda0",
+      "steps": 60,
+      "completion_limit": 2048,
+      "rollouts": 960,
+      "truncated": 2,
+      "elapsed_seconds": 2775.408573060995,
+      "hourly_usd": 2.71,
+      "compute_time_usd": 2.089265898054249,
+      "judge_usd": 0.29631799999999997
+    },
+    {
+      "cell": "neutral/prose lambda05",
+      "path": "/Users/aeftimia/Rapid Grant Reward Hacking/results/runpod-part1-lambda05-20261126/train-lambda05",
+      "steps": 60,
+      "completion_limit": 2048,
+      "rollouts": 960,
+      "truncated": 59,
+      "elapsed_seconds": 2437.1056594860274,
+      "hourly_usd": 2.72,
+      "compute_time_usd": 1.8413687205005542,
+      "judge_usd": 0.29266899999999996
+    },
+    {
+      "cell": "neutral/typed baseline",
+      "path": "/private/tmp/rewardhack-refute-permission/results/runpod-20b-neutral-typed-baseline-retry1-20261126/train-baseline",
+      "steps": 60,
+      "completion_limit": 2048,
+      "rollouts": 960,
+      "truncated": 1,
+      "elapsed_seconds": 2083.5855446439236,
+      "hourly_usd": 2.725,
+      "compute_time_usd": 1.5771585025429702,
+      "judge_usd": 0
+    },
+    {
+      "cell": "neutral/typed lambda0",
+      "path": "/private/tmp/rewardhack-refute-permission/results/runpod-20b-neutral-typed-lambda0-20261127/train-lambda0",
+      "steps": 60,
+      "completion_limit": 2048,
+      "rollouts": 960,
+      "truncated": 1,
+      "elapsed_seconds": 2035.3971213670447,
+      "hourly_usd": 2.725,
+      "compute_time_usd": 1.5406825432569993,
+      "judge_usd": 0
+    }
+  ],
+  "direct_run_plus_judge_usd": 9.962009337362566,
+  "associated_gpu_ledger_usd": 10.67,
+  "associated_judge_ledger_usd": 0.8899999999999999,
+  "associated_cost_caveat": "First four cells only: includes setup, transfer and shared 120b probe; not all attributable to training or token cap. Fifth cell pod bill pending weight transfers.",
+  "qwen_aborted_gpu_upper_usd": 1.73,
+  "qwen_aborted_judge_upper_usd": 0.25,
+  "unrelated_failed_gpu_placement_usd": 0.19,
+  "pending_pod_bill": "neutral/typed lambda0 at 2048 completed; direct runtime included, full pod ledger pending transfer completion",
+  "rerun_status": "No blanket rerun authorized. Historical costs are anchors, not measured 8192 costs; early policy learning may change."
+}

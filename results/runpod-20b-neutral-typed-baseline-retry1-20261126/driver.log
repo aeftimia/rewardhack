@@ -1,0 +1,8 @@
+launch receipt confirmed: following this job
+copying results
+copy attempt 1 failed
+copy attempt 2 failed
+copy attempt 3 failed
+FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here
+could not reach the pod to delete this launch's staged judge key
+the pod no longer answers (ssh error above): it has removed itself on its timer, or the connection failed and its timer (armed 2026-11-27T04:47:42Z, at most the provisional 15 minutes before the job's own replaces it) removes it. Confirm in the RunPod console

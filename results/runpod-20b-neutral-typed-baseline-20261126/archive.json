@@ -1,0 +1,25 @@
+[
+ {
+  "run_id": "20261127T044225Z-runpod-20b-neutral-typed-baseline-20261126-d4018711",
+  "uri": "s3://rewardhack-run-archive/20261127T044225Z-runpod-20b-neutral-typed-baseline-20261126-d4018711/",
+  "storage_class": "STANDARD_IA",
+  "commit": "f5eb13ab596cfaf3c19e8d89ed146f61dfba3ba9",
+  "uploaded_at": "2026-11-27T04:42:28.474584+00:00",
+  "sha256": {
+   "DONE": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "EXIT_CODE": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+   "LAUNCH_ID": "27bad3ce0a65eeb4b264212a242eff32f03d39e5b70a84e088e250f986dff5ec",
+   "autostop.log": "aabb0c59f1effe25ccd31350dce2699cf33ba1275a6c7e2d0a2a3276f5ad9bbe",
+   "cancellation.json": "41f46537bdaf79b646c8330fa426c364dda44758549caa0b4d2edccd2448a100",
+   "driver-exit.txt": "7e49c42dd1617265ea1d2ad7235ed7bf37e10beb45571d4d2d8fda4dce223e66",
+   "driver.log": "1e70a312ac61662977ccba077c93a0905668463fcac2ad3463c5e71a86d6ec48",
+   "launch-commit.txt": "32b3986d493a14ae37e95a240006ce9920018021ecadb43694c43617a9933d72",
+   "launch-id.txt": "27bad3ce0a65eeb4b264212a242eff32f03d39e5b70a84e088e250f986dff5ec",
+   "remote.log": "37b378f44bd6f673f903a4da551712f5b61865468380591db1d31b9141f55bab",
+   "ssh-poll.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "ssh-wait.log": "956a37532b2f7ef72f72142488c96160820a50b29c60417354005deb31175597",
+   "started-at.txt": "08d542a7d9a577540c9e9e3932c8ff892eacb8edcfd9080ff7e2311797536194",
+   "steps.log": "765985e8b1ff7676f328b3f6965196a7af0acff65273267ce90f581578764ffc"
+  }
+ }
+]

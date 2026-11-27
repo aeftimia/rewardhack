@@ -1,0 +1,35 @@
+[
+ {
+  "run_id": "20261127T201156Z-runpod-qwen-16384-inference-20261127-b6ffec60",
+  "uri": "s3://rewardhack-run-archive/20261127T201156Z-runpod-qwen-16384-inference-20261127-b6ffec60/",
+  "storage_class": "STANDARD_IA",
+  "commit": "bf8448628bfb1a11e8bcefff4c74011f1b210ecd",
+  "uploaded_at": "2026-11-27T20:15:11.661328+00:00",
+  "sha256": {
+   "DONE": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "EXIT_CODE": "9d9b18720961e9b4689fd763b85e7b6f36160ccd3a8a1c9ddc5103bb0f66c396",
+   "LAUNCH_ID": "33483f07e406c4bf7c973fe4630e1266e370cfa7efdf18899b0b22c170f55ce9",
+   "autostop.log": "4753250270f74af5c357f99c4973d74db18241b2f4f3da6094525930a33e0ea6",
+   "download-Qwen3-32B.log": "7f0c708e0561b5e2940dfbad3e3cc72c117a41295346fa3b57678eea37f44280",
+   "driver-exit.txt": "734ae37251368593544dd575d7a28804fa7737a12eea15c40e901f0722c2227c",
+   "driver.log": "1e70a312ac61662977ccba077c93a0905668463fcac2ad3463c5e71a86d6ec48",
+   "inference.log": "4e4806f31fd9526859702fe1241e9892fa4daba7de65ac7c023d6c4801fe7e41",
+   "inference/responses.jsonl": "8e20771f545a983714cd14b1ccddbc2d5dc08415c54cf1472a622d85e5acdabe",
+   "inference/rows.jsonl": "84369189c2b033af2541860ef3202262da20cdbdb6021bbfd5842456327cec11",
+   "inference/summary.json": "58ef113371f7b1d28f164f28dc1ced438951d5dc54dddca8b9b832481d1d7dfb",
+   "inference/tasks.json": "2d36aade266bb88d3afb2aa893d2f9763e7f5afb173bc54b964150d2404db6ab",
+   "install-probe.log": "bfdc0898bd5fb91fbc2318c4a9060d6c2a097383d506aefbcd810226df0dda06",
+   "install-uv.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "interim-copy.log": "c3ba74e9b4801e07eecec693bc5f64c9ca2e60c4cf7c0ecde54c1c3350d360c1",
+   "launch-commit.txt": "5c0d3e5471b4f32384cb198a78118d49fcffde3d40aa83ffc35f9faebf7592df",
+   "launch-id.txt": "33483f07e406c4bf7c973fe4630e1266e370cfa7efdf18899b0b22c170f55ce9",
+   "pip-freeze-probe.txt": "515580b8ed686dd50eee4b65f51c64ff0e49b8297012c8d0b3a733c1bdc094af",
+   "remote.log": "63f4c018296575400f63b34e22876c96316b2d87edf9edb43112c5129467182b",
+   "rollout-server.log": "8170f94cc04aceb174cdb127946e64632ca76410b262634147120d4763d7be8c",
+   "ssh-poll.log": "99404ebf45d6c25e9d636d17244d2fe0825a4935e7f2bec7c797406188f528da",
+   "ssh-wait.log": "cef1746432f74c1c046024f4341c98ea82a4defd43a55d623b50aba68795c6f7",
+   "started-at.txt": "664940ff046c40abc47a24361168151c7923f071427fe5c0db3e2e0f2f306b96",
+   "steps.log": "6d06c356f59fcef484252516d9ce0ea5b35bcec51e8a7750441858db00bca15d"
+  }
+ }
+]

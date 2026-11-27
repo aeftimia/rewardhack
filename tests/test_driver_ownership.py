@@ -20,7 +20,8 @@ def drive_with_ownership_change(tmp_path, change):
     remote_bin.mkdir()
     destination = tmp_path/'results'
     executable(local_bin/'sleep', 'exit 0\n')
-    executable(local_bin/'timeout', TIMEOUT_STUB)
+    if change != 'slow-copy':
+        executable(local_bin/'timeout', TIMEOUT_STUB)
     executable(local_bin/'ssh', '''
 command=${!#}
 printf '%s\\n' "$command" >> "$POD/ssh-calls"
@@ -29,9 +30,12 @@ if [[ $command == *--arm-only* ]]; then exit 0; fi
 if [[ $command == *nohup* ]]; then
   read -r token < "$DESTINATION/launch-id.txt"
   printf '%s\\n' "$token" > "$POD/out/LAUNCH_ID"
-  printf '0\\n' > "$POD/out/EXIT_CODE"
+  if [[ $CHANGE != slow-copy ]]; then printf '0\\n' > "$POD/out/EXIT_CODE"; fi
   printf 'own rows\\n' > "$POD/out/rows.jsonl"
   exit 0
+fi
+if [[ $CHANGE == slow-copy && $command == *'cat EXIT_CODE'* && -f $POD/interim-started ]]; then
+  printf '0\\n' > "$POD/out/EXIT_CODE"
 fi
 cd "$POD"
 export HOME="$POD" PATH="$REMOTE_BIN:$PATH"
@@ -45,6 +49,19 @@ fi
 for arg in "$@"; do
   if [[ $arg == --rsync-path=* ]]; then
     command=${arg#--rsync-path=}
+    if [[ $CHANGE == slow-copy && ! -f $POD/interim-started ]]; then
+      touch "$POD/interim-running" "$POD/interim-started"
+      trap 'rm "$POD/interim-running"; touch "$POD/interim-stopped"' EXIT
+      # Continuous progress would defeat an inactivity timeout. Completion must
+      # still be observed and cancel this transfer before final copying begins.
+      for i in {1..200}; do
+        echo progress >> "$POD/progress"
+        /bin/sleep 0.1
+      done
+      touch "$POD/interim-finished-naturally"
+      exit 0
+    fi
+    if [[ -f $POD/interim-running ]]; then touch "$POD/concurrent-copy"; fi
     printf '%s\\n' "$command" >> "$POD/copy-commands"
     if [[ $CHANGE == before-copy ]]; then
       printf 'other-launch\\n' > "$POD/out/LAUNCH_ID"
@@ -115,6 +132,18 @@ def test_losing_output_ownership_never_transfers_or_removes_the_other_run(tmp_pa
 def test_matching_output_ownership_allows_copy_and_removal(tmp_path):
     result, pod, destination = drive_with_ownership_change(tmp_path, 'never')
     assert result.returncode == 0, result.stdout + result.stderr
+    assert (destination/'rows.jsonl').read_text() == 'own rows\n'
+    assert (pod/'transfers').read_text().splitlines() == ['transfer'] * 3
+    assert (pod/'removed').exists()
+
+
+def test_progressing_interim_copy_does_not_block_completion_or_race_final_copy(tmp_path):
+    result, pod, destination = drive_with_ownership_change(tmp_path, 'slow-copy')
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (pod/'interim-started').exists()
+    assert (pod/'interim-stopped').exists()
+    assert not (pod/'interim-finished-naturally').exists()
+    assert not (pod/'concurrent-copy').exists()
     assert (destination/'rows.jsonl').read_text() == 'own rows\n'
     assert (pod/'transfers').read_text().splitlines() == ['transfer'] * 3
     assert (pod/'removed').exists()

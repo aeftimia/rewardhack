@@ -13,7 +13,7 @@
 #   2. Does TRL GRPO train gpt-oss-20b at all: reward variation, real updates, stable output? (train-*)
 #   3. What does a step cost? seconds per step -> dollars per run -> 15 runs against $800.
 # Part 1 jobs (SMOKE_PART_ONE, from ops/pod_pins.env) replace those questions with their runs; SMOKE_PROBE_LARGE=1 then
-# samples gpt-oss-120b, untrained, on the false training statements (notes section 77). The driver sizes such a job's deadline.
+# samples gpt-oss-20b under neutral and refute prompts (notes section 83). The driver sizes such a job's deadline.
 set -euo pipefail
 cd ~/pilot-repo
 # VLLM_ATTENTION_BACKEND was set here until 25 Nov: vLLM has reported it as an unknown variable since the 5 Nov probes, so it never did anything.
@@ -32,10 +32,13 @@ SMOKE_PART_ONE=${SMOKE_PART_ONE:-0}  # fallback-ok: optional setting; unset mean
 SMOKE_PROBE_TASKS=${SMOKE_PROBE_TASKS:-12}  # fallback-ok: optional setting; the probe's documented size when the launch does not set it
 SMOKE_PROBE_SECONDS=${SMOKE_PROBE_SECONDS:-3300}  # fallback-ok: optional setting; the probe's documented time limit (55 min) when unset
 SMOKE_STEPS=${SMOKE_STEPS:-12}  # fallback-ok: optional setting; the documented preflight length when the launch does not set it
+if [[ -z ${SMOKE_SAVE_EVERY+set} ]]; then SMOKE_SAVE_EVERY=8; fi
+# Short measuring passes can preserve each completed update instead of waiting until step eight.
+[[ $SMOKE_SAVE_EVERY =~ ^[1-9][0-9]{0,8}$ ]] || fail 'SMOKE_SAVE_EVERY must be a positive integer of at most nine digits'
 SMOKE_TRAIN_SECONDS=${SMOKE_TRAIN_SECONDS:-3600}  # fallback-ok: optional setting; the documented per-run limit (60 min) when unset
 SMOKE_FINAL_EVAL_SECONDS=${SMOKE_FINAL_EVAL_SECONDS:-600}  # fallback-ok: optional setting; time reserved for the after-evaluation when unset
 SMOKE_MEMORY_SECONDS=${SMOKE_MEMORY_SECONDS:-1800}  # fallback-ok: optional setting; the memory check's documented limit when unset
-SMOKE_PROBE_LARGE=${SMOKE_PROBE_LARGE:-0}  # fallback-ok: optional setting; unset means no gpt-oss-120b probe after training, as before 26 Nov
+SMOKE_PROBE_LARGE=${SMOKE_PROBE_LARGE:-0}  # fallback-ok: optional setting; unset means no inference probe after training
 cleanup() {
   rm -f ~/.judge_key
   for pid in "$JUDGE_PID" "$ROLLOUT_PID"; do
@@ -56,18 +59,8 @@ TRAIN_CARD=0 ROLLOUT_CARD=$((GPUS - 1))
 # Results written: 2x the measured 10 GB per Part 1 run with expert LoRA (adapters and checkpoints; 9.8 and 9.9 GB on 26
 # Nov); 10 GB for the preflight runs.
 OUT_NEED_GB=$((10 + 20 * ${#RUNS[@]}))
-# Room under /workspace for the environments, the uv cache and the weights: 40 GB, and for the gpt-oss-120b probe about
-# 70 GB more (65 GB of weights and a third environment) less whatever of it an earlier launch on this pod already fetched
-# (a relaunch on a kept pod keeps /workspace, including a partial download).
-LARGE_CACHE=$HF_HOME/hub/models--${GPT_OSS_120B/\//--}
-# The size field only: the path du prints after it has digits of its own (gpt-oss-120b), which `tr` alone kept (round 29).
-# A failed or unreadable du ends the job with its reason in the log, not with stderr alone (review round 30).
-if [[ $SMOKE_PROBE_LARGE == 1 && -d $LARGE_CACHE ]]; then  # sized only for the job that needs it
-  LARGE_HERE_GB=$(du -s -BG "$LARGE_CACHE" | cut -f1 | tr -dc 0-9) || fail "SELF_TEST: du could not size the partial $GPT_OSS_120B download in $LARGE_CACHE"
-  [[ $LARGE_HERE_GB =~ ^[0-9]+$ ]] || fail "SELF_TEST: du sized the partial $GPT_OSS_120B download in $LARGE_CACHE as '$LARGE_HERE_GB'"
-else LARGE_HERE_GB=0; fi
-LARGE_NEED_GB=(0 $((LARGE_HERE_GB < 70 ? 70 - LARGE_HERE_GB : 0)))  # indexed by SMOKE_PROBE_LARGE
-WORKSPACE_NEED_GB=$((${MODEL_WORKSPACE_GB[$M]} + ${LARGE_NEED_GB[$SMOKE_PROBE_LARGE]}))
+# The probe reuses the 20b weights. The former 120b download and its extra disk allowance are retired.
+WORKSPACE_NEED_GB=${MODEL_WORKSPACE_GB[$M]}
 pod_self_test "$GPUS" "$WORKSPACE_NEED_GB" "$OUT_NEED_GB" "$JUDGE_PORT" "$ROLLOUT_PORT"
 JUDGE=$POD_JUDGE; JUDGE_REV=$POD_JUDGE_REV
 # The accepted stage 1 judge (2026-11-24) is gpt-5.4-nano with the checklist prompt, called over the API. The driver
@@ -152,16 +145,10 @@ for pair in "${PAIRS[@]}"; do
   # The model's limit and its basis are in ops/pod_pins.env (DOWNLOAD_*_SECONDS); the pod judge is smaller than either model.
   DOWNLOAD_WAIT=${MODEL_DOWNLOAD_LIMITS[$M]} fetch_model "$1" "$2" || fail "DOWNLOAD_FAILED $1"
 done
-# gpt-oss-120b for the probe after training (SMOKE_PROBE_LARGE=1), fetched and given its own environment while the training
-# runs: the in-process vLLM probe needs vLLM and this project in one environment. vLLM's numba needs numpy below 2.5 and
+# The in-process vLLM probe needs vLLM and this project in one environment. vLLM's numba needs numpy below 2.5 and
 # the project pins 2.5.5, so the project's numpy is overridden with requirements-vllm.txt's (uv resolves the rest; the
 # 0.33.0 probe pin no longer installs with the project at all). With --lean none the probe runs none of the scoring code.
-# HF_HUB_DISABLE_XET: the 5 Nov download of this repository failed twice in the xet transfer ("File reconstruction error").
-if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
-  log "start download $GPT_OSS_120B (background)"
-  # The limit and its basis are in ops/pod_pins.env (LARGE_DOWNLOAD_SECONDS), where the driver counts it.
-  HF_HUB_DISABLE_XET=1 DOWNLOAD_WAIT=$LARGE_DOWNLOAD_SECONDS fetch_model "$GPT_OSS_120B" "$GPT_OSS_120B_REV" &
-  LARGE_DOWNLOAD_PID=$!
+if [[ $SMOKE_PROBE_LARGE != 0 ]]; then
   grep '^numpy==' requirements-vllm.txt > /workspace/probe-override.txt || fail 'NO_NUMPY_PIN: requirements-vllm.txt pins no numpy to override with'
   INSTALL_WAIT=600 make_env probe -r requirements-vllm.txt -e . --override /workspace/probe-override.txt > ~/out/install-probe.log 2>&1 &  # cap: 1.5x estimated 300 s
   PROBE_INSTALL_PID=$!
@@ -173,9 +160,9 @@ if [[ $JUDGE_KIND == api ]]; then
 # JUDGE_MAX_USD bounds the whole script: the cap is enforced per process, split over the processes that call the judge.
 # Preflight: the probe and two training runs. Part 1: one share per training run of the job (ops/pod_pins.env); an extra
 # share only cuts each run's allowance, and 4 prompt groups per step make a run's judge use about 4 times larger.
-# Indexed by whether this is a Part 1 job; the gpt-oss-120b probe calls no judge, and a probe-only job's single share is unused.
+# Indexed by whether this is a Part 1 job; the inference probe calls no judge, and a probe-only job's single share is unused.
 JUDGE_PROCESSES=(3 $((${#RUNS[@]} > 0 ? ${#RUNS[@]} : 1)))
-JUDGE_ARGS=(--judge api --judge-model gpt-5.4-nano
+JUDGE_ARGS=(--judge api --judge-model "$("$PY" -c 'from rewardhack.judge import API_JUDGE_MODEL; print(API_JUDGE_MODEL)')"
             --judge-max-usd "$(awk -v cap="${JUDGE_MAX_USD:?the driver passes JUDGE_MAX_USD}" -v n="${JUDGE_PROCESSES[$((SMOKE_PART_ONE > 0))]}" 'BEGIN { printf "%.4f", cap / n }')")
 else
 # --- Judge server: a small model in a fixed slice of the card, OpenAI-compatible on localhost.
@@ -198,7 +185,7 @@ fi
 # Questions 2 and 3. Low reasoning effort: the unprompted base rate (12/60) was measured there, and high
 # effort truncated 89/120 at 8k tokens. Hard task set, neutral prompt, no hint: unseeded exploration.
 BASE=(--lean ~/lean-safe --model "$MODEL" --revision "$REV" "${MODEL_OPTIONS[@]}" --taskset hard
-      --max-completion-length 2048 --num-generations 8 --eval-limit "$SMOKE_EVAL_LIMIT" --eval-samples 2 --save-every 8 --stop-no-variation 99
+      --max-completion-length 2048 --num-generations 8 --eval-limit "$SMOKE_EVAL_LIMIT" --eval-samples 2 --save-every "$SMOKE_SAVE_EVERY" --stop-no-variation 99
       "${JUDGE_ARGS[@]}")
 # The funded arm at λ=0.5: the probe and the preflight training steps. A Part 1 job (SMOKE_PART_ONE above 0) trains its runs instead (below).
 FUNDED=(--arm report_correct --penalty 0.5)
@@ -252,8 +239,8 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 && ${#RUNS[@]} -gt 0 ]]; then
   curl -fsS --max-time 120 -X POST "http://127.0.0.1:$ROLLOUT_PORT/sleep?level=1" > ~/out/rollout-initial-sleep.txt || fail ROLLOUT_SLEEP_FAILED
   BASE+=(--rollout-backend vllm --rollout-url "http://127.0.0.1:$ROLLOUT_PORT")
 fi
-if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
-  # The gpt-oss-120b probe's environment is checked now, not after the training: a broken one found then would cost a
+if [[ $SMOKE_PROBE_LARGE != 0 ]]; then
+  # The inference probe's environment is checked now, not after the training: a broken one found then would cost a
   # relaunch. It installs beside the model download (cap in its own line above) and has had minutes since.
   log start probe-install
   wait "$PROBE_INSTALL_PID" || fail PROBE_INSTALL_FAILED
@@ -273,8 +260,13 @@ if [[ $SMOKE_PART_ONE != 0 ]]; then
   # No saturation stop (owner, 26 Nov; notes section 77): the event Part 1 looks for, a first refutation, is a rare escape
   # from a plateau, and a stopped run can no longer show it. All 60 steps, as the 26 Nov pair ran before the stop existed.
   for run in "${RUNS[@]}"; do
-    IFS=: read -r name arm penalty <<< "$run"
-    step "train-$name" "${TRAIN[@]}" --no-stop-saturated --arm "$arm" --penalty "$penalty"
+    IFS=: read -r name arm penalty variant report <<< "$run"
+    # Typed reports are scored from their Boolean flag, without an LLM judge.
+    # This override follows BASE's prose judge options in step's argv.
+    REPORT_JUDGE=()
+    if [[ $report == typed ]]; then REPORT_JUDGE=(--judge none); fi
+    step "train-$name" "${TRAIN[@]}" --no-stop-saturated --arm "$arm" --penalty "$penalty" \
+      --prompt-variant "$variant" --report-mode "$report" "${REPORT_JUDGE[@]}"
   done
 else
   step train-lr1e-4 "${TRAIN[@]}" "${FUNDED[@]}"
@@ -288,12 +280,11 @@ elif [[ ${SMOKE_SECOND_RUN:-1} == 1 ]]; then
 # 8 steps at 61 s, plus a before and an after evaluation of up to 4.6 minutes each: about 17 minutes measured, so twice that.
 step train-lr1e-5 --steps 8 --learning-rate 1e-5 "${SHAPE[@]}" --max-seconds 2100 --final-eval-seconds 600 "${FUNDED[@]}"
 fi
-if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
-  # Does gpt-oss-120b, unprompted and untrained, ever declare or prove a refutation (owner, 26 Nov; notes section 77)? The 80
-  # false statements of the training split, the neutral prompt, inference only: rows are scored on the laptop with
-  # entrypoints/rescore.py (--lean none), so pod time goes to sampling only. It needs the whole card: the rollout server goes first.
+if [[ $SMOKE_PROBE_LARGE != 0 ]]; then
+  # Selected inference stages (notes section 83). Set 1 compares neutral/refute permission on all
+  # training statements. Rows are scored later on the laptop, so pod time goes to sampling only. The rollout server
+  # goes first: each probe owns the whole card.
   if [[ -n $ROLLOUT_PID ]]; then stop_server "$ROLLOUT_PID"; ROLLOUT_PID=; fi
-  wait "$LARGE_DOWNLOAD_PID" || fail "DOWNLOAD_FAILED $GPT_OSS_120B"
   # The stages (ops/pod_pins.env) are independent: a failed one is recorded and the next still runs; the job fails at the
   # end if any did. Each writes its rows a chunk of prompts at a time, so one stopped at its limit keeps what finished.
   # Each starts on a freed card; a failed stage's leftover engine processes are killed first, and a card that still does
@@ -302,15 +293,15 @@ if [[ $SMOKE_PROBE_LARGE == 1 ]]; then
   # fetch failed in the xet transfer.
   PROBE_FAILED=()
   for stage in "${PROBE_LARGE_STAGES[@]}"; do
-    read -r effort seconds samples tokens chunk <<< "$stage"
-    name=probe-120b-$effort
+    read -r effort seconds samples tokens chunk stage_set probe_model probe_revision variant tasks name <<< "$stage"
+    [[ $stage_set == "$SMOKE_PROBE_LARGE" ]] || continue
     # A stage that overran is ended by its timeout, which sends TERM and then KILL to its whole process group, vLLM's
     # renamed engine process included. Nothing else is killed here: inside a container nvidia-smi reports host process ids
     # (round 29). A card that still does not come free fails this stage only.
     if ! (wait_card_free "$name"); then PROBE_FAILED+=("$name"); continue; fi
     log "start $name"
     if HF_HUB_OFFLINE=1 in_env probe timeout $((seconds + PROBE_LARGE_EXIT_SECONDS)) python entrypoints/probe_vllm.py --out ~/out/"$name" --lean none \
-         --model "$GPT_OSS_120B" --revision "$GPT_OSS_120B_REV" --taskset hard --tasks false --max-seconds "$seconds" --samples "$samples" \
+         --model "$probe_model" --revision "$probe_revision" --variant "$variant" --seed "$PROBE_SEED" --taskset hard --tasks "$tasks" --part train --max-seconds "$seconds" --samples "$samples" \
          --max-tokens "$tokens" --max-model-len $((tokens + PROMPT_ROOM_TOKENS)) --chunk-prompts "$chunk" --template-kwargs "{\"reasoning_effort\": \"$effort\"}" > ~/out/"$name".log 2>&1; then
       log "end $name passed"
     else

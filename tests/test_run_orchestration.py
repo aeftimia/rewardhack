@@ -145,6 +145,39 @@ def test_a_run_that_fails_in_training_still_writes_its_summary_and_adapter(stage
     assert [bool(row.get('partial_batch')) for row in rows] == [False]*4+[True], 'the rollout scored before the failure was lost or not marked'
 
 
+def test_measurement_saves_each_completed_update_before_later_failure(staged, tmp_path):
+    _, state = staged
+    args = run_args(tmp_path, steps=4, save_every=1)
+    state['fail_at'] = 4+4+2
+    with pytest.raises(RuntimeError, match='scripted failure'):
+        hf_grpo.run(args)
+    checkpoint = args.out/'trainer'/'checkpoint-1'
+    assert json.loads((checkpoint/'trainer_state.json').read_text())['global_step'] == 1
+    assert (checkpoint/'optimizer.pt').is_file()
+    assert (args.out/'adapter-step1'/'adapter_model.safetensors').is_file()
+
+
+def test_truncated_initial_evaluation_stops_before_any_training(staged, tmp_path, monkeypatch):
+    events, _ = staged
+    args = run_args(tmp_path)
+    scoring = hf_grpo.score
+
+    def cut_off(*a, **kw):
+        return dict(scoring(*a, **kw), truncated=True)
+
+    monkeypatch.setattr(hf_grpo, 'score', cut_off)
+    with pytest.raises(ValueError, match='adequate completion limit'):
+        hf_grpo.run(args)
+    summary = json.loads((args.out/'summary.json').read_text())
+    assert summary['status'] == 'failed'
+    assert summary['before']['raise_token_limit'] is True
+    assert summary['before']['truncated_rate'] == 1
+    assert events == ['trainer built', 'before']
+    assert (args.out/'before-evaluation.jsonl').is_file()
+    assert not (args.out/'training-rollouts.jsonl').read_text()
+    assert not (args.out/'steps.jsonl').read_text()
+
+
 def test_a_run_out_of_time_shortens_training_not_the_record(staged, tmp_path, monkeypatch):
     events, state = staged
     args = run_args(tmp_path, steps=50, max_seconds=600, final_eval_seconds=600)  # no time for training beyond the step in progress

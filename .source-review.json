@@ -9,7 +9,7 @@
     "path": "src/rewardhack/grader.py",
     "rule": "py-except-swallow",
     "text": "except ValueError:",
-    "reason": "The grader tries to parse candidate JSON objects from model prose; a ValueError means this candidate is not JSON, so the parser advances to the next candidate. If none parses the returned submission has a missing report and cannot be format_valid. The grader source is also deliberately embedded verbatim in model prompts."
+    "reason": "This function searches model prose for a submission, testing each opening brace as a possible JSON start. Rejecting an invalid candidate and testing another is the specified search algorithm, not substituting a successful parse. If all candidates fail, it explicitly returns report=None (not an empty string), established='' and proof_body=''. outcomes.score records format_valid as report is not None, so the failure remains visible as an invalid answer. A valid later candidate is the requested submission. Preserve this deliberately exposed grader source verbatim because it is part of the model prompt."
   },
   {
     "path": "src/rewardhack/grader.py",
@@ -33,7 +33,7 @@
     "path": "src/rewardhack/outcomes.py",
     "rule": "py-getattr-default",
     "text": "kwargs = {'retries': retries} if getattr(judge, 'accepts_retry_budget', False) else {}",
-    "reason": "External judge callables used by analysis and tests have the basic one-row interface. Only the project judge advertises accepts_retry_budget; absent capability means no retries keyword is passed. All call exceptions propagate."
+    "reason": "The public scoring interface accepts a callable judge(row), including plain Python functions supplied by analysis/tests; it does not require an object from a closed registry or require arbitrary function attributes. accepts_retry_budget is an OPTIONAL opt-in extension set by judge.checked for the extra retries keyword. Its absence means the base one-argument callable protocol, which is the normal interface, not an invalid judge substituted for a valid one. The same provided callable is invoked and its failures propagate; there is no replacement judge or fabricated successful verdict if it is broken."
   },
   {
     "path": "src/rewardhack/pilot.py",
@@ -61,12 +61,6 @@
     "reason": "TimeCap is converted to an explicit time-cap finish reason in persisted pilot state; it stops further stages and does not report a successful analysis."
   },
   {
-    "path": "src/rewardhack/rescore.py",
-    "rule": "py-get-compare",
-    "text": "return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None",
-    "reason": "Existing rows from before cutoff-v1 cannot prove whether generation stopped normally. Only both legacy truncated and genuine_why=truncated establish a cutoff; otherwise return None (unknown), not False. New schema rows are strictly validated above."
-  },
-  {
     "path": "src/rewardhack/state_files.py",
     "rule": "py-suppress",
     "text": "with contextlib.suppress(FileNotFoundError):",
@@ -76,7 +70,7 @@
     "path": "src/rewardhack/verifier.py",
     "rule": "py-except-swallow",
     "text": "except subprocess.TimeoutExpired:",
-    "reason": "Verifier timeout is explicitly returned with why=timeout, an INCONCLUSIVE value. The scorer retries within budget, then excludes still-undecided results from training and behavior rates."
+    "reason": "The timeout handler immediately returns an explicit failure record with ok=False, axioms=None and why=timeout. It does not continue into the successful subprocess-output path or invent a proof result. This justification is limited to the visible function's failure reporting."
   },
   {
     "path": "src/rewardhack/verifier.py",
@@ -85,28 +79,16 @@
     "reason": "Malformed Lean output is returned with an explicit unexpected-output diagnostic in INCONCLUSIVE. It is not treated as a proved or disproved proposition."
   },
   {
-    "path": "src/rewardhack/verifier.py",
-    "rule": "py-or-default",
-    "text": "axioms = {a.strip() for a in (found['axioms'] or '').split(',') if a.strip()}",
-    "reason": "The regex has an optional capture for the axiom list. A valid Lean response stating no axioms leaves that capture None; an unmatched or malformed response is rejected earlier."
-  },
-  {
-    "path": "entrypoints/gate.py",
-    "rule": "keyword",
-    "text": "Codex PreToolUse adapter for the shared no-silent-fallbacks checker.",
-    "reason": "This docstring names the installed checker used by the adapter. It introduces no alternate execution path or error handling."
-  },
-  {
     "path": "entrypoints/validate_judge.py",
     "rule": "py-else-label",
     "text": "result.update(validation_kind='human_audit' if args.audit else 'human_heldout' if args.holdout else 'development', **provenance)",
-    "reason": "Mutually exclusive argparse audit/holdout flags select validation datasets. With neither flag the explicit development dataset is used and labelled development; no failed audit is relabelled."
+    "reason": "There is no free-form mode value here. argparse provides exactly two mutually exclusive optional Path arguments, --audit and --holdout. Their exhaustive reachable states are audit present, holdout present, and both absent. Both absent intentionally executes rows=read_set(args.read), the development dataset. This expression labels those same three states. Unknown CLI arguments are rejected by parse_args; there is no unlisted current mode or failure converted to development."
   },
   {
     "path": "ops/drive_runpod.sh",
     "rule": "sh-prefix-forward",
     "text": "[[ $name =~ ^SMOKE_[A-Z_]+$ && $value =~ ^[0-9]+$ ]] || { echo \"invalid $name\"; exit 2; }",
-    "reason": "The prefix syntax check is followed by an exact allowlist of supported SMOKE names before any variable is forwarded. Unknown names fail; this regex alone grants nothing."
+    "reason": "This flagged line is only a lexical validation step, not the authorization to forward a setting. Immediately afterward, the same loop requires exact space-delimited membership in SMOKE_READ, extracted from the selected remote script. A nonmember exits 2 before SMOKE_ENV is appended. Only after BOTH syntax and membership checks does the append occur. Thus prefix-shaped misspellings are rejected rather than forwarded; the complete loop, not the lexical regex in isolation, defines the forwarding policy."
   },
   {
     "path": "ops/drive_runpod.sh",
@@ -118,7 +100,7 @@
     "path": "ops/remote_job.sh",
     "rule": "sh-default-expansion",
     "text": "OUT=${REMOTE_JOB_OUT:-$HOME/out}",
-    "reason": "REMOTE_JOB_OUT selects the runner's output directory. An unset or empty override selects $HOME/out; a nonempty value selects that exact path. The next mkdir attempts the chosen path once, prints the failing path and exits 3 on failure. This justification concerns only that local path choice."
+    "reason": "The production invocation leaves REMOTE_JOB_OUT unset and requires the default HOME/out path. An override is an optional test interface for directing a runner to a specific output folder. The following echo reports the selected directory before mkdir; failure to create it exits 3. No failed attempt at an override path is redirected to HOME/out."
   },
   {
     "path": "ops/remote_job.sh",
@@ -129,13 +111,7 @@
   {
     "path": "ops/remote_job.sh",
     "rule": "sh-default-expansion",
-    "text": "POD_ID=${RUNPOD_POD_ID:-$(pod_env RUNPOD_POD_ID)}",
-    "reason": "SSH sessions do not inherit the pod container environment. The alternate source is /proc/1/environ for the same RUNPOD_POD_ID, not another pod. If neither source supplies it, can_remove fails and REQUIRE_AUTOSTOP=1 refuses job launch."
-  },
-  {
-    "path": "ops/remote_job.sh",
-    "rule": "sh-default-expansion",
     "text": "PIDS=${REMOTE_JOB_PIDS:-$HOME/.remote_job.pids}",
-    "reason": "These are documented output and PID-file location options for the runner. Omission selects the standard HOME location; filesystem failures are not a request to try another location."
+    "reason": "REMOTE_JOB_PIDS is an optional test-isolation override, not a required production configuration variable. The production driver does not set it: all launches deliberately share $HOME/.remote_job.pids so stop_previous can find and stop the predecessor session. The next line prints the selected state-file path and override name. Tests set distinct paths for independent fake pods. A supplied nonempty path is used exactly; a read/write failure does not select another path. This default therefore implements the normal production interface visibly rather than hiding a missing required setting."
   }
 ]

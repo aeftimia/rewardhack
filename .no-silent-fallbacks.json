@@ -8,6 +8,17 @@
   },
   "review_evidence": [
     {
+      "path": "ops/remote_job.sh",
+      "rule": "sh-default-expansion",
+      "text": "OUT=${REMOTE_JOB_OUT:-$HOME/out}",
+      "obligations": [{
+        "claim": "The runner's default output path is part of its contract. A launch with REMOTE_JOB_OUT absent stores the actual exit status under HOME/out/EXIT_CODE.",
+        "sources": [
+          {"path": "tests/test_round30_followups.py", "symbol": "test_launch_transaction_rotates_output_and_preserves_real_status"}
+        ]
+      }]
+    },
+    {
       "path": "src/rewardhack/pilot_runner.py",
       "rule": "py-except-swallow",
       "text": "except subprocess.TimeoutExpired:",
@@ -40,18 +51,6 @@
         "claim": "Exhausting the candidate JSON parses leaves report=None, which the consumer marks format_valid=False rather than treating it as a valid empty report.",
         "sources": [
           {"path": "src/rewardhack/grader.py", "symbol": "evaluate_submission"},
-          {"path": "src/rewardhack/outcomes.py", "symbol": "score"}
-        ]
-      }]
-    },
-    {
-      "path": "src/rewardhack/rescore.py",
-      "rule": "py-get-compare",
-      "text": "return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None",
-      "obligations": [{
-        "claim": "Unversioned rows without sufficient cutoff evidence pass an unknown cutoff decision (None) into rescoring, not a claim of normal termination or a new cutoff-v1 schema; malformed versioned rows are rejected before this legacy path.",
-        "sources": [
-          {"path": "src/rewardhack/rescore.py", "symbol": "rescore_file"},
           {"path": "src/rewardhack/outcomes.py", "symbol": "score"}
         ]
       }]

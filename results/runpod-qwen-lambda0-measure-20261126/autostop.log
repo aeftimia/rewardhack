@@ -1,0 +1,3 @@
+ID            	NAME                                    	GPU           	IMAGE NAME                                     	STATUS  
+j4p51d0ljbuhd6	rewardhack-qwen-lambda0-measure-20261126	2 RTX PRO 6000	runpod/pytorch:2.2.0-cu1320-torch280-ubuntu2404	RUNNING	
+2026-11-27T03:12:27Z armed: pod j4p51d0ljbuhd6 is removed at most 8250s from now (timer pid 722)

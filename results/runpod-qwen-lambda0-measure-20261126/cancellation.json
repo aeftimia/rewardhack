@@ -1,0 +1,26 @@
+{
+  "status": "cancelled_by_operator",
+  "reason": "Initial evaluation truncated 21 of 24 answers at 2048 tokens; stop before spending on further training with this configuration.",
+  "pod": "j4p51d0ljbuhd6",
+  "deployed_at": "2026-11-27T03:10:55.065Z",
+  "removal_requested_at": "2026-11-27T03:29:30.575Z",
+  "console_confirmed_no_pods": true,
+  "console_spend_usd_per_hour": 0,
+  "hourly_usd_including_disk": 5.415,
+  "booked_hours_upper_bound": 0.32,
+  "booked_gpu_usd_upper_bound": 1.73,
+  "judge_usd_upper_bound": 0.25,
+  "before_evaluation": {
+    "samples": 24,
+    "truncated": 21,
+    "format_valid": 3,
+    "genuine": 1,
+    "exploit": 0,
+    "verified_refutation": 0,
+    "verifier_inconclusive": 0
+  },
+  "completed_steps_in_preserved_log": 0,
+  "snapshot_or_checkpoint_produced_in_preserved_output": false,
+  "evidence": "An explicit copy completed before pod removal. The driver's later final copy failed because the pod had already been removed. summary.json is the trainer's initial running record, not a completed run. No completed-step timing or final judge meter was preserved.",
+  "next_action": "Hold Qwen for a longer completion-limit measuring plan and renewed cost estimate; do not label this as a completed lambda-zero screening cell. Fix the automatic pre-training truncation guard before further launches."
+}

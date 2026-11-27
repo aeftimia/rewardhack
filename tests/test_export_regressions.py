@@ -52,6 +52,17 @@ def test_current_hf_streams_export_once_with_known_or_unknown_updates(dataset):
     assert training['policy_updates'] is None and training['provenance']=='training_unknown'
 
 
+def test_permission_probe_is_not_exported_as_natural_emergence(dataset):
+    root, run, row, _ = dataset
+    (run/'summary.json').write_text(json.dumps(dict(model='m', report_mode='typed', variant='refute',
+                                                   argv=['--variant', 'refute'])))
+    write(run/'rows.rescored.jsonl', [row])
+    _, rows = exported(root)
+    assert len(rows) == 1
+    assert rows[0]['variant'] == 'refute'
+    assert rows[0]['provenance'] == 'refute_permitted'
+
+
 def test_raw_scored_streams_export_without_rescoring_unscored_rows_stay_out(dataset):
     root,run,row,_=dataset
     write(run/'after-evaluation.jsonl',[row])
