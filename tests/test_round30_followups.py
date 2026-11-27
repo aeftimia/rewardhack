@@ -98,7 +98,7 @@ def arm_fails(tmp_path, out_on_pod):
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir(parents=True)
     ssh = (f'echo "$*" >> {calls}\n[[ "$*" != *--arm-only* ]] || exit 1\n'
-           f'if [[ "$*" == *out/remote.log* ]]; then echo {out_on_pod}; fi\n')  # the answer to JOB_TRACES
+           f'if [[ "$*" == *out/remote.log* ]]; then echo "Welcome to the pod"; echo {out_on_pod}; fi\n')  # a banner, then the answer to JOB_TRACES
     stubs = {'ssh': ssh, 'rsync': 'exit 1\n', 'sleep': 'exit 0\n', 'timeout': TIMEOUT_STUB}
     for name, body in stubs.items():
         (bin_dir/name).write_text('#!/bin/bash\n' + body)
@@ -114,10 +114,11 @@ def test_a_wait_that_connected_makes_no_further_unretried_try_and_a_failed_arm_r
     """Round 37: after the wait loop connected, one more connection was made with no retry, and its failure gave up a pod
     with no removal timer. Round 39: a pod this run armed no timer on started no job here, so a fresh one is removed even
     with KEEP_POD=1. Round 40: a kept pod (a relaunch) may hold an earlier job's out/ and timer, and is not removed."""
-    _, sent = arm_fails(tmp_path/'fresh', 'empty')
+    output, sent = arm_fails(tmp_path/'fresh', 'empty')
     before_arm = sent[:next(index for index, line in enumerate(sent) if '--arm-only' in line)]
     assert len(before_arm) == 1 and before_arm[0].endswith(' true'), sent
     assert any('--remove-now' in line for line in sent), sent
+    assert 'nothing to copy' in output and 'FINAL COPY FAILED' not in output, output  # no results were there to lose
     output, sent = arm_fails(tmp_path/'kept', 'held')
     assert not any('--remove-now' in line for line in sent) and 'removal timer is running' in output, sent
 

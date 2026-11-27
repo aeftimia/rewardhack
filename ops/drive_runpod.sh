@@ -180,6 +180,15 @@ finish() {
   # From here nothing may stop this function: with the terminal gone a plain `echo` fails, and under `set -e` that
   # ended the cleanup before the copy and the removal. Every step below reports its own failure.
   set +e
+  # Whether a job was ever launched on a pod this run armed no timer on (see the removal below); asked first, so that a
+  # pod where none ran is not reported as holding results the copy failed to fetch (review round 42). The last line
+  # only: a login shell on the pod may print its own text before the answer.
+  HELD=unknown
+  if [[ $ARMED == 0 ]]; then HELD=$(on_pod "$JOB_TRACES" | tail -n 1); fi
+  if [[ $ARMED == 0 && $HELD == empty ]]; then
+    say 'no job was launched on this pod: nothing to copy'
+    COPIED=1 CHECKPOINTS=1 SMALL_COPIED=1
+  else
   say "copying results"
   # The small files, then the adapters, then the resumable checkpoints (several GB with expert LoRA): the pod removes
   # itself at most 10 minutes after the job ends, and a slow copy must cost the checkpoints, never the results.
@@ -199,6 +208,7 @@ finish() {
     done
     if [[ $CHECKPOINTS == 0 ]]; then say 'the results are copied but the resumable checkpoints are not: the pod is not removed from here, so they can still be fetched until its own timer removes it'; fi
   fi
+  fi  # the copy
   if ! on_pod 'rm -f ~/.judge_key'; then say 'could not reach the pod to delete the judge key file'; fi
   date -u +%FT%TZ > "$RESULTS/driver-exit.txt"
   # This run armed no timer, so it started no job. A fresh pod then holds nothing and is removed here whatever KEEP_POD
@@ -207,8 +217,7 @@ finish() {
   # that no job was ever launched on it; otherwise the timer check below says whether a timer still runs (review round
   # 40). Only a launched job leaves out/remote.log (the launch below writes it) or an out.prev.* (a relaunch's move);
   # out/ alone is no sign, since the runner creates it before arming (review round 41).
-  HELD=unknown
-  if [[ $ARMED == 0 ]]; then HELD=$(on_pod "$JOB_TRACES"); fi
+  # HELD is asked before the copy, at the top of this function.
   if [[ $ARMED == 0 && -z $HELD ]] && ! on_pod true; then
     say "REMINDER: the pod never accepted SSH, so this run armed no removal timer on it (a kept pod keeps its earlier one). Terminate it in the RunPod console now unless out/autostop.log there shows one"; code=97
   elif [[ ( $ARMED == 1 && ( $KEEP == 1 || $CHECKPOINTS == 0 ) ) || ( $ARMED == 0 && $HELD != empty ) ]]; then
