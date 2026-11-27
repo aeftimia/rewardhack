@@ -44,8 +44,10 @@ working `OPENAI_API_KEY`. It refuses a substitute judge command, a recursion
 guard, missing dependencies, unreadable sources, parse errors, and missing or
 invalid judge responses. Every run makes fresh judge requests; cached edit-hook
 verdicts cannot approve a commit. The scan sends the enclosing Python function
-and its local helpers, or overlapping windows for longer functions and shell
-code, to the configured OpenAI model and incurs API usage. Omitted context is
+and its referenced constants, imports and local helpers, or overlapping windows
+within longer functions and shell code, to the configured OpenAI model and incurs
+API usage. A finding in multiple windows needs approval in every view; a denial
+is never outvoted by another approval. Omitted context is
 marked explicitly. Every source line is scanned regardless of review windows.
 
 `.source-review.json` records explanations for exact path/rule/text matches,

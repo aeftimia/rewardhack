@@ -64,7 +64,7 @@ def rescore_file(path, lean, tasks=None):
         new.update({k: old[k] for k in CARRIED if k in old})
         new_rows.append(new)
         diff = {k: (old.get(k), new.get(k)) for k in COMPARE if old.get(k) != new.get(k)}
-        if diff and old.get('scored', True):
-            changed.append({'task_id': old['task_id'], 'diff': diff})
+        if diff:
+            changed.append({'task_id': old['task_id'], 'previously_scored': old.get('scored'), 'diff': diff})
     path.with_suffix('.rescored.jsonl').write_text(jsonl.dumps(new_rows))
     return {'file': str(path), 'input_rows': len(old_rows), 'rows': len(new_rows), 'transport_errors': transport_errors, 'changed': len(changed), 'changes': changed, 'summary': summarize(new_rows)}

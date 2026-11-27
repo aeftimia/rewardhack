@@ -1,11 +1,5 @@
 [
   {
-    "path": "src/rewardhack/formal_audit.py",
-    "rule": "py-get-default",
-    "text": "task = dict(id=row['task_id'], group=row['group'], tier=row.get('tier', 'audit'),",
-    "reason": "Audit inputs include held-out tasks with no training tier. audit is a descriptive grouping label for such inputs, not a verification outcome or training assignment."
-  },
-  {
     "path": "src/rewardhack/gpu.py",
     "rule": "py-except-dummy",
     "text": "except (OSError, subprocess.SubprocessError, ValueError) as error:",
@@ -84,12 +78,6 @@
     "reason": "Existing rows from before cutoff-v1 cannot prove whether generation stopped normally. Only both legacy truncated and genuine_why=truncated establish a cutoff; otherwise return None (unknown), not False. New schema rows are strictly validated above."
   },
   {
-    "path": "src/rewardhack/rescore.py",
-    "rule": "py-get-default",
-    "text": "if diff and old.get('scored', True):",
-    "reason": "Historical score writers did not emit a scored marker; those saved rows were scored. Only explicitly unscored probe rows opt out of the before/after comparison, and all rows are still rescored."
-  },
-  {
     "path": "src/rewardhack/state_files.py",
     "rule": "py-suppress",
     "text": "with contextlib.suppress(FileNotFoundError):",
@@ -147,7 +135,7 @@
     "path": "ops/remote_job.sh",
     "rule": "sh-default-expansion",
     "text": "GRACE=${AUTOSTOP_GRACE_SECONDS:-600}  # time for the driver to copy results before the pod is removed",
-    "reason": "AUTOSTOP_GRACE_SECONDS is an optional duration override; 600 seconds is the documented result-copy window. The value is validated as a whole number before job launch and included in the removal deadline."
+    "reason": "AUTOSTOP_GRACE_SECONDS is an optional duration override; 600 seconds is the standard result-copy window. The runner prints the selected grace period and the override name immediately, validates it as a whole number before job launch and includes it in the removal deadline. This is an observable configuration choice, not substituted measurements or error results."
   },
   {
     "path": "ops/remote_job.sh",

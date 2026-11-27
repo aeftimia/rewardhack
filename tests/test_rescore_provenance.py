@@ -15,8 +15,11 @@ def test_rescore_preserves_pilot_generation_identity_without_inventing_it(tmp_pa
     monkeypatch.setattr(outcomes,'verify_proof',lambda *a,**k:dict(ok=True,axioms=[],why='ok'))
     monkeypatch.setattr(outcomes,'verify_refutation',lambda *a,**k:dict(ok=False,why='not a negation'))
     path=tmp_path/'rows.jsonl'; path.write_text(json.dumps(with_metadata)+'\n'+json.dumps(legacy)+'\n')
-    for _ in range(2):
-        rescore.rescore_file(path,'unused',{'t':task})
+    for iteration in range(2):
+        review = rescore.rescore_file(path,'unused',{'t':task})
+        if iteration == 0:
+            assert review['changed'] == 2
+            assert all(change['previously_scored'] is None for change in review['changes'])
         path=path.with_suffix('.rescored.jsonl')
         first,second=[json.loads(line) for line in path.read_text().splitlines()]
         assert first['sample_index']==2 and first['pilot_source']==provenance

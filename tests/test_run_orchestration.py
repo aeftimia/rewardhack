@@ -207,3 +207,17 @@ def test_an_overflowed_gradient_norm_stops_the_run(tmp_path, monkeypatch):
     monkeypatch.setattr(Trainer, 'log', log)
     with pytest.raises(FloatingPointError, match='gradient norm is inf'):
         train(tmp_path, monkeypatch, REWARDS['first of the group'], steps=3)
+
+
+def test_missing_training_gradient_norm_stops_the_run(tmp_path, monkeypatch):
+    from transformers import Trainer
+    real = Trainer.log
+
+    def log(self, logs, *args, **kwargs):
+        if 'loss' in logs:
+            logs = {key: value for key, value in logs.items() if key != 'grad_norm'}
+        return real(self, logs, *args, **kwargs)
+
+    monkeypatch.setattr(Trainer, 'log', log)
+    with pytest.raises(KeyError, match='grad_norm'):
+        train(tmp_path, monkeypatch, REWARDS['first of the group'], steps=3)

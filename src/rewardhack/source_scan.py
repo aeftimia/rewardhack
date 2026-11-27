@@ -5,7 +5,6 @@ current context. External notes keep the grader's verbatim prompt unchanged.
 """
 import json
 import os
-import ast
 from pathlib import Path
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -17,47 +16,12 @@ REVIEW_FILE = '.source-review.json'
 # One finding per request: multi-case reviews mixed the rationale of adjacent cases.
 BATCH_SIZE = 1
 JUDGE_WORKERS = 4
-WINDOW_LINES = 160
-WINDOW_OVERLAP = 80
-
-
-def review_context(source, language, line):
-    """Enclosing function and local dependencies, or a bounded overlapping window."""
-    lines = source.splitlines()
-    stride = WINDOW_LINES - WINDOW_OVERLAP
-    start = max(0, ((line - 1) // stride) * stride - WINDOW_OVERLAP // 2)
-    spans = [(start, min(len(lines), start + WINDOW_LINES))]
-    if language == 'py':
-        tree = ast.parse(source)
-        definitions = {node.name: node for node in tree.body
-                       if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
-        enclosing = [node for node in definitions.values() if node.lineno <= line <= node.end_lineno]
-        if enclosing:
-            node = enclosing[0]
-            if node.end_lineno - node.lineno < WINDOW_LINES:
-                spans = [(node.lineno - 1, node.end_lineno)]
-            called = {call.func.id for call in ast.walk(node)
-                      if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)}
-            for name in sorted(called & definitions.keys()):
-                helper = definitions[name]
-                if helper is not node and helper.end_lineno - helper.lineno < WINDOW_LINES:
-                    spans.append((helper.lineno - 1, helper.end_lineno))
-    selected = sorted({index for start, end in spans for index in range(start, end)})
-    output, previous = [], -1
-    for index in selected:
-        if index != previous + 1:
-            output.append('... omitted lines ...')
-        output.append(f'{">>" if index + 1 == line else "  "} {index + 1:4}  {lines[index]}')
-        previous = index
-    if previous < len(lines) - 1:
-        output.append('... omitted lines ...')
-    return '\n'.join(output)
 
 
 def full_scan(root):
     root = Path(root).resolve()
     checker = load_checker()
-    if not hasattr(checker, 'VERDICT_SCHEMA'):
+    if not hasattr(checker, 'VERDICT_SCHEMA') or not hasattr(checker, 'review_contexts'):
         raise RuntimeError('update the shared checker: the commit scan requires its strict OpenAI verdict schema')
     if os.environ.get(checker.GUARD):
         raise ValueError('full source scan cannot run with the judge recursion guard set')
@@ -101,12 +65,12 @@ def full_scan(root):
             raise ValueError(f'{relative}: {error}')
         files += 1
         for finding in found:
-            finding['context'] = review_context(source, language, finding['line'])
             key = (relative, finding['rule'], finding['text'])
             if key in explanations and finding['reason'] is None:
                 used.add(key)
                 finding['reason'] = explanations[key]
-            findings.append((relative, finding))
+            for context in checker.review_contexts(source, language, finding['line']):
+                findings.append((relative, dict(finding, context=context)))
     stale = explanations.keys() - used
     if stale:
         raise ValueError(f'stale source review notes; remove or update them: {sorted(stale)}')

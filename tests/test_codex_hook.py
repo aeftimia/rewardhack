@@ -64,7 +64,9 @@ def test_actual_checker_allows_clean_edit_and_checks_shell(tmp_path, checker):
     call = dict(tool_name='apply_patch', cwd=str(tmp_path), tool_input=dict(command=patch(
         '*** Add File: good.py\n+value = data["value"]\n')))
     assert adapter.check(call, checker) == 0
-    call.update(tool_name='Bash', cwd=str(ROOT), tool_input=dict(command='echo "x = 1" > bad.py'))
+    # The checker deliberately permits scratch writes under /tmp; this checkout may itself be a temporary worktree.
+    # Only inspect the command, using a non-temporary synthetic source directory; nothing is executed or written.
+    call.update(tool_name='Bash', cwd=str(Path.home()/'hook-source-fixture'), tool_input=dict(command='echo "x = 1" > bad.py'))
     assert adapter.check(call, checker) == 2
 
 

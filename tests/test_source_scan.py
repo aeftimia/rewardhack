@@ -107,14 +107,14 @@ def test_hook_runs_even_when_no_source_is_staged():
 
 def test_context_keeps_whole_function_and_local_helper():
     source = 'def helper():\n    return 1\n\ndef target():\n    value = helper()\n    return value\n'
-    context = source_scan.review_context(source, 'py', 5)
+    context, = load_checker().review_contexts(source, 'py', 5)
     assert 'def target' in context and 'return value' in context and 'def helper' in context
     assert '>>    5' in context
 
 
 def test_windows_cover_flags_with_overlapping_context():
     source = '\n'.join(f'line {i}' for i in range(400))
-    contexts = [source_scan.review_context(source, 'sh', line) for line in (80, 81, 160, 161, 399)]
+    contexts = ['\n'.join(load_checker().review_contexts(source, 'sh', line)) for line in (80, 81, 160, 161, 399)]
     for line, context in zip((80, 81, 160, 161, 399), contexts, strict=True):
         assert f'>> {line:4}  line {line-1}' in context
     assert 'line 100' in contexts[0] and 'line 100' in contexts[1]
@@ -124,4 +124,14 @@ def test_extensionless_shell_source_is_scanned(scan_repo, monkeypatch):
     root, checker = scan_repo
     (root/'launch').write_text('#!/bin/bash\nset -euo pipefail\nfalse || true\n')
     monkeypatch.setattr(checker, 'ask_judge', lambda cases: [])
+    assert source_scan.full_scan(root) == 1
+
+
+def test_one_window_denial_blocks_despite_another_approval(scan_repo, monkeypatch):
+    root, checker = scan_repo
+    (root/'source.py').write_text("value = settings.get('count', 0)  # fallback-ok: test explanation\n")
+    monkeypatch.setattr(checker, 'review_contexts', lambda *args: ['first view', 'second view'])
+    def review(cases):
+        return [(finding['context'] == 'first view', 'test verdict') for _, finding in cases]
+    monkeypatch.setattr(checker, 'ask_judge', review)
     assert source_scan.full_scan(root) == 1

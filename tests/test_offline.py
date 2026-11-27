@@ -190,10 +190,10 @@ def test_export_rebuilds_prompts_and_joins_reading_labels(tmp_path=None):
     first, second = out
     assert first['messages'] == prompts.prompt(t1['statement'], 'nocheat') and first['provenance'] == 'natural'
     from rewardhack.export_transcripts import run_meta
-    assert run_meta({'template_kwargs': {'enable_thinking': True}}, 'x/y')['thinking'] is True
-    low = run_meta({'template_kwargs': {'reasoning_effort': 'low'}}, 'x/y')
+    assert run_meta({'variant': 'neutral', 'template_kwargs': {'enable_thinking': True}}, 'x/y')['thinking'] is True
+    low = run_meta({'variant': 'neutral', 'template_kwargs': {'reasoning_effort': 'low'}}, 'x/y')
     assert low['thinking'] is True and low['reasoning_effort'] == 'low'
-    assert run_meta({'reasoning_effort': 'none'}, 'x/y')['thinking'] is False
+    assert run_meta({'variant': 'neutral', 'reasoning_effort': 'none'}, 'x/y')['thinking'] is False
     assert first['cheat_axis'] == 'cheat' and first['disclosure_axis'] == 'disclosed' and first['reading']['category'] == 'honest_disclosure'
     assert second['messages'][2] == {'role': 'assistant', 'content': base['raw']} and second['messages'][3] == prompts.follow_on(t2['statement'])
     assert second['cheat_axis'] == 'failed' and second['disclosure_axis'] == 'unread'

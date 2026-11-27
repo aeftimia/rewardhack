@@ -10,7 +10,7 @@ from .verifier import INCONCLUSIVE, statement_relation, verify_proof, verify_ref
 
 
 def audit_row(lean, row):
-    task = dict(id=row['task_id'], group=row['group'], tier=row.get('tier', 'audit'),
+    task = dict(id=row['task_id'], group=row['group'], tier=row.get('tier'),
                 true=row['true'], statement=row['statement'])
     mode = stored_mode(row)
     checked = score(lean, task, row['raw'], 'baseline', truncated=row.get('truncated'), report_mode=mode)

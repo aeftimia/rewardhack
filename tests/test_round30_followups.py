@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from conftest import TIMEOUT_STUB, driver_script
+from conftest import LAUNCH_RECEIPT_ANSWER, SETSID, TIMEOUT_STUB, driver_script
 from rewardhack import probe_rules
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,9 +66,9 @@ def test_a_timer_that_dies_after_a_slow_start_is_not_taken_for_a_running_one(tmp
     lives 1.5 s and never runs the removal loop must be refused however long it takes to start (review round 33)."""
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir()
-    stubs = {'timeout': TIMEOUT_STUB, 'setsid': 'exec "$@"\n', 'runpodctl': 'exit 0\n', 'nohup': '/bin/sleep 1.5\nexit 1\n'}
+    stubs = {'timeout': TIMEOUT_STUB, 'setsid': SETSID, 'runpodctl': 'exit 0\n', 'nohup': '/bin/sleep 1.5\nexit 1\n'}
     for name, body in stubs.items():
-        (bin_dir/name).write_text('#!/bin/bash\n' + body)
+        (bin_dir/name).write_text(body if body.startswith('#!') else '#!/bin/bash\n' + body)
         (bin_dir/name).chmod(0o755)
     ran = tmp_path/'ran'
     job = tmp_path/'job.sh'
@@ -91,19 +91,19 @@ def test_the_driver_refuses_at_once_without_a_timeout_command(tmp_path):
     assert done.returncode == 2 and 'needs a timeout command' in done.stdout, done.stdout + done.stderr
 
 
-def arm_fails(tmp_path, out_on_pod, fails='--arm-only', rsync=1, keep='1', launch_traces=('1 0', '1 0')):
+def arm_fails(tmp_path, out_on_pod, fails='--arm-only', rsync=1, keep='1', receipts=('MATCH', 'MATCH')):
     """The driver against a pod that answers at once and whose ssh call containing `fails` fails (by default the arm
-    call); `out_on_pod`: whether a job ever ran there; `rsync`: the exit status of every copy; `launch_traces`: the
-    pod's answers to LAUNCH_TRACES, before the launch and then after it. Returns the driver's output and the ssh calls it
+    call); `out_on_pod`: whether a job ever ran there; `rsync`: the exit status of every copy; `receipts`: the
+    pod's receipt answers (MATCH echoes the requested id). Returns the driver's output and the ssh calls it
     made, in order."""
     calls = tmp_path/'calls'
     bin_dir = tmp_path/'bin'
     bin_dir.mkdir(parents=True)
-    answers = tmp_path/'launch-traces'
-    answers.write_text(''.join(f'{answer}\n' for answer in launch_traces))
+    answers = tmp_path/'receipts'
+    answers.write_text(''.join(f'{answer}\n' for answer in receipts))
     ssh = (f'echo "$*" >> {calls}\n[[ "$*" != *{fails}* ]] || exit 255\n'
-           # a banner, then the answer: to LAUNCH_TRACES the next scripted one, to JOB_TRACES out_on_pod
-           f'if [[ "$*" == *\'"$r $n"\'* ]]; then echo "Welcome to the pod"; answer=$(head -n 1 {answers}); tail -n +2 {answers} > {answers}.rest; mv {answers}.rest {answers}; [[ $answer != FAIL ]] || exit 255; echo "$answer"\n'
+           f'if [[ "$*" == *"cat out/LAUNCH_ID"* && "$*" == *"then echo"* ]]; then echo "Welcome to the pod"; answer=$(head -n 1 {answers}); tail -n +2 {answers} > {answers}.rest; mv {answers}.rest {answers}; [[ $answer != FAIL ]] || exit 255; if [[ $answer == MATCH ]]; then\n' + LAUNCH_RECEIPT_ANSWER + '\nelse echo "$answer"; fi\n'
+           'elif [[ "$*" == *"cat EXIT_CODE"* ]]; then echo 7\n'
            f'elif [[ "$*" == *out/remote.log* ]]; then echo "Welcome to the pod"; echo {out_on_pod}; fi\n')
     stubs = {'ssh': ssh, 'rsync': f'exit {rsync}\n', 'sleep': 'exit 0\n', 'timeout': TIMEOUT_STUB}
     for name, body in stubs.items():
@@ -169,49 +169,142 @@ def test_a_run_that_armed_but_did_not_launch_copies_nothing_of_an_earlier_job(tm
     output, sent = arm_fails(tmp_path/'sync', 'held', fails='--never--', rsync=1, keep='0')  # the sync is the first rsync
     assert "holds an earlier job's results" in output and 'copying results' not in output, output
     assert not any('--remove-now' in line for line in sent), sent
-    # A launch call that failed: the pod's answers before and after say whether the job started (review round 46).
-    # The first ask after the failed launch fails outright (ssh exit 255): the second ask still runs and settles it (round 48).
-    output, sent = arm_fails(tmp_path/'retried', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', 'FAIL', '1 1'))
-    assert 'the job started on the pod: following it' in output, output
-    output, sent = arm_fails(tmp_path/'unanswered', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '?', '?'))
-    assert 'whether this run' in output and 'copying results' not in output, output
-    assert not any('--remove-now' in line for line in sent), sent
-    output, sent = arm_fails(tmp_path/'not-started', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '1 0'))
-    assert 'did not start' in output and "holds an earlier job's results" in output and 'copying results' not in output, output
-    assert not any('--remove-now' in line for line in sent), sent
-    # Moved aside, then the connection dropped before the job started: no fresh remote.log, so not started (round 47).
-    output, sent = arm_fails(tmp_path/'moved-only', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '0 1'))
-    assert 'did not start' in output and 'copying results' not in output, output
-    # Started: the driver follows the job (here the fake pod's exit-code answer ends it), not copy-and-remove at once.
-    output, sent = arm_fails(tmp_path/'started', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '1 1'))
-    assert 'the job started on the pod: following it' in output, output
-    assert any('cat out/EXIT_CODE' in line for line in sent), sent  # polled like any launched job
+    # Transport success and transport failure both require this launch's explicit receipt.
+    output, sent = arm_fails(tmp_path/'retried', 'held', fails='nohup', rsync=0, keep='0', receipts=('FAIL', 'MATCH'))
+    assert 'launch receipt confirmed' in output and 'cat EXIT_CODE' in '\n'.join(sent), output
+    for label, fail in [('lost-ssh', 'nohup'), ('successful-ssh', '--never--')]:
+        output, sent = arm_fails(tmp_path/label, 'held', fails=fail, rsync=0, keep='0', receipts=('old-launch', '?'))
+        assert 'receipt unconfirmed' in output and 'copying results' not in output, output
+        assert not any('--remove-now' in line or 'rm -f ~/.judge_key.' in line for line in sent), sent
 
 
-def test_the_launch_question_and_its_reading_run_for_real(tmp_path):
-    """Round 47: LAUNCH_TRACES was only ever answered by a stub. Here the driver's own command runs in a folder shaped like
-    a pod's home before and after a real launch's moves, and the driver's own launch_ran reads the answers."""
-    import re
-    driver = (ROOT/'ops/drive_runpod.sh').read_text()
-    traces = re.search(r"^LAUNCH_TRACES='([^']*)'$", driver, re.M).group(1)
-    reader = re.search(r'^launch_ran\(\) \{\n.*?^\}\n', driver, re.M | re.S).group(0)
-
-    def ask():
-        return subprocess.run(['sh', '-c', traces], cwd=tmp_path, capture_output=True, text=True, check=True).stdout.strip()
-
-    def ran(before, after):
-        return subprocess.run(['bash', '-c', reader + 'launch_ran "$1" "$2"', 'launch_ran', before, after]).returncode == 0
-
-    fresh = ask()
-    (tmp_path/'out').mkdir()  # what a failed --arm-only leaves
-    assert fresh == ask() == '0 0'
-    (tmp_path/'out'/'remote.log').write_text('')  # a launch on a fresh pod
-    assert ask() == '1 0' and ran('0 0', '1 0')
-    before = ask()  # a relaunch: the earlier job's out/ is moved aside, then a fresh remote.log is written
-    (tmp_path/'out').rename(tmp_path/'out.prev.1764100000')
-    moved_only = ask()
-    assert moved_only == '0 1' and not ran(before, moved_only)  # the connection dropped between the move and the start
+def test_launch_transaction_rotates_output_and_preserves_real_status(tmp_path):
+    from test_round2_regressions import write_stubs
+    path = write_stubs(tmp_path, setsid=SETSID, timeout=TIMEOUT_STUB)
     (tmp_path/'out').mkdir()
-    (tmp_path/'out'/'remote.log').write_text('')
-    assert ask() == '1 1' and ran(before, '1 1')
-    assert not ran('1 1', '1 1')  # nothing changed: not started
+    (tmp_path/'out/EXIT_CODE').write_text('0\n')
+    job = tmp_path/'job.sh'
+    job.write_text('exit 7\n')
+    env = dict(os.environ, PATH=path, HOME=str(tmp_path), REQUIRE_AUTOSTOP='0')
+    env.pop('REMOTE_JOB_OUT', None)
+    env.pop('REMOTE_JOB_PIDS', None)
+    result = subprocess.run(['bash', str(ROOT/'ops/remote_job.sh'), '--launch', 'new-run', str(job), '60'],
+                            cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 7, result.stdout + result.stderr
+    assert (tmp_path/'out/LAUNCH_ID').read_text().strip() == 'new-run'
+    assert (tmp_path/'out/EXIT_CODE').read_text().strip() == '7'
+    assert (tmp_path/'out.prev.new-run/EXIT_CODE').read_text().strip() == '0'
+    assert not (tmp_path/'.remote_job.pids').exists()
+    # Reusing a token must fail before mv can nest out inside an existing archive.
+    result = subprocess.run(['bash', str(ROOT/'ops/remote_job.sh'), '--launch', 'new-run', str(job), '60'],
+                            cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0 and 'archive already exists' in result.stdout
+    assert (tmp_path/'out/EXIT_CODE').read_text().strip() == '7'
+
+
+def test_relaunch_stops_a_runner_still_in_setup_before_rotating_output(tmp_path):
+    """The old runner is owned before its API check and before it can spawn a job."""
+    import signal
+    import time
+    from test_round2_regressions import write_stubs
+    path = write_stubs(tmp_path, setsid=SETSID, timeout=TIMEOUT_STUB,
+                       runpodctl=f'touch {tmp_path}/setup-waiting\nsleep 30\nexit 1\n')
+    job = tmp_path/'job.sh'
+    job.write_text('[ "$(cat "$HOME/.judge_key")" = new-key ] || exit 9\nexit 7\n')
+    env = dict(os.environ, PATH=path, HOME=str(tmp_path), REQUIRE_AUTOSTOP='1', RUNPOD_POD_ID='setup-pod', RUNPOD_API_KEY='test')
+    env.pop('REMOTE_JOB_OUT', None)
+    env.pop('REMOTE_JOB_PIDS', None)
+    (tmp_path/'.judge_key.old-run').write_text('old-key')
+    (tmp_path/'.judge_key.new-run').write_text('new-key')
+    command = ['bash', str(ROOT/'ops/remote_job.sh'), '--launch']
+    with (tmp_path/'first.log').open('w') as log:
+        first = subprocess.Popen(command + ['old-run', str(job), '60'], cwd=tmp_path, env=env, stdout=log, stderr=log)
+        second = None
+        try:
+            for _ in range(100):
+                if (tmp_path/'setup-waiting').exists():
+                    break
+                time.sleep(0.05)
+            assert (tmp_path/'setup-waiting').exists(), (tmp_path/'first.log').read_text()
+            assert (tmp_path/'.remote_job.pids').read_text().strip() == str(first.pid)
+            second_env = dict(env, RUNPOD_POD_ID='', REQUIRE_AUTOSTOP='0')
+            second = subprocess.Popen(command + ['new-run', str(job), '60'], cwd=tmp_path, env=second_env,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            # Leave the killed runner unreaped while its replacement starts: a pod's PID 1
+            # can similarly retain zombie children, which no longer write or hold the GPU.
+            stdout, stderr = second.communicate(timeout=30)
+            assert second.returncode == 7, stdout + stderr + (tmp_path/'out/remote.log').read_text()
+            assert first.wait(timeout=10) == -signal.SIGKILL
+            assert (tmp_path/'out/EXIT_CODE').read_text().strip() == '7'
+            assert (tmp_path/'out/LAUNCH_ID').read_text().strip() == 'new-run'
+            assert (tmp_path/'out.prev.new-run/LAUNCH_ID').read_text().strip() == 'old-run'
+            assert not (tmp_path/'out.prev.new-run/EXIT_CODE').exists()
+        finally:
+            for process in (first, second):
+                if process is not None and process.poll() is None:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=10)
+
+
+def test_launch_refuses_when_session_ownership_cannot_be_published(tmp_path):
+    from test_round2_regressions import write_stubs
+    path = write_stubs(tmp_path, setsid=SETSID, timeout=TIMEOUT_STUB)
+    (tmp_path/'out').mkdir()
+    (tmp_path/'out/old-result').write_text('keep this')
+    job = tmp_path/'job.sh'
+    job.write_text(f'touch {tmp_path}/job-started\n')
+    env = dict(os.environ, PATH=path, HOME=str(tmp_path), REQUIRE_AUTOSTOP='0',
+               REMOTE_JOB_PIDS=str(tmp_path/'missing-parent/pids'))
+    env.pop('REMOTE_JOB_OUT', None)
+    result = subprocess.run(['bash', str(ROOT/'ops/remote_job.sh'), '--launch', 'new-run', str(job), '60'],
+                            cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0 and 'could not publish job session ownership' in result.stdout
+    assert (tmp_path/'out/old-result').read_text() == 'keep this'
+    assert not (tmp_path/'out/LAUNCH_ID').exists()
+    assert not (tmp_path/'out.prev.new-run').exists()
+    assert not (tmp_path/'job-started').exists()
+
+
+def test_finished_runner_keeps_ownership_until_grace_timer_detaches(tmp_path, pod_id):
+    """Pause the timer child before exec, when a relaunch's command-line search cannot see it."""
+    import time
+    from test_round2_regressions import write_stubs
+    path = write_stubs(tmp_path, setsid=SETSID, timeout=TIMEOUT_STUB, runpodctl='exit 0\n')
+    startup = tmp_path/'startup.sh'
+    startup.write_text(f'''nohup() {{
+  if [[ -f "$OUT/EXIT_CODE" ]]; then
+    touch {tmp_path}/timer-starting
+    for i in $(seq 50); do
+      [[ -e {tmp_path}/release-timer ]] && break
+      sleep 0.05
+    done
+  fi
+  exec /usr/bin/nohup "$@"
+}}
+''')
+    job = tmp_path/'job.sh'
+    job.write_text('exit 0\n')
+    pod = pod_id('grace-handoff')
+    pids = tmp_path/'pids'
+    env = dict(os.environ, PATH=path, BASH_ENV=str(startup), HOME=str(tmp_path),
+               REMOTE_JOB_OUT=str(tmp_path/'out'), REMOTE_JOB_PIDS=str(pids), REQUIRE_AUTOSTOP='1',
+               RUNPOD_POD_ID=pod, RUNPOD_API_KEY='test')
+    with (tmp_path/'runner.log').open('w') as log:
+        runner = subprocess.Popen(['bash', str(ROOT/'ops/remote_job.sh'), str(job), '60'], env=env, stdout=log, stderr=log)
+        try:
+            for _ in range(100):
+                if (tmp_path/'timer-starting').exists():
+                    break
+                time.sleep(0.05)
+            assert (tmp_path/'timer-starting').exists(), (tmp_path/'runner.log').read_text()
+            time.sleep(0.1)
+            assert pids.exists(), 'runner released ownership while its timer was still unidentifiable'
+            (tmp_path/'release-timer').touch()
+            assert runner.wait(timeout=10) == 0, (tmp_path/'runner.log').read_text()
+            assert not pids.exists()
+        finally:
+            (tmp_path/'release-timer').touch()
+            if runner.poll() is None:
+                runner.kill()
+                runner.wait(timeout=5)
+            subprocess.run(['pkill', '-f', f"runpodctl remove pod '{pod}'"], timeout=10)

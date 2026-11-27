@@ -49,7 +49,7 @@ def test_invalid_launch_numbers_are_rejected(field, value):
 def test_invalid_grant_ledger_costs_are_rejected(value):
     # A bad charge on another grant line must not weaken the overall cap either.
     with pytest.raises(ValueError, match='ledger row 1 total_usd'):
-        budget.check([dict(line='storage', total_usd=value)], 'api', 1, 1)
+        budget.check([dict(line='storage', total_usd=value, status='paid')], 'api', 1, 1)
 
 
 def test_overflow_is_rejected_and_zero_is_allowed():
@@ -57,7 +57,7 @@ def test_overflow_is_rejected_and_zero_is_allowed():
         budget.check([], 'api', 1e308, 1e308)
     assert budget.check([], 'api', 0, 0, launch_cap=0) == (0, [])
     with pytest.raises(ValueError, match='ledger total'):
-        budget.spent([dict(total_usd=1e308), dict(total_usd=1e308)])
+        budget.spent([dict(total_usd=1e308, status='paid'), dict(total_usd=1e308, status='paid')])
 
 
 def test_budget_cli_refuses_nan_without_traceback():
@@ -121,8 +121,8 @@ def test_zero_judge_cap_prevents_request(monkeypatch):
 @pytest.mark.parametrize('line', ['api ', ' api', 'API', 'typo', ' '])
 def test_unknown_ledger_lines_cannot_escape_caps(line):
     with pytest.raises(ValueError, match='unknown budget line'):
-        budget.check([dict(line=line, total_usd='300')], 'api', 0, 0, other=300)
-    assert budget.grant_spent([dict(line='', total_usd='300')]) == 0
+        budget.check([dict(line=line, total_usd='300', status='paid')], 'api', 0, 0, other=300)
+    assert budget.grant_spent([dict(line='', total_usd='300', status='paid')]) == 0
 
 
 def test_zero_probe_cap_preserves_plan_without_requests(tmp_path, monkeypatch):

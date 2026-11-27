@@ -100,7 +100,7 @@ CHECKPOINT_FILES = ('adapter_model.safetensors', 'adapter_config.json', 'optimiz
 # What a resume reads from the run folder beside the checkpoint (check_resume, original_records); ops/run_archive.py fetches
 # exactly these and the checkpoint for a pod.
 ROLLOUTS, STEPS = 'training-rollouts.jsonl', 'steps.jsonl'
-RESUME_RUN_FILES = (RUN_SETTINGS, ROLLOUTS, STEPS)
+RESUME_RUN_FILES = (RUN_SETTINGS, ROLLOUTS, STEPS, 'summary.json', 'before-evaluation.jsonl')
 
 
 def resume_point(args):
@@ -555,8 +555,17 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
 
         def on_log(self, args, state, control, logs=None, **kwargs):
             # Finite gradients whose total norm overflows are clipped to zero and pass the check above; the logged norm shows it.
-            norm = (logs or {}).get('grad_norm')  # fallback-ok: evaluation and end-of-training log entries carry no gradient norm, and absent means there is nothing to check
-            if norm is not None and not math.isfinite(norm):
+            if not isinstance(logs, dict):
+                raise TypeError('trainer log event needs a dictionary')
+            if 'loss' in logs:
+                norm = logs['grad_norm']
+            elif 'grad_norm' in logs:
+                norm = logs['grad_norm']
+            else:
+                if not any(key.startswith('eval_') or key.startswith('train_') for key in logs):
+                    raise ValueError(f'unrecognized trainer log event: {sorted(logs)}')
+                return
+            if not math.isfinite(norm):
                 raise FloatingPointError(f'the gradient norm is {norm} at step {state.global_step}')
 
         def on_step_begin(self, args, state, control, **kwargs):

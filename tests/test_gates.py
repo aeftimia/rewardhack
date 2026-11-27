@@ -7,6 +7,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -173,7 +174,8 @@ def project(tmp_path):
 
 def drive(project, host='192.0.2.1', **settings):
     root, environment, calls = project
-    done = subprocess.run(['bash', 'ops/drive_runpod.sh', host, '22', 'ops/remote_x.sh', 'results/x', '60'], cwd=root,
+    destination = f'results/{uuid.uuid4().hex}'  # every attempted launch reserves its own results directory
+    done = subprocess.run(['bash', 'ops/drive_runpod.sh', host, '22', 'ops/remote_x.sh', destination, '60'], cwd=root,
                           env=dict(environment, **settings), capture_output=True, text=True)
     reached = calls.exists()
     if reached:
