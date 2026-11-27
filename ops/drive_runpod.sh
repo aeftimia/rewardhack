@@ -168,6 +168,7 @@ SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$
 # two on the pod; with expert LoRA each is about 3 GB). Interim copies leave them out; the final copy takes the ones left.
 # The vLLM hand-over adapter (rewritten every step) and the reload-check adapter are scratch, about 1 GB each: never copied.
 # Enter the owned directory before checking it, so a later rename cannot redirect the copy.
+# shellcheck disable=SC2329  # called from the EXIT-trap cleanup function
 pull() { "${PULL[@]}" "$@" "root@$HOST:./" "$RESULTS/"; }
 # Sizes in the final copy, smallest first, within the grace budgeted before deployment.
 SMALL=(--exclude='adapter*/' --exclude='trainer/checkpoint-*/')  # logs, rows, summaries, evaluations

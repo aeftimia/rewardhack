@@ -129,9 +129,19 @@ def test_extensionless_shell_source_is_scanned(scan_repo, monkeypatch):
 
 def test_one_window_denial_blocks_despite_another_approval(scan_repo, monkeypatch):
     root, checker = scan_repo
-    (root/'source.py').write_text("value = settings.get('count', 0)  # fallback-ok: test explanation\n")
+    source = "value = settings.get('count', 0)  # fallback-ok: test explanation\n"
+    (root/'source.py').write_text(source)
+    # Capture real findings before replacing context generation: the shared
+    # scanner now expects one context internally, while this tests our adapter's
+    # handling of multiple review cases and a denial in any one of them.
+    found, error = checker.scan(source, 'py', checker.project_settings(str(root/'source.py')))
+    assert error is None and len(found) == 1
+    monkeypatch.setattr(checker, 'scan', lambda *args: (found, error))
     monkeypatch.setattr(checker, 'review_contexts', lambda *args: ['first view', 'second view'])
+    reviewed = []
     def review(cases):
+        reviewed.extend(finding['context'] for _, finding in cases)
         return [(finding['context'] == 'first view', 'test verdict') for _, finding in cases]
     monkeypatch.setattr(checker, 'ask_judge', review)
     assert source_scan.full_scan(root) == 1
+    assert sorted(reviewed) == ['first view', 'second view']

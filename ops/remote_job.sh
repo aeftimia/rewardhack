@@ -10,12 +10,19 @@ set -euo pipefail
 # tests/test_shared_constants.py keeps the two equal.
 KILL_AFTER_SECONDS=30
 OUT=${REMOTE_JOB_OUT:-$HOME/out}
+echo "runner output directory: $OUT (REMOTE_JOB_OUT overrides the standard HOME/out path)"
 GRACE=${AUTOSTOP_GRACE_SECONDS:-600}  # time for the driver to copy results before the pod is removed
 echo "runner grace period: ${GRACE}s (AUTOSTOP_GRACE_SECONDS overrides the standard copy window)"
 mkdir -p "$OUT" || { echo "cannot create runner output directory: $OUT" >&2; exit 3; }
 # An SSH session does not inherit the container's environment, where RunPod puts the pod's id and its own key.
 pod_env() { if [[ -r /proc/1/environ ]]; then tr '\0' '\n' < /proc/1/environ | sed -n "s/^$1=//p" | head -1; fi; }
-POD_ID=${RUNPOD_POD_ID:-$(pod_env RUNPOD_POD_ID)}
+if [[ -n ${RUNPOD_POD_ID:-} ]]; then
+  POD_ID=$RUNPOD_POD_ID
+  echo 'pod identity source: RUNPOD_POD_ID in the runner environment'
+else
+  POD_ID=$(pod_env RUNPOD_POD_ID)
+  echo 'pod identity source: container PID 1 environment (SSH did not supply RUNPOD_POD_ID)'
+fi
 export RUNPOD_API_KEY=${RUNPOD_API_KEY:-$(pod_env RUNPOD_API_KEY)}
 AUTOSTOP=0
 remove_after() {  # detached, so it outlives this script, the SSH session and a killed job

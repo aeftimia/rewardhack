@@ -72,12 +72,6 @@
     "reason": "TimeCap is converted to an explicit time-cap finish reason in persisted pilot state; it stops further stages and does not report a successful analysis."
   },
   {
-    "path": "src/rewardhack/rescore.py",
-    "rule": "py-get-compare",
-    "text": "return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None",
-    "reason": "This function infers cutoff evidence; it does not certify that all historical metadata is well-formed. For unversioned rows, every state other than the two affirmative markers intentionally returns None, the explicit UNKNOWN outcome. Missing, contradictory, or otherwise insufficient historical metadata cannot establish normal termination and is never mapped to False. This includes raw-only probe rows and older truncated flags that could accompany complete answers. Only truncated together with genuine_why='truncated' establishes True. The cutoff-v1 branch has a schema contract and strictly validates it. Combining uncertain unversioned cases as unknown is the specified result, not a concealed success or a claim that malformed data was valid."
-  },
-  {
     "path": "src/rewardhack/state_files.py",
     "rule": "py-suppress",
     "text": "with contextlib.suppress(FileNotFoundError):",
@@ -129,19 +123,13 @@
     "path": "ops/remote_job.sh",
     "rule": "sh-default-expansion",
     "text": "OUT=${REMOTE_JOB_OUT:-$HOME/out}",
-    "reason": "These are documented output and PID-file location options for the runner. Omission selects the standard HOME location; filesystem failures are not a request to try another location."
+    "reason": "REMOTE_JOB_OUT is an optional test-isolation override. The production driver intentionally leaves it unset and accesses the runner's fixed out/ directory relative to HOME, including out/LAUNCH_ID and out/EXIT_CODE. Thus omission is the standard production interface, not a missing required setting. The next line explicitly logs the selected path and override name. A nonempty supplied path is used exactly; mkdir failure exits 3 rather than selecting a different directory."
   },
   {
     "path": "ops/remote_job.sh",
     "rule": "sh-default-expansion",
     "text": "GRACE=${AUTOSTOP_GRACE_SECONDS:-600}  # time for the driver to copy results before the pod is removed",
     "reason": "AUTOSTOP_GRACE_SECONDS is an optional duration override; 600 seconds is the standard result-copy window. The runner prints the selected grace period and the override name immediately, validates it as a whole number before job launch and includes it in the removal deadline. This is an observable configuration choice, not substituted measurements or error results."
-  },
-  {
-    "path": "ops/remote_job.sh",
-    "rule": "sh-default-expansion",
-    "text": "POD_ID=${RUNPOD_POD_ID:-$(pod_env RUNPOD_POD_ID)}",
-    "reason": "SSH sessions do not inherit the pod container environment. The alternate source is /proc/1/environ for the same RUNPOD_POD_ID, not another pod. If neither source supplies it, can_remove fails and REQUIRE_AUTOSTOP=1 refuses job launch."
   },
   {
     "path": "ops/remote_job.sh",

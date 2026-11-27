@@ -26,7 +26,9 @@ def scored_as_cut_off(old):
         if old['termination_schema'] != 'cutoff-v1' or type(old['truncated']) is not bool:
             raise ValueError('versioned termination needs cutoff-v1 and a Boolean truncated flag')
         return old['truncated']
-    return True if old.get('truncated') and old.get('genuine_why') == 'truncated' else None
+    if 'truncated' not in old or 'genuine_why' not in old:
+        return None  # Historical rows without termination evidence remain explicitly unknown.
+    return True if old['truncated'] and old['genuine_why'] == 'truncated' else None
 
 
 def stored_reading(old):
