@@ -13,7 +13,8 @@ such as a changed or removed function, argument, default, file format, or traini
 
 Keep the exact source commit for every experiment, including failed attempts and retries. Record the full
 launch SHA with each run's results. Preserve that commit when integrating the experiment branch by merging
-its original history into `main`. After pushing, fetch and verify each recorded SHA with
+its original history into `main`. Push reviewed commits promptly to their remote branch for backup.
+After pushing `main`, fetch and verify each recorded SHA with
 `git merge-base --is-ancestor <launch-sha> origin/main`.
 
 A pod bills from the moment it is deployed, and nothing limits that until the job's runner arms the pod's own removal timer (`ops/remote_job.sh`, started by `ops/drive_runpod.sh`). These rules close that gap.
