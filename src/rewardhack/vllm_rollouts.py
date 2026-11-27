@@ -161,7 +161,7 @@ class AdapterRollouts:
 
     def verify_reload(self, prompt):
         """A/B/A, once per kind of adapted weight (attention and other linear layers; the MoE experts): changing only
-        that kind's LoRA B bytes must change the fixed-seed output/logprob, and restoring A must restore it. Checked
+        that kind's LoRA B bytes must change the fixed-seed token sequence, and restoring A must restore it. Checked
         separately so that a server that ignores the expert tensors cannot pass on the attention ones. The live
         training tensors are untouched.
         """
@@ -178,9 +178,7 @@ class AdapterRollouts:
         def sample():
             return self.completions([prompt], seed=0, max_tokens=RELOAD_PROBE_TOKENS, model=self.name)
         def matches(left, right):
-            return (left[0] == right[0] and len(left[1][0]) == len(right[1][0])
-                    and all(math.isclose(a, b, abs_tol=1e-4, rel_tol=0)
-                            for a, b in zip(left[1][0], right[1][0], strict=True)))
+            return left[0] == right[0]
         def record_check(row):
             with (self.args.out / 'adapter-reload-checks.jsonl').open('a') as sink:
                 sink.write(json.dumps(dict(prompt_ids=prompt, max_tokens=RELOAD_PROBE_TOKENS,

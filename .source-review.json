@@ -51,7 +51,7 @@
     "path": "src/rewardhack/pilot_runner.py",
     "rule": "py-except-swallow",
     "text": "except subprocess.TimeoutExpired:",
-    "reason": "In _terminate, this handler replaces a timed-out Popen wait with os.waitpid(process.pid, 0) after SIGKILL. Both calls name the same process; the handler returns no result and does not label the stage successful. Only ChildProcessError from that direct reap is suppressed; other errors propagate. In _execute, the separate handler explicitly returns timed_out=True and exit_code=None. Each handler makes its local outcome explicit: direct reaping in the first, a timeout result in the second."
+    "reason": "Judge the matching handler by its own body. A cleanup handler calling os.waitpid(process.pid, 0) directly reaps the killed child after the timed wait expires. ChildProcessError means there is no child left to reap. A stage handler returning timed_out=True and exit_code=None reports the timeout explicitly."
   },
   {
     "path": "src/rewardhack/pilot_runner.py",

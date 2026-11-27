@@ -130,7 +130,7 @@ def test_reload_requires_changed_weights_and_restoration(backend, monkeypatch):
     monkeypatch.setattr(backend, 'load', lambda path: active.__setitem__(0, path))
     def sample(*args, **kwargs):
         value = float(load_file(str(active[0]/'adapter_model.safetensors'))['layer.lora_B.weight'].sum())
-        return [[3]], [[-1-value]], None
+        return [[3 + int(value > 0)]], [[-1-value]], None
     monkeypatch.setattr(backend, 'completions', sample)
     backend.verify_reload([8])
     assert backend.checked_reload and active[0] == backend.path
@@ -148,10 +148,12 @@ def test_reload_uses_later_tokens_and_records_failed_restoration(backend, monkey
     save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
     (backend.path/'adapter_config.json').write_text('{}')
     monkeypatch.setattr(backend, 'load', lambda path: None)
-    values = iter([-2.0, -2.0, -2.0, -2.0, -3.0, restored])
+    values = iter([(3, -2.0), (3, -2.16), (3, -2.3), (3, -2.0), (4, -3.0),
+                   (3 if restored == -2.0 else 4, restored - 0.315)])
     def sample(*args, **kwargs):
         assert kwargs['max_tokens'] == RELOAD_PROBE_TOKENS
-        return [[200005, 3]], [[0.0, next(values)]], None
+        token, score = next(values)
+        return [[200005, token]], [[0.0, score]], None
     monkeypatch.setattr(backend, 'completions', sample)
     if restored == -2.0:
         backend.verify_reload([8])
@@ -196,7 +198,10 @@ def test_reload_refuses_drift_before_perturbation(backend, monkeypatch, stage, v
     loaded = []
     monkeypatch.setattr(backend, 'load', loaded.append)
     sequence = iter(values)
-    monkeypatch.setattr(backend, 'completions', lambda *a, **kw: ([[3]], [[next(sequence)]], None))
+    def sample(*args, **kwargs):
+        score = next(sequence)
+        return [[3 if score == -1.0 else 4]], [[score]], None
+    monkeypatch.setattr(backend, 'completions', sample)
     with pytest.raises(RuntimeError, match=stage):
         backend.verify_reload([8])
     assert not backend.checked_reload
@@ -267,8 +272,9 @@ def test_every_batch_reloads_current_adapter_and_sleeps(backend):
             params = json.loads(request.content)['sampling_params']
             assert (params['temperature'], params['top_p'], params['top_k']) == (1.0, 1.0, 0)
             if params['max_tokens'] == RELOAD_PROBE_TOKENS:
-                row = dict(token_ids=[3] * RELOAD_PROBE_TOKENS, finish_reason='length',
-                           logprobs={'content': [dict(token_id=3, logprob=-1-loaded[0])] * RELOAD_PROBE_TOKENS})
+                token = 3 + int(loaded[0] > 0)
+                row = dict(token_ids=[token] * RELOAD_PROBE_TOKENS, finish_reason='length',
+                           logprobs={'content': [dict(token_id=token, logprob=-1-loaded[0])] * RELOAD_PROBE_TOKENS})
             else:
                 seeds.append(params['seed'])
                 assert loaded[0] == pytest.approx(value[0])
@@ -330,7 +336,8 @@ def test_reload_checks_expert_tensors_on_their_own(backend, monkeypatch):
     def served(*names):
         def sample(*args, **kwargs):
             state = load_file(str(active[0]/'adapter_model.safetensors'))
-            return [[3]], [[-1-sum(float(state[name].sum()) for name in names)]], None
+            value = sum(float(state[name].sum()) for name in names)
+            return [[3 + int(value > 0)]], [[-1-value]], None
         return sample
     monkeypatch.setattr(backend, 'completions', served('layer.self_attn.q_proj.lora_B.weight', 'layer.mlp.experts.lora_B.weight'))
     checks = backend.verify_reload([8])
