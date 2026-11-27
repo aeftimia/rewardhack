@@ -10,3 +10,11 @@ regexes = ['''(?i)(revision|sha256)['"]?\s*[:=]\s*['"]?[0-9a-f]{40,64}\b''']
 description = "Driver settings (NAME= or NAME=1) and dotted Lean names, read as the value after a key-like word"
 targetRules = ["generic-api-key"]
 regexes = ['''^[A-Z][A-Z0-9_]*=\w{0,3}$''', '''^[A-Z][A-Za-z]*\.[a-z_][A-Za-z0-9_]*$''']
+
+[[allowlists]]
+description = "Tokenizer artifact SHA-256 values in verified archive manifests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^results/[^/]+/archive\.json$''']
+regexTarget = "line"
+regexes = ['''^\s*"[^"\r\n]*/tokenizer(_config)?\.json": "[0-9a-f]{64}",?\s*$''']

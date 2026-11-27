@@ -33,7 +33,7 @@
     "path": "src/rewardhack/outcomes.py",
     "rule": "py-getattr-default",
     "text": "kwargs = {'retries': retries} if getattr(judge, 'accepts_retry_budget', False) else {}",
-    "reason": "The public scoring interface accepts a callable judge(row), including plain Python functions supplied by analysis/tests; it does not require an object from a closed registry or require arbitrary function attributes. accepts_retry_budget is an OPTIONAL opt-in extension set by judge.checked for the extra retries keyword. Its absence means the base one-argument callable protocol, which is the normal interface, not an invalid judge substituted for a valid one. The same provided callable is invoked and its failures propagate; there is no replacement judge or fabricated successful verdict if it is broken."
+    "reason": "This expression only decides whether to pass the optional retries keyword to the same supplied callable. Missing accepts_retry_budget omits that keyword; it does not replace the callable or supply a verdict. For a valid report the next line invokes judge(out, **kwargs) directly, with no exception handler: a noncallable or incompatible signature raises visibly. Invalid reports take the separately visible no-report branch. No claim is made that probing an attribute validates a judge's configuration."
   },
   {
     "path": "src/rewardhack/pilot.py",
