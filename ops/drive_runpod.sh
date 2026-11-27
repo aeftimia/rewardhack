@@ -169,7 +169,9 @@ fi
 # Asked of a pod this run armed no timer on (see `finish`): whether any job was ever launched there. POSIX sh, as the
 # pod's login shell runs it; tests/test_round30_followups.py runs it against a real failed --arm-only.
 # shellcheck disable=SC2016  # expanded by the pod's shell, not here
-JOB_TRACES='set -- out.prev.*; if [ -e out/remote.log ] || [ -e "$1" ]; then echo held; else echo empty; fi'
+# A job's trace is a remote.log, in out/ or in an out.prev.* a relaunch moved aside; an out.prev.* holding only what an
+# arm call wrote (autostop.log) is none (review round 48).
+JOB_TRACES='set -- out.prev.*/remote.log; if [ -e out/remote.log ] || [ -e "$1" ]; then echo held; else echo empty; fi'
 # Asked just before the launch and again after a launch call that did not return: "<1 if out/remote.log exists, else 0>
 # <number of out.prev.*>". A launch that ran wrote a fresh out/remote.log or moved an earlier out/ to a new out.prev.*,
 # so the two answers tell whether this run's job started (review round 46).
@@ -335,9 +337,13 @@ set -e
 # in the exit trap would copy nothing yet, and with KEEP_POD=0 remove the pod and the job with it); one that did not
 # means this run launched nothing (review rounds 46 and 47). With no answer, `finish` reports it unknown.
 if ((LAUNCH_STATUS != 0)); then
-  AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1)
-  if ! [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1); fi
-  if ! [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then echo "the launch call failed (exit $LAUNCH_STATUS) and the pod did not say whether the job started"; exit 1; fi
+  # Each ask in an `if` condition: exit-on-error is back on, and a failed query must lead to the second ask and then to
+  # the message, not end the script (review round 48).
+  if ! AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1) || ! [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then
+    if ! AFTER_LAUNCH=$(on_pod "$LAUNCH_TRACES" | tail -n 1) || ! [[ $AFTER_LAUNCH =~ $LAUNCH_TRACE_FORM ]]; then
+      echo "the launch call failed (exit $LAUNCH_STATUS) and the pod did not say whether the job started"; exit 1
+    fi
+  fi
   if ! launch_ran "$BEFORE_LAUNCH" "$AFTER_LAUNCH"; then
     LAUNCH_SENT=0
     echo "the launch call failed (exit $LAUNCH_STATUS) and the job did not start on the pod"; exit 1

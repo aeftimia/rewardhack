@@ -103,7 +103,7 @@ def arm_fails(tmp_path, out_on_pod, fails='--arm-only', rsync=1, keep='1', launc
     answers.write_text(''.join(f'{answer}\n' for answer in launch_traces))
     ssh = (f'echo "$*" >> {calls}\n[[ "$*" != *{fails}* ]] || exit 255\n'
            # a banner, then the answer: to LAUNCH_TRACES the next scripted one, to JOB_TRACES out_on_pod
-           f'if [[ "$*" == *\'"$r $n"\'* ]]; then echo "Welcome to the pod"; head -n 1 {answers}; tail -n +2 {answers} > {answers}.rest; mv {answers}.rest {answers}\n'
+           f'if [[ "$*" == *\'"$r $n"\'* ]]; then echo "Welcome to the pod"; answer=$(head -n 1 {answers}); tail -n +2 {answers} > {answers}.rest; mv {answers}.rest {answers}; [[ $answer != FAIL ]] || exit 255; echo "$answer"\n'
            f'elif [[ "$*" == *out/remote.log* ]]; then echo "Welcome to the pod"; echo {out_on_pod}; fi\n')
     stubs = {'ssh': ssh, 'rsync': f'exit {rsync}\n', 'sleep': 'exit 0\n', 'timeout': TIMEOUT_STUB}
     for name, body in stubs.items():
@@ -156,6 +156,9 @@ def test_a_failed_arm_call_on_a_fresh_pod_leaves_no_trace_of_a_job(tmp_path):
     assert ask() == 'held'
     (home/'out'/'remote.log').unlink()
     (home/'out.prev.1764100000').mkdir()
+    (home/'out.prev.1764100000'/'autostop.log').write_text('')
+    assert ask() == 'empty'  # what an arm call left, moved aside by a launch that then dropped: no job (round 48)
+    (home/'out.prev.1764100000'/'remote.log').write_text('')
     assert ask() == 'held'
 
 
@@ -167,6 +170,9 @@ def test_a_run_that_armed_but_did_not_launch_copies_nothing_of_an_earlier_job(tm
     assert "holds an earlier job's results" in output and 'copying results' not in output, output
     assert not any('--remove-now' in line for line in sent), sent
     # A launch call that failed: the pod's answers before and after say whether the job started (review round 46).
+    # The first ask after the failed launch fails outright (ssh exit 255): the second ask still runs and settles it (round 48).
+    output, sent = arm_fails(tmp_path/'retried', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', 'FAIL', '1 1'))
+    assert 'the job started on the pod: following it' in output, output
     output, sent = arm_fails(tmp_path/'unanswered', 'held', fails='nohup', rsync=0, keep='0', launch_traces=('1 0', '?', '?'))
     assert 'whether this run' in output and 'copying results' not in output, output
     assert not any('--remove-now' in line for line in sent), sent
