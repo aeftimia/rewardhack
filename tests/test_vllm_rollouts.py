@@ -49,6 +49,27 @@ def test_parallel_responses_preserve_group_order_and_unique_seeds(backend):
     assert all(b['sampling_params']['output_kind'] == 2 for b in seen)
 
 
+def test_long_evaluation_requests_allow_generation_and_queue_time(backend):
+    backend.max_model_len = 10240
+    seen = []
+    def handler(request):
+        seen.append(request.extensions['timeout']['read'])
+        return httpx.Response(200, json={'choices': [choice()]})
+    connect(backend, handler)
+    ids, _, _ = backend.completions([[8]] * 24, seed=7, max_tokens=8192, model='m')
+    assert len(ids) == 24
+    assert seen == [2640] * 24
+
+
+def test_completion_timeout_remains_finite_and_propagates(backend):
+    def handler(request):
+        assert 0 < request.extensions['timeout']['read'] < 10000
+        raise httpx.ReadTimeout('generation exceeded its bound', request=request)
+    connect(backend, handler)
+    with pytest.raises(httpx.ReadTimeout, match='generation exceeded'):
+        backend.completions([[8]], seed=7, max_tokens=2, model='m')
+
+
 @pytest.mark.parametrize('damage', ['misaligned', 'nonfinite', 'missing_stop', 'extra', 'http'])
 def test_invalid_rollouts_fail_instead_of_training(backend, damage):
     row = choice()
