@@ -278,7 +278,7 @@ def _run(root, directory, client):
 
 def _run_prepared_batch(root, directories, parallelism):
     """Run prepared configs concurrently within the live balance and grant line limits."""
-    from .runpod_ops import RunPod
+    from .runpod_ops import RunPod, available_with_top_up
     root = Path(root).resolve()
     pending = [Path(directory).resolve() for directory in directories]
     if not pending or parallelism < 1 or len(set(pending)) != len(pending):
@@ -288,7 +288,7 @@ def _run_prepared_batch(root, directories, parallelism):
     common = Path(gates.git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir').strip())
     with file_lock(common / 'experiment-batch.lock'), ThreadPoolExecutor(parallelism) as workers:
         while pending or charges:
-            available = Decimal(str(client.read('billing/balance')['balanceAmount']))
+            available = available_with_top_up(client.read('billing/balance')['balanceAmount'])
             for directory in list(pending):
                 if len(charges) == parallelism:
                     break
