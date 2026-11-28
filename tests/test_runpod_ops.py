@@ -164,6 +164,17 @@ def test_receipt_failure_still_removes_created_pod(deployment, monkeypatch):
     assert client.removed == [POD['id']]
 
 
+def test_log_write_failure_preserves_receipt_and_removes_pod(deployment):
+    root, config, client = deployment
+    class FullLog:
+        def write(self, text):
+            raise OSError('log disk full')
+    with pytest.raises(OSError, match='log disk full'):
+        ops.launch(client, root, config, 'results/test', log=FullLog())
+    assert json.loads((root / 'results/test.pod.json').read_text())['pod_id'] == POD['id']
+    assert client.removed == [POD['id']]
+
+
 def test_ambiguous_create_is_not_retried_and_matching_pod_is_removed(deployment, monkeypatch):
     root, config, client = deployment
     original = client.request

@@ -206,10 +206,10 @@ def launch(client, root, config, results, *, settings=None, log=None):
                             client.terminate(found['id'])
             raise
         pod_id = pod['id']
-        print(f'Created pod {pod_id}; driver pending; cleanup: runpod_ops.py terminate {pod_id}', file=log, flush=True)
         success = False
         try:
             write_pod_receipt(receipt, pod_id, record)
+            print(f'Created pod {pod_id}; driver pending; cleanup: runpod_ops.py terminate {pod_id}', file=log, flush=True)
             expires = time.monotonic() + gates.pod_pin(root, 'SSH_UP_SECONDS')
             while True:
                 if hourly(pod) > Decimal(str(record['hourly_usd'])):
