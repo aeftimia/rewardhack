@@ -1,4 +1,4 @@
-"""Scan repository sources and require fresh LLM review on every commit.
+"""Scan every commit and require a validated LLM review of each distinct obligation.
 
 Review notes are explanations, not exclusions: the judge reads each finding's
 current context. External notes keep the grader's verbatim prompt unchanged.
@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
-from .codex_hooks import load_checker
+from .codex_hooks import load_checker, load_hook_updater, load_source_module
 from .json_objects import unique_object
 
 REVIEW_FILE = '.source-review.json'
@@ -18,9 +18,15 @@ BATCH_SIZE = 1
 JUDGE_WORKERS = 4
 
 
+def review_tools():
+    updater = load_hook_updater()
+    cache = load_source_module('review_cache', Path(updater.__file__).with_name('review_cache.py'))
+    return load_checker(updater), cache.ReviewCache
+
+
 def full_scan(root):
     root = Path(root).resolve()
-    checker = load_checker()
+    checker, review_cache = review_tools()
     if not all(hasattr(checker, name) for name in ('VERDICT_SCHEMA', 'review_cases', 'openai_api_key')):
         raise RuntimeError('update the shared checker: the commit scan requires explicit review obligations')
     if os.environ.get(checker.GUARD):
@@ -61,7 +67,8 @@ def full_scan(root):
         language = checker.language(str(path), source)
         if language is None:
             raise ValueError(f'unrecognized source language: {relative}')
-        found, error = checker.scan(source, language, checker.project_settings(str(path)))
+        file_settings = checker.project_settings(str(path))
+        found, error = checker.scan(source, language, file_settings)
         if error:
             raise ValueError(f'{relative}: {error}')
         files += 1
@@ -84,12 +91,20 @@ def full_scan(root):
             raise ValueError(f'stale review evidence; remove or update it: {sorted(stale_evidence)}')
     marked = [(path, finding) for path, finding in findings if finding['reason'] is not None]
     refused = [(path, dict(finding, verdict=None)) for path, finding in findings if finding['reason'] is None]
-    # No cached verdicts: every commit needs a live, valid response, even with zero cases.
+    if refused:
+        for path, finding in refused:
+            print('\n'.join(checker.describe(finding, prefix=f'{path}: ')), flush=True)
+        print('Mandatory live reviews pending; fix unexplained findings first.', flush=True)
+        return 1
+    receipts = review_cache(root, 'source-scan', [__file__, checker.__file__], checker.openai_model())
     batches = [marked[i:i + BATCH_SIZE] for i in range(0, len(marked), BATCH_SIZE)]
     if not batches:
         batches.append([])
+    def adjudicate(batch):
+        return receipts.run('obligation', batch, lambda: checker.ask_judge(batch))
+
     with ThreadPoolExecutor(max_workers=JUDGE_WORKERS) as pool:
-        for batch, verdicts in zip(batches, pool.map(checker.ask_judge, batches), strict=True):
+        for batch, verdicts in zip(batches, pool.map(adjudicate, batches), strict=True):
             for (path, finding), (allowed, reason) in zip(batch, verdicts, strict=True):
                 print(f'{path}:{finding["line"]} {finding["rule"]} [{finding["obligation"]}]: '
                       f'{"allow" if allowed else "deny"}: {reason}', flush=True)
@@ -97,5 +112,5 @@ def full_scan(root):
                     refused.append((path, dict(finding, verdict=reason)))
     for path, finding in refused:
         print('\n'.join(checker.describe(finding, prefix=f'{path}: ')), flush=True)
-    print(f'{files} source files scanned; {len(refused)} refused; {len(marked)} obligations reviewed by the live judge', flush=True)
+    print(f'{files} source files scanned; {len(refused)} refused; {len(marked)} obligations reviewed', flush=True)
     return 1 if refused else 0

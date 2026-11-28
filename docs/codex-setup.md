@@ -49,8 +49,12 @@ in the main checkout verifies their installation.
 The full scan requires the shared checker's strict OpenAI schema support and a
 working credential from the selected source. It refuses a substitute judge command, a recursion
 guard, missing dependencies, unreadable sources, parse errors, and missing or
-invalid judge responses. Every run makes fresh judge requests; cached edit-hook
-verdicts cannot approve a commit. The scan sends a complete enclosing Python
+invalid judge responses. Every run scans current sources and resolves current
+evidence. Across commits and worktrees of this repository, the commit guard
+reuses completed reviews of the same obligations with the same evidence and
+reviewer, including refusals. The least recently used reviews are evicted
+when the guard cache fills. Edit-hook verdicts cannot approve a commit.
+The scan sends a complete enclosing Python
 function or class and its referenced module bindings and helpers, or a complete
 shell file, to the configured OpenAI model and incurs API usage. Nested functions
 retain their enclosing function's bindings. Omitted unrelated context is marked;

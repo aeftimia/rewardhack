@@ -1,4 +1,4 @@
-"""The commit scan must never pass without a fresh, valid judge response."""
+"""Every obligation needs a valid review of its current evidence."""
 import json
 from pathlib import Path
 import subprocess
@@ -15,9 +15,9 @@ def scan_repo(tmp_path, monkeypatch):
     subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
     (tmp_path/source_scan.REVIEW_FILE).write_text('[]')
     (tmp_path/'source.py').write_text('value = 1\n')
-    checker = load_checker()
+    checker, receipts = source_scan.review_tools()
     monkeypatch.setattr(checker, 'OPENAI_CREDENTIALS_FILE', tmp_path / 'openai.json')
-    monkeypatch.setattr(source_scan, 'load_checker', lambda: checker)
+    monkeypatch.setattr(source_scan, 'review_tools', lambda: (checker, receipts))
     monkeypatch.setenv('OPENAI_API_KEY', 'test-only')
     monkeypatch.delenv(checker.GUARD, raising=False)
     monkeypatch.delenv('NO_SILENT_FALLBACKS_JUDGE', raising=False)
@@ -29,6 +29,8 @@ def test_clean_scan_still_requires_fresh_judgment(scan_repo, monkeypatch):
     root, checker = scan_repo
     calls = []
     monkeypatch.setattr(checker, 'ask_judge', lambda cases: calls.append(cases) or [])
+    assert source_scan.full_scan(root) == 0
+    assert calls == [[]]
     assert source_scan.full_scan(root) == 0
     assert calls == [[]]
 
@@ -80,6 +82,8 @@ def test_review_notes_are_judged_with_current_context(scan_repo, monkeypatch, al
         return [(allowed, 'test verdict') for _ in cases]
     monkeypatch.setattr(checker, 'ask_judge', review)
     assert source_scan.full_scan(root) == (0 if allowed else 1)
+    assert source_scan.full_scan(root) == (0 if allowed else 1)
+    assert len(calls) == 1
     assert calls[0][1]['reason'] == 'Test explanation'
     assert source.strip() in calls[0][1]['context']
     (root/'source.py').write_text('value = 1\n')
@@ -153,7 +157,11 @@ def test_configured_consumer_is_reviewed_and_stale_evidence_refused(scan_repo, m
     calls = []
     monkeypatch.setattr(checker, 'ask_judge', lambda cases: calls.extend(cases) or [(True, 'fixture') for _ in cases])
     assert source_scan.full_scan(root) == 0
-    assert len(calls) == 2 and 'raise ValueError(value)' in calls[1][1]['context']
+    assert len(calls) == 2 and any('raise ValueError(value)' in item['context'] for _, item in calls)
+    (root/'consumer.py').write_text('def consume(value):\n    return None\n')
+    monkeypatch.setattr(checker, 'ask_judge', lambda cases: calls.extend(cases) or [(False, 'lost propagation')])
+    assert source_scan.full_scan(root) == 1
+    assert len(calls) == 3 and 'return None' in calls[-1][1]['context']
     (root/'source.py').write_text('value = 1\n')
     with pytest.raises(ValueError, match='stale review evidence'):
         source_scan.full_scan(root)

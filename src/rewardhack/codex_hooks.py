@@ -119,9 +119,11 @@ def load_hook_updater():
     return load_source_module('shared_hook_updater', path)
 
 
-def load_checker():
+def load_checker(updater=None):
     # fallback-ok: This names the existing scanner repository and source file; no exception is caught or substituted for a successful scan.
-    path = load_hook_updater().source_module('no-silent-fallbacks')
+    if updater is None:
+        updater = load_hook_updater()
+    path = updater.source_module('no-silent-fallbacks')
     return load_source_module('shared_no_silent_fallbacks', path)
 
 

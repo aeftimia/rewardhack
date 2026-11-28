@@ -1,6 +1,7 @@
 # Commit gate (CLAUDE.md, "Hooks"): commit-gate, developed and released in github.com/aeftimia/commit-gate, whose README
 # lists what it reads and its gaps. Installed once per clone, from the main checkout (CLAUDE.md gives the command).
 minimum_pre_commit_version: 4.7.0
+fail_fast: true
 default_install_hook_types: [pre-commit, commit-msg]  # pre-push: `commit-gate install-pre-push`
 repos:
   - repo: local
@@ -12,23 +13,6 @@ repos:
         pass_filenames: false
         always_run: true
         require_serial: true
-        stages: [pre-commit]
-      - id: no-silent-failures
-        name: Full source scan with mandatory LLM judge
-        entry: bash ops/gate.sh scan-sources
-        language: system
-        pass_filenames: false
-        always_run: true
-        require_serial: true
-        stages: [pre-commit]
-      - id: semantic-dry-audit
-        name: Semantic DRY review of staged Python computations
-        entry: dry-audit --run-hook dry-audit --hook-args --semantic-hook --root . --block same divergent
-        language: system
-        pass_filenames: false
-        always_run: true
-        require_serial: true
-        verbose: true
         stages: [pre-commit]
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -52,3 +36,23 @@ repos:
         args: [--config, .gitleaks.toml]
       - id: gitleaks-push
         args: [--config, .gitleaks.toml]
+  - repo: local
+    hooks:
+      - id: no-silent-failures
+        name: Full source scan with mandatory LLM judge
+        entry: bash ops/gate.sh scan-sources
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        verbose: true
+        stages: [pre-commit]
+      - id: semantic-dry-audit
+        name: Semantic DRY review of staged Python computations
+        entry: dry-audit --run-hook dry-audit --hook-args --semantic-hook --root . --block same divergent
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        verbose: true
+        stages: [pre-commit]
