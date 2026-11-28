@@ -1,19 +1,55 @@
 """Sign immutable pod uploads and record S3-verified receipts for the registry."""
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 import re
 import secrets
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError, ConnectionClosedError, ReadTimeoutError
 
 from archive_pod_snapshot import sign, verify, DESCRIBE_SECONDS, URL_SECONDS, CLIENT_OPTIONS
 from rewardhack import archive
 from rewardhack.state_files import atomic_json
+
+
+def copy_snapshot(client, source, key, row):
+    """A lost acknowledgement may leave a complete immutable destination."""
+    started = time.monotonic()
+    try:
+        response = client.copy_object(Bucket=archive.BUCKET, Key=key, CopySource={'Bucket': archive.BUCKET, 'Key': source},
+                                      StorageClass=archive.STORAGE, ChecksumAlgorithm='SHA256', IfNoneMatch='*')
+        outcome = f"acknowledged after {response['ResponseMetadata']['RetryAttempts']} SDK retries"
+    except ClientError as error:
+        if error.response['Error']['Code'] != 'PreconditionFailed' or error.response['ResponseMetadata']['HTTPStatusCode'] != 412:
+            raise
+        outcome = 'destination already exists'
+    except (ReadTimeoutError, ConnectionClosedError) as error:
+        outcome = type(error).__name__
+    print(f"S3 copy {row['path']} ({row['size']} bytes): {outcome} in {time.monotonic()-started:.1f}s; checking destination", flush=True)
+    verify(client, archive.BUCKET, key, row)
+
+
+def final_attempt(result, rows, candidate):
+    """Share a destination across retries of the same immutable output inventory."""
+    inventory = sorted((row['path'], row['size'], row['sha256']) for row in rows)
+    # dry-ok: ops/pod_snapshot_upload.py::describe | This local filename fingerprints the ordered list of inventory entries. Its encoding and algorithm may change independently of the SHA-256 of each object's bytes that S3 verifies.
+    digest = hashlib.sha256(json.dumps(inventory).encode()).hexdigest()
+    path = result.with_suffix(f'.direct-attempt-{digest}.json')
+    try:
+        atomic_json(path, candidate)
+    except FileExistsError:
+        saved = json.loads(path.read_text())
+        if not archive.RUN_ID.fullmatch(saved) or f'-{result.name}-outputs-' not in saved:
+            raise ValueError(f'invalid archive attempt in {path}') from None
+        return saved, True
+    return candidate, False
 
 
 def transfer(mode, result, command, client):
@@ -28,20 +64,30 @@ def transfer(mode, result, command, client):
     verified_snapshots = {}
     def publish(label, rows, snapshot):
         run_id = f'{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{result.name}-{label}-{secrets.token_hex(4)}'
+        resumed = False
+        if not snapshot:
+            run_id, resumed = final_attempt(result, rows, run_id)
         def send(row):
             path = Path(row['path'])
             if path.is_absolute() or '..' in path.parts or (snapshot and path.parts[0] != config['output_arm']):
                 raise ValueError('unexpected pod artifact path')
             name = path.name if snapshot else path.as_posix()
             key = f'{run_id}/{name}'
+            if resumed:
+                try:
+                    verify(client, archive.BUCKET, key, row)
+                except ClientError as error:
+                    if error.response['ResponseMetadata']['HTTPStatusCode'] != 404:
+                        raise
+                else:
+                    return name, row['sha256']
             previous = verified_snapshots.get((path.as_posix(), row['sha256']))
             if previous is None:
                 request = sign(client, archive.BUCKET, key, row)
                 remote('upload', request)
+                verify(client, archive.BUCKET, key, row)
             else:
-                client.copy_object(Bucket=archive.BUCKET, Key=key, CopySource={'Bucket': archive.BUCKET, 'Key': previous},
-                                   StorageClass=archive.STORAGE, ChecksumAlgorithm='SHA256', IfNoneMatch='*')
-            verify(client, archive.BUCKET, key, row)
+                copy_snapshot(client, previous, key, row)
             return name, row['sha256']
         with ThreadPoolExecutor(4) as pool:
             hashes = dict(pool.map(send, rows))

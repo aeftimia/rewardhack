@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from botocore.exceptions import ClientError, ReadTimeoutError
 
 
 def test_driver_routes_resume_and_final_archive(tmp_path, monkeypatch):
@@ -37,6 +38,50 @@ def modules(monkeypatch):
     import fetch_checkpoint
     import pod_snapshot_upload
     return direct_experiment_archive, fetch_checkpoint, pod_snapshot_upload
+
+
+@pytest.mark.parametrize('outcome', ['ok', '412', 'timeout', 'wrong-hash', 'wrong-size', 'missing', 'denied'])
+def test_slow_copy_only_accepts_verified_destination(modules, outcome):
+    driver, _, pod = modules
+    row = dict(path='train-a/adapter-step2/weights', sha256='12'*32, size=37)
+    heads = []
+    def error(status, code):
+        return ClientError({'Error': {'Code': code}, 'ResponseMetadata': {'HTTPStatusCode': status}}, 'CopyObject')
+    def copy(**args):
+        assert args['IfNoneMatch'] == '*' and args['CopySource']['Key'] == 'snapshot/weights'
+        if outcome == 'ok':
+            return {'ResponseMetadata': {'RetryAttempts': 0}}
+        if outcome == 'timeout':
+            raise ReadTimeoutError(endpoint_url='https://example.invalid')
+        if outcome == 'denied':
+            raise error(403, 'AccessDenied')
+        raise error(412, 'PreconditionFailed')
+    def head(**args):
+        heads.append(args)
+        if outcome == 'missing':
+            raise error(404, 'NotFound')
+        return {'ChecksumSHA256': 'different' if outcome == 'wrong-hash' else pod.s3_checksum(row),
+                'ContentLength': 0 if outcome == 'wrong-size' else row['size']}
+    client = SimpleNamespace(copy_object=copy, head_object=head)
+    if outcome in ('denied', 'missing', 'wrong-size', 'wrong-hash'):
+        with pytest.raises((ClientError, ValueError)):
+            driver.copy_snapshot(client, 'snapshot/weights', 'outputs/weights', row)
+    else:
+        driver.copy_snapshot(client, 'snapshot/weights', 'outputs/weights', row)
+    assert heads == ([] if outcome == 'denied' else [
+        {'Bucket': driver.archive.BUCKET, 'Key': 'outputs/weights', 'ChecksumMode': 'ENABLED'}])
+
+
+def test_archive_retry_reuses_prefix_only_for_identical_inventory(modules, tmp_path):
+    driver, _, _ = modules
+    result = tmp_path / 'experiment'
+    first = '20261128T043709Z-experiment-outputs-abcdef12'
+    second = '20261128T044109Z-experiment-outputs-34567890'
+    rows = [dict(path='a', size=1, sha256='a'*64), dict(path='b', size=2, sha256='b'*64)]
+    assert driver.final_attempt(result, rows, first) == (first, False)
+    assert driver.final_attempt(result, rows[::-1], second) == (first, True)
+    rows[0]['sha256'] = 'c'*64
+    assert driver.final_attempt(result, rows, second) == (second, False)
 
 
 @pytest.mark.parametrize('corrupt', [False, True])
@@ -83,13 +128,19 @@ def test_verified_roundtrip_without_local_weights(tmp_path, monkeypatch, modules
             digest = hashlib.sha256(data).digest()
             return dict(ContentLength=len(data), ChecksumSHA256=base64.b64encode(digest).decode())
 
+    actions = []
     def ssh(args, input, **kwargs):
+        actions.append(args[-1])
         modes = {'snapshots': lambda: {}, 'bulk': lambda: [pod.describe(name)],
                  'upload': lambda: pod.upload(json.loads(input))}
         return SimpleNamespace(stdout=json.dumps(modes[args[-1]]()))
     monkeypatch.setattr(driver.subprocess, 'run', ssh)
     driver.transfer('final', result, ['ssh-pod'], S3())
     receipt = json.loads(result.with_suffix('.direct.json').read_text())
+    actions.clear()
+    driver.transfer('final', result, ['ssh-pod'], S3())
+    assert 'upload' not in actions
+    assert json.loads(result.with_suffix('.direct.json').read_text()) == receipt
     assert not (result / name).exists()
     key = f"{receipt['run_id']}/{name}"
     if corrupt:
