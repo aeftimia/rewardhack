@@ -65,6 +65,15 @@ def check_runs(runs):
     return runs
 
 
+def runs_argument(text):
+    """`--grader-runs` as argparse reads it: the command line gives text."""
+    import argparse
+    try:
+        return check_runs(int(text))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
 def result_reserve(runs):
     """Context tokens an episode may need beyond its prompt and token budget: at most runs + 1 tool results (the runs, and
     one refusal of a call past the limit). None for the control."""

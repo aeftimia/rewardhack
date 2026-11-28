@@ -381,7 +381,7 @@ def test_the_probe_entrypoint_runs_episodes_against_the_server_and_writes_its_su
     out = tmp_path/'probe'
     monkeypatch.setattr(sys, 'argv', ['grader_tool_probe.py', '--out', str(out), '--lean', LEAN, '--model', 'openai/gpt-oss-20b',
                                       '--revision', 'r', '--rollout-url', 'http://127.0.0.1:8011', '--max-completion-length', '3000',
-                                      '--tasks', '2', '--samples', '2'])
+                                      '--tasks', '2', '--samples', '2', '--grader-runs', '3'])  # given as text, as the pod script gives it
     runpy.run_path(str(Path(__file__).parent.parent/'entrypoints/grader_tool_probe.py'), run_name='__main__')
     summary = json.loads((out/'summary.json').read_text())
     [backend] = servers

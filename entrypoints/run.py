@@ -9,20 +9,13 @@ import sys
 from pathlib import Path
 
 from rewardhack import judge, reporting, retry_options, vllm_rollouts
-from rewardhack.grader_tool import check_runs
+from rewardhack.grader_tool import runs_argument
 from rewardhack.hf_grpo import run
 from rewardhack.outcomes import ARMS, SATURATION_FLOOR, SATURATION_WINDOW
 from rewardhack.prompts import VARIANTS
 from rewardhack.sampling import DEFAULT_SEED
 from rewardhack.tasks import TASKSETS
 from rewardhack.training_sampling import MODES as TRAINING_SAMPLERS
-
-
-def grader_tool_runs(text):
-    try:
-        return check_runs(int(text))
-    except ValueError as error:
-        raise argparse.ArgumentTypeError(str(error)) from error
 
 
 def main():
@@ -69,7 +62,7 @@ def main():
     ap.add_argument('--lora-rank', type=int, default=16)
     ap.add_argument('--max-completion-length', type=int, default=512,
                     help='model-generated tokens per answer; with --grader-runs, per episode across all its turns')
-    ap.add_argument('--grader-runs', type=grader_tool_runs, default=0,
+    ap.add_argument('--grader-runs', type=runs_argument, default=0,
                     help='0: one submission (the control). N: a read-only run_grader tool the model may call on up to N drafts '
                          'before its final answer; each call returns the grader reward and Lean output (rewardhack.grader_tool)')
     ap.add_argument('--eval-samples', type=int, default=4)

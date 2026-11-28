@@ -30,7 +30,7 @@ if __name__ == '__main__':
     parser.add_argument('--revision', required=True)
     parser.add_argument('--rollout-url', required=True)
     parser.add_argument('--max-completion-length', type=int, required=True)
-    parser.add_argument('--grader-runs', type=grader_tool.check_runs, default=3)
+    parser.add_argument('--grader-runs', type=grader_tool.runs_argument, default=3)
     parser.add_argument('--tasks', type=int, default=4, help='probe tasks, stratified over the training split')
     parser.add_argument('--samples', type=int, default=2, help='episodes per task')
     parser.add_argument('--reasoning-effort', default='low')
