@@ -336,3 +336,57 @@ def test_the_real_gpt_oss_tokenizer_declares_parses_and_answers_the_tool():
     suffix = tokenizer.decode(chat.result_ids([('run_grader', result)]), skip_special_tokens=False)
     assert suffix == ('<|start|>functions.run_grader to=assistant<|channel|>commentary<|message|>'
                       + json.dumps(result, ensure_ascii=False) + '<|end|><|start|>assistant')
+
+
+class ProbeServer(AwakeServer):
+    """The vLLM backend entrypoints/grader_tool_probe.py talks to, scripted: what it is asked, in order."""
+    def __init__(self, args, stops, result_tokens=0):
+        self.args, self.calls = args, []
+        self.result_tokens = result_tokens
+        chat = PROBE_CHAT[0]
+        super().__init__(chat, [CALL['gpt_oss']] * 4 + [ANSWER['gpt_oss']] * 4)  # round 1: every episode calls; round 2: answers
+
+    def request(self, method, path, **kwargs):
+        self.calls.append(path)
+
+    def preflight(self):
+        self.calls.append('preflight')
+
+    def close(self):
+        self.calls.append('close')
+
+
+PROBE_CHAT = []
+
+
+@needs_lean
+def test_the_probe_entrypoint_runs_episodes_against_the_server_and_writes_its_summary(tmp_path, monkeypatch):
+    """entrypoints/grader_tool_probe.py, the pod smoke test of this path, end to end with a scripted server and real Lean."""
+    import runpy
+    import sys
+    from types import SimpleNamespace
+    import transformers
+    from rewardhack import vllm_rollouts
+    tokenizer = char_tokenizer(GPT_OSS)
+    tokenizer.response_template = None  # the probe prepares the tokenizer itself, before the template is pinned
+    PROBE_CHAT[:] = [chat_for(GPT_OSS)]
+    servers = []
+
+    def server(*args, **kwargs):
+        servers.append(ProbeServer(*args, **kwargs))
+        return servers[-1]
+    monkeypatch.setattr(transformers.AutoTokenizer, 'from_pretrained', lambda model, revision: tokenizer)
+    monkeypatch.setattr(transformers.AutoConfig, 'from_pretrained', lambda model, revision: SimpleNamespace(model_type='gpt_oss'))
+    monkeypatch.setattr(vllm_rollouts, 'AdapterRollouts', server)
+    out = tmp_path/'probe'
+    monkeypatch.setattr(sys, 'argv', ['grader_tool_probe.py', '--out', str(out), '--lean', LEAN, '--model', 'openai/gpt-oss-20b',
+                                      '--revision', 'r', '--rollout-url', 'http://127.0.0.1:8011', '--max-completion-length', '3000',
+                                      '--tasks', '2', '--samples', '2'])
+    runpy.run_path(str(Path(__file__).parent.parent/'entrypoints/grader_tool_probe.py'), run_name='__main__')
+    summary = json.loads((out/'summary.json').read_text())
+    [backend] = servers
+    assert summary['status'] == 'completed' and backend.result_tokens == grader_tool.result_reserve(3)
+    assert backend.calls[:2] == ['/sleep?level=1', 'preflight'] and backend.calls[-1] == 'close' and len(backend.sessions) == 1
+    assert summary['probe']['samples'] == 4 and summary['probe']['grader_tool']['grader_runs'] == 4
+    rows = [json.loads(line) for line in (out/'probe-evaluation.jsonl').read_text().splitlines()]
+    assert all(r['episode_end'] == 'answer' and r['grader_drafts'][0]['results'][0]['reward'] == 1.0 for r in rows)

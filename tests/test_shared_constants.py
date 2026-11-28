@@ -96,7 +96,7 @@ def test_qwen_rollout_command_matches_reference_shape():
     def command(environment, limit, generations):
         shell = """source ops/pod_lib.sh
 in_env() { printf '%s\\n' "$VLLM_SERVER_DEV_MODE" "$VLLM_ALLOW_RUNTIME_LORA_UPDATING" "$@"; }
-serve_rollouts "$1" 1 "$2" "$3"
+serve_rollouts "$1" 1 "$2" "$3" 0
 """
         return subprocess.run(['bash', '-c', shell, 'test', environment, str(limit), str(generations)],
                               cwd=ROOT, text=True, capture_output=True, check=True).stdout.splitlines()

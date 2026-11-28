@@ -246,6 +246,21 @@ def stage_historical_trainer(checkout, commit):
                    cwd=source, env={**os.environ, 'PYTHONPATH':str(source/'src')}, check=True)
 
 
+def driver_settings(request, config):
+    """The SMOKE_* settings ops/drive_runpod.sh passes to the pod's job for this experiment."""
+    settings = {**request['driver'], 'SMOKE_EXPERIMENT':'1', 'SMOKE_SKIP_PROBE':'1',
+                'SMOKE_SECOND_RUN':'0', 'SMOKE_TOKEN_LIMIT':str(config['settings']['max_completion_length'])}
+    for key, setting in [('steps','SMOKE_STEPS'), ('num_generations','SMOKE_TRAIN_GENERATIONS'),
+                         ('save_every','SMOKE_SAVE_EVERY'), ('backward_batch_size','SMOKE_BACKWARD_BATCH')]:
+        if key in config['settings'] and config['settings'][key] is not None:
+            settings[setting] = str(config['settings'][key])
+    if 'grader_runs' in config['settings'] and config['settings']['grader_runs']:
+        # The rollout server's context also holds the tool's results; the trainer's server preflight checks the same reserve.
+        from .grader_tool import result_reserve
+        settings['SMOKE_RESULT_TOKENS'] = str(result_reserve(config['settings']['grader_runs']))
+    return settings
+
+
 def _execute(root, directory, checkout, submit, client):
     from .runpod_ops import launch
     request = read(directory / 'request.json')
@@ -259,12 +274,7 @@ def _execute(root, directory, checkout, submit, client):
         stage_historical_trainer(checkout, config['native_trainer_commit'])
     _stage_parent(checkout, config)
     pod = {**request['pod'], 'name': 'rewardhack-' + config['run_id']}
-    settings = {**request['driver'], 'SMOKE_EXPERIMENT':'1', 'SMOKE_SKIP_PROBE':'1',
-                'SMOKE_SECOND_RUN':'0', 'SMOKE_TOKEN_LIMIT':str(config['settings']['max_completion_length'])}
-    for key, setting in [('steps','SMOKE_STEPS'), ('num_generations','SMOKE_TRAIN_GENERATIONS'),
-                         ('save_every','SMOKE_SAVE_EVERY'), ('backward_batch_size','SMOKE_BACKWARD_BATCH')]:
-        if key in config['settings'] and config['settings'][key] is not None:
-            settings[setting] = str(config['settings'][key])
+    settings = driver_settings(request, config)
     gate = request['gate']
     _, problems = gates.ready(checkout, 'ops/remote_runpod_smoke.sh', gate['deadline'], gate['basis'], gate['line'],
                               gate['hourly'], gate['other_usd'], gate['launch_cap'], settings)

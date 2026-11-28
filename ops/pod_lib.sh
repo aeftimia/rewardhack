@@ -52,13 +52,14 @@ install_uv() {
   export UV_CACHE_DIR=/workspace/uv-cache
 }
 
-# Matched rollout servers use the trainer's batch capacity and model column.
+# Matched rollout servers use the trainer's batch capacity and model column. `results` is the context reserved for
+# grader-tool results beside the prompt and the answer budget (rewardhack.grader_tool.result_reserve; 0 without the tool).
 serve_rollouts() {
-  local environment=$1 column=$2 limit=$3 generations=$4
+  local environment=$1 column=$2 limit=$3 generations=$4 results=$5
   local model=${MODEL_REPOS[$column]} revision=${MODEL_REVS[$column]}
   VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True \
     in_env "$environment" vllm serve "$model" --revision "$revision" --served-model-name "$model@$revision" \
-      --host 127.0.0.1 --port "$ROLLOUT_PORT" --max-model-len $((limit + PROMPT_ROOM_TOKENS)) \
+      --host 127.0.0.1 --port "$ROLLOUT_PORT" --max-model-len $((limit + PROMPT_ROOM_TOKENS + results)) \
       --gpu-memory-utilization "${MODEL_ROLLOUT_FRACTION[$column]}" --max-num-seqs $((generations * TRAIN_PROMPTS_PER_STEP)) \
       --max-cudagraph-capture-size 32 --enable-lora --max-lora-rank 16 --max-loras 2 \
       --enable-sleep-mode --enable-scale-out --logprobs-mode processed_logprobs
@@ -111,6 +112,45 @@ fetch_model() {
   fetch_attempt "$1" "$2" "$left" >> "$out" 2>&1
 }
 fetch_attempt() { timeout "$3" "$HF" download "$1" --revision "$2" --exclude 'original/*' --exclude 'metal/*'; }
+
+# How Lean will be isolated (sets ISOLATE and READABLE), decided before anything is downloaded: this image has had no
+# namespaces, and finding that out after the installs wasted a pod on 2026-11-24. Lean runs with an empty environment, no
+# network and, where the container allows, its own /proc, so a proof body cannot read another process's environment;
+# file-reading Lean syntax is also refused before Lean runs.
+choose_lean_isolation() {
+  READABLE=0
+  if unshare -rnpf --mount-proc true 2>> ~/out/isolation.log; then ISOLATE='unshare -rnpf --mount-proc'
+  elif unshare -rn true 2>> ~/out/isolation.log; then ISOLATE='unshare -rn'; log 'WARNING: no private /proc for Lean; relying on the syntax screen to keep proofs from reading process environments'
+  elif [[ ${LEAN_ISOLATION:-} == none ]] && setpriv --reuid=65534 --regid=65534 --clear-groups true 2>> ~/out/isolation.log; then
+    # No namespaces in this container. An unprivileged user cannot read another user's /proc/<pid>/environ,
+    # which is where the judge key lives; the network stays reachable, which is what LEAN_ISOLATION=none accepts.
+    ISOLATE='setpriv --reuid=65534 --regid=65534 --clear-groups --no-new-privs'; READABLE=1
+    log 'WARNING: no network namespace; Lean runs as an unprivileged user with an empty environment (LEAN_ISOLATION=none)'
+  elif [[ ${LEAN_ISOLATION:-} == none ]]; then ISOLATE=''; log 'WARNING: no network namespace; running Lean with an empty environment only (LEAN_ISOLATION=none)'
+  else fail 'NO_NETWORK_NAMESPACE: this container cannot unshare. Rerun with LEAN_ISOLATION=none only if running model-written Lean on a disposable pod without network isolation is acceptable.'
+  fi
+}
+
+# Lean, isolated as choose_lean_isolation decided, at ~/lean-safe. Proof bodies are model-written, so Lean runs with an
+# empty environment and no network.
+install_lean() {
+  local lean_bin open=''
+  log start lean
+  # Earlier hosts downloaded and unpacked in 2–5 s. On 25 Nov the retry host transferred
+  # 163446784 of 343842845 bytes in 60 s: allow 3x an estimated 140 s at that rate.
+  # shellcheck disable=SC2015  # the failure branch is meant to run when any step fails
+  # cap: 3x estimated 140 s
+  mkdir -p /workspace/lean && curl -fsSL --max-time 420 "https://github.com/leanprover/lean4/releases/download/v$LEAN_VERSION/lean-$LEAN_VERSION-linux.tar.zst" | tar --zstd -xf - -C /workspace/lean \
+    || fail LEAN_DOWNLOAD_FAILED
+  lean_bin=/workspace/lean/lean-$LEAN_VERSION-linux/bin/lean
+  # The verifier writes each source into a private temporary folder; the unprivileged user needs to read that one file.
+  # shellcheck disable=SC2016  # $@ and $a belong to the wrapper this text is written into, not to this script
+  if [[ $READABLE == 1 ]]; then open='for a in "$@"; do [[ -f $a ]] && chmod a+rx "$(dirname "$a")" && chmod a+r "$a"; done'; fi
+  mkdir -p /workspace/bin
+  printf '#!/bin/bash\n%s\nexec env -i PATH=/usr/bin:/bin %s %s "$@"\n' "$open" "$ISOLATE" "$lean_bin" > /workspace/bin/lean-safe && chmod 755 /workspace/bin/lean-safe
+  ln -sf /workspace/bin/lean-safe ~/lean-safe
+  ~/lean-safe --version >> ~/out/steps.log 2>&1 || fail LEAN_WRAPPER_FAILED
+}
 
 # Seconds-long checks of what the job assumes about the machine, before any install or download is paid for.
 # Usage: pod_self_test <cards needed> <free GB needed under /workspace> <free GB needed for ~/out> <port that must be free>...

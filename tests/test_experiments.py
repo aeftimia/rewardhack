@@ -385,3 +385,16 @@ def test_independent_batches_execute_simultaneously(tmp_path, monkeypatch):
                             root=ROOT, state=tmp_path/'registry') for n in (1, 3)]
         assert [len(job.result()) for job in jobs] == [1, 3]
     assert not list((tmp_path/'experiment-holds').glob('*.json'))
+
+
+def test_a_grader_tool_experiment_sizes_the_rollout_server_for_tool_results(tmp_path):
+    """`grader_runs` in an experiment's parameters reaches the trainer (training_keys) and the pod job: the rollout server's
+    context must hold the tool's results beside the answer budget, or the trainer's server preflight stops the run."""
+    from rewardhack.grader_tool import result_reserve
+    tool = experiments.prepare(ROOT, dict(request(), parameters={'steps': 6, 'grader_runs': 3}), state=tmp_path/'tool')
+    control = experiments.prepare(ROOT, request(), state=tmp_path/'control')
+    settings = {name: experiments.driver_settings(request(), experiments.read(directory/CONFIG_FILE))
+                for name, directory in [('tool', tool), ('control', control)]}
+    assert settings['tool']['SMOKE_RESULT_TOKENS'] == str(result_reserve(3))
+    assert 'SMOKE_RESULT_TOKENS' not in settings['control']
+    assert experiments.read(tool/CONFIG_FILE)['settings']['grader_runs'] == 3

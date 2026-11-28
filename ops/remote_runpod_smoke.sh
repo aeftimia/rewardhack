@@ -42,6 +42,8 @@ SMOKE_TRAIN_SECONDS=${SMOKE_TRAIN_SECONDS:-3600}  # fallback-ok: optional settin
 SMOKE_FINAL_EVAL_SECONDS=${SMOKE_FINAL_EVAL_SECONDS:-600}  # fallback-ok: optional setting; time reserved for the after-evaluation when unset
 SMOKE_MEMORY_SECONDS=${SMOKE_MEMORY_SECONDS:-1800}  # fallback-ok: optional setting; the memory check's documented limit when unset
 SMOKE_PROBE_LARGE=${SMOKE_PROBE_LARGE:-0}  # fallback-ok: optional setting; unset means no inference probe after training
+SMOKE_RESULT_TOKENS=${SMOKE_RESULT_TOKENS:-0}  # fallback-ok: optional setting; unset means no grader tool, whose results need no context (experiments.py sets it from grader_runs)
+[[ $SMOKE_RESULT_TOKENS =~ ^[0-9]{1,6}$ ]] || fail 'SMOKE_RESULT_TOKENS must be a nonnegative integer of at most six digits'
 cleanup() {
   rm -f ~/.judge_key
   for pid in "$JUDGE_PID" "$ROLLOUT_PID"; do
@@ -82,36 +84,9 @@ if [[ $JUDGE_KIND == api ]]; then
 fi
 judged() { OPENAI_API_KEY=${JUDGE_KEY:-} "$@"; }
 
-# --- How Lean will be isolated, decided before anything is downloaded: this image has had no namespaces, and finding that
-# out after the installs wasted a pod on 2026-11-24.
-if unshare -rnpf --mount-proc true 2>> ~/out/isolation.log; then ISOLATE='unshare -rnpf --mount-proc'
-elif unshare -rn true 2>> ~/out/isolation.log; then ISOLATE='unshare -rn'; log 'WARNING: no private /proc for Lean; relying on the syntax screen to keep proofs from reading process environments'
-elif [[ ${LEAN_ISOLATION:-} == none ]] && setpriv --reuid=65534 --regid=65534 --clear-groups true 2>> ~/out/isolation.log; then
-  # No namespaces in this container. An unprivileged user cannot read another user's /proc/<pid>/environ,
-  # which is where the judge key lives; the network stays reachable, which is what LEAN_ISOLATION=none accepts.
-  ISOLATE='setpriv --reuid=65534 --regid=65534 --clear-groups --no-new-privs'; READABLE=1
-  log 'WARNING: no network namespace; Lean runs as an unprivileged user with an empty environment (LEAN_ISOLATION=none)'
-elif [[ ${LEAN_ISOLATION:-} == none ]]; then ISOLATE=''; log 'WARNING: no network namespace; running Lean with an empty environment only (LEAN_ISOLATION=none)'
-else fail 'NO_NETWORK_NAMESPACE: this container cannot unshare. Rerun with LEAN_ISOLATION=none only if running model-written Lean on a disposable pod without network isolation is acceptable.'
-fi
-
-# --- Lean, isolated. Proof bodies are model-written, so Lean runs with an empty environment and no network.
-log start lean
-# Earlier hosts downloaded and unpacked in 2–5 s. On 25 Nov the retry host transferred
-# 163446784 of 343842845 bytes in 60 s: allow 3x an estimated 140 s at that rate.
-# shellcheck disable=SC2015  # the failure branch is meant to run when any step fails
-# cap: 3x estimated 140 s
-mkdir -p /workspace/lean && curl -fsSL --max-time 420 "https://github.com/leanprover/lean4/releases/download/v$LEAN_VERSION/lean-$LEAN_VERSION-linux.tar.zst" | tar --zstd -xf - -C /workspace/lean \
-  || fail LEAN_DOWNLOAD_FAILED
-LEAN_BIN=/workspace/lean/lean-$LEAN_VERSION-linux/bin/lean
-# The verifier writes each source into a private temporary folder; the unprivileged user needs to read that one file.
-OPEN=''
-# shellcheck disable=SC2016  # $@ and $a belong to the wrapper this text is written into, not to this script
-[[ ${READABLE:-0} == 1 ]] && OPEN='for a in "$@"; do [[ -f $a ]] && chmod a+rx "$(dirname "$a")" && chmod a+r "$a"; done'
-mkdir -p /workspace/bin
-printf '#!/bin/bash\n%s\nexec env -i PATH=/usr/bin:/bin %s %s "$@"\n' "$OPEN" "$ISOLATE" "$LEAN_BIN" > /workspace/bin/lean-safe && chmod 755 /workspace/bin/lean-safe
-ln -sf /workspace/bin/lean-safe ~/lean-safe
-~/lean-safe --version >> ~/out/steps.log 2>&1 || fail LEAN_WRAPPER_FAILED
+# --- How Lean will be isolated, decided before anything is downloaded (pod_lib.sh), then Lean itself.
+choose_lean_isolation
+install_lean
 
 # --- Python: the pinned training stack, and vLLM in its own environment (judge server or rollouts). uv installs the same
 # pins as pip, several times faster (owner, 26 Nov); the vLLM environment installs in the background, beside the training
@@ -240,7 +215,7 @@ if [[ $SMOKE_VLLM_ROLLOUTS == 1 && ${#RUNS[@]} -gt 0 ]]; then
   # A fixed 4,096 refused every request once LIMIT was 4,096 (review round 6); the rollout client also checks each request.
   # CUDA graphs are captured for decode batches of up to 32 tokens (16 sequences use at most 16): the default captured 166
   # sizes up to 1,024 on this card, most of a 125 s engine start (measuring pass). Larger batches (prefill) run eagerly.
-  CUDA_VISIBLE_DEVICES=$ROLLOUT_CARD serve_rollouts vllm "$M" "$LIMIT" "$GENERATIONS" > ~/out/rollout-server.log 2>&1 &
+  CUDA_VISIBLE_DEVICES=$ROLLOUT_CARD serve_rollouts vllm "$M" "$LIMIT" "$GENERATIONS" "$SMOKE_RESULT_TOKENS" > ~/out/rollout-server.log 2>&1 &
   ROLLOUT_PID=$!
   # cap: 2x measured 390 s
   wait_for_server "$ROLLOUT_PID" "$ROLLOUT_PORT" "$MODEL@$REV" "$SERVER_WAIT" || fail ROLLOUT_SERVER_DID_NOT_START

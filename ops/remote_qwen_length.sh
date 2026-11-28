@@ -23,7 +23,7 @@ DOWNLOAD_WAIT=480 fetch_model "$QWEN3_32B" "$QWEN3_32B_REV"
 LIMIT=${SMOKE_TOKEN_LIMIT:?}
 [[ $LIMIT == 16384 ]] || fail EXPECTED_16384_TOKEN_DIAGNOSTIC
 log server
-serve_rollouts probe 1 "$LIMIT" "$DEFAULT_TRAIN_GENERATIONS" > ~/out/rollout-server.log 2>&1 &
+serve_rollouts probe 1 "$LIMIT" "$DEFAULT_TRAIN_GENERATIONS" 0 > ~/out/rollout-server.log 2>&1 &  # no grader tool
 SERVER_PID=$!
 wait_for_server "$SERVER_PID" "$ROLLOUT_PORT" "$QWEN3_32B@$QWEN3_32B_REV" "$SERVER_WAIT"
 refuse_ignored_settings ~/out/rollout-server.log
