@@ -56,6 +56,17 @@ unchanged-adapter repeat. Neither run reached expert testing, drew any new
 training or held-out answers, or called the judge. Both failure archives are
 verified. RunPod returned an empty active pod list after both removals.
 
+The macOS job that invoked this two-run batch restarted after delayed billing
+caused a nonzero exit. It created two duplicate pods. The job was unregistered,
+both pods were terminated, and the RunPod API again reported zero active pods.
+At λ=0 the last local summary said training was starting, with no recorded new
+update. At λ=0.5 the identical-reload check failed before update seven and the
+judge meter recorded zero requests. The retained [27 λ=0 files](../experiments/87bb6fce1f1940859bfe2c605d895ff7/interim-archive.json)
+and [40 λ=0.5 files](../experiments/a0f7a53cfeae493cbeadd3178a8921ef/interim-archive.json)
+were archived and verified separately. Final pod-upload receipts were unavailable
+after cancellation. These starts add no training outcome to the table. RunPod
+had yet to post their charges at the time of removal.
+
 The typed baseline `ce8ed9cf630c412ab9ae04376edcfa86` completed update 24.
 Across updates 7–24 it produced 0/148 verified refutations on false answers,
 8/140 genuine proofs on true answers, and 234 grader-accepted invalid proofs.
@@ -102,8 +113,11 @@ The prior request `829230f12ef84eecb99e248604c3063a` consumed its launch
 record with no pod receipt or live pod. The replacement calls `experiment()`
 with a seven-day capacity wait from 05:15 UTC on 28 November. It polls
 Community Cloud every five minutes for two cards on one pod and checks the
-quoted hourly rate before admission. The forecast above counts each pair as
-one pod-hour.
+quoted hourly rate before admission. After the duplicate GPT starts, the Qwen
+waiter was moved to a launchd job with automatic restarts disabled. The job
+retains the original deadline of 5 December at 05:14:57 UTC and prevents idle
+sleep while the Mac is on AC power. Its first new poll at 06:34 UTC on
+28 November found no stock. The forecast above counts each pair as one pod-hour.
 
 In Qwen's archived 16k inference sample, 13/24 completions reached at least
 8,192 tokens, 6/24 reached 10,240, 4/24 reached 12,288, and 2/24 reached
