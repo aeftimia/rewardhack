@@ -174,20 +174,28 @@ def checkpoint_members(entry, arm, checkpoint):
 
 
 def resume(source, checkpoint):
+    import boto3
+    from botocore.config import Config
+    from botocore.credentials import RefreshableCredentials
     match = CHECKPOINT.fullmatch(checkpoint)
     if not match:
         raise SystemExit(f'{checkpoint}: a trainer checkpoint of a run, <run>/trainer/checkpoint-<step>')
     entry = archive_entry(source)
     files = entry['sha256']
     names = checkpoint_members(entry, match.group(1), checkpoint)
-    # A presigned URL dies with the SSO role credentials that signed it, whatever its own expiry (review rounds 41-42).
-    expiration = json.loads(run('aws', 'configure', 'export-credentials', '--format', 'process', timeout=REQUEST_TIMEOUT))['Expiration']
-    left = (datetime.fromisoformat(expiration.replace('Z', '+00:00')) - datetime.now(timezone.utc)).total_seconds()
-    if left < URL_SECONDS:
-        raise SystemExit(f'the AWS role credentials end in {left / 60:.0f} minutes, before the URLs would '
-                         f'({URL_SECONDS / 60:.0f}): run `aws sso logout && aws sso login` first')
-    urls = [run('aws', '--region', REGION, 's3', 'presign', entry['uri'] + name, '--expires-in', str(URL_SECONDS),
-                timeout=REQUEST_TIMEOUT).strip() for name in names]
+    # The SDK shares the SSO login but obtains its own role session. The CLI's
+    # disk-cached role can expire mid-restore even with hours left on that login.
+    session = boto3.Session(region_name=REGION)
+    credentials = session.get_credentials()
+    if not isinstance(credentials, RefreshableCredentials):
+        raise SystemExit('checkpoint signing requires temporary role credentials with a verifiable expiration')
+    credentials.get_frozen_credentials()
+    if credentials.refresh_needed(URL_SECONDS):
+        raise SystemExit(f'the signing role expires before the {URL_SECONDS // 60}-minute checkpoint URLs')
+    client = session.client('s3', config=Config(signature_version='s3v4', connect_timeout=REQUEST_TIMEOUT,
+                                               read_timeout=REQUEST_TIMEOUT))
+    urls = [client.generate_presigned_url('get_object', Params={'Bucket':BUCKET, 'Key':f'{entry["run_id"]}/{name}'},
+                                          ExpiresIn=URL_SECONDS, HttpMethod='GET') for name in names]
     print(json.dumps([(files[name], name, url) for name, url in zip(names, urls, strict=True)]))
 
 

@@ -1,5 +1,4 @@
-"""The run archive (ops/run_archive.py upload/resume/fetch; notes section 80) against stand-in
-rclone, aws and curl that keep the bucket in a folder, and the driver's settings for the Qwen3-32B job."""
+"""The run archive against a local bucket fixture, the SDK signer, and the Qwen driver's settings."""
 import hashlib
 import json
 import os
@@ -15,8 +14,7 @@ from test_driver_refusals import drive
 from rewardhack import hf_grpo
 
 # Stand-ins: the bucket is the folder FAKE_S3/<bucket>/. rclone copies (honouring the anchored --exclude filters and
-# --immutable), checks, hashes and cats; FAKE_RCLONE_CHECK_FAILS makes `check` report a difference. aws presigns and reports
-# the credentials' expiry (FAKE_SESSION_SECONDS from now).
+# --immutable), checks, hashes and cats. The SDK signs with a local credential process of known lifetime.
 FAKE_RCLONE = r"""
 import hashlib, os, shutil, sys
 from pathlib import Path
@@ -63,17 +61,12 @@ elif command == 'cat':
 else:
     sys.exit(f'unexpected rclone call {args}')
 """
-FAKE_AWS = r"""
+FAKE_CREDENTIALS = r"""
 import datetime, json, os, sys
-args = sys.argv[1:]
-if args[:2] == ['configure', 'export-credentials']:
-    left = int(os.environ.get('FAKE_SESSION_SECONDS', '3600'))
-    expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=left)
-    print(json.dumps({'Version': 1, 'Expiration': expiry.isoformat()}))
-elif args[2:4] == ['s3', 'presign']:
-    print(f'https://example.invalid/{args[4].removeprefix("s3://")}?expires={args[args.index("--expires-in")+1]}')
-else:
-    sys.exit(f'unexpected aws call {args}')
+left = int(os.environ.get('FAKE_SESSION_SECONDS', '3600'))
+expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=left)
+print(json.dumps(dict(Version=1, AccessKeyId='fixture', SecretAccessKey='fixture', SessionToken='fixture',
+                      Expiration=expiry.isoformat())))
 """
 COMMIT = 'a' * 40
 
@@ -82,7 +75,7 @@ def tools(tmp_path):
     bin_dir = tmp_path/'bin'
     if not bin_dir.exists():
         bin_dir.mkdir()
-        scripts = {'rclone': FAKE_RCLONE, 'aws': FAKE_AWS}
+        scripts = {'rclone': FAKE_RCLONE, 'signing-credentials': FAKE_CREDENTIALS}
         for name, source in scripts.items():
             (bin_dir/f'{name}.py').write_text(source)
             (bin_dir/name).write_text(f'#!/bin/bash\nexec "{sys.executable}" "{bin_dir}/{name}.py" "$@"\n')
@@ -90,9 +83,13 @@ def tools(tmp_path):
 out=; url=; while [[ $# -gt 0 ]]; do case $1 in -o) out=$2; shift 2;; --max-time) shift 2;; -*) shift;; *) url=$1; shift;; esac; done
 src={tmp_path}/s3/${{url#https://example.invalid/}}; cp "${{src%%\\?*}}" "$out"
 """)
-        for name in ('rclone', 'aws', 'curl'):
+        (bin_dir/'aws-config').write_text(f'[default]\ncredential_process = "{bin_dir}/signing-credentials"\n')
+        for name in ('rclone', 'signing-credentials', 'curl'):
             (bin_dir/name).chmod(0o755)
-    return dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_S3=str(tmp_path/'s3'), PYTHONPATH=str(PROJECT/'src'))
+    env = {k:v for k,v in os.environ.items() if not k.startswith('AWS_')}
+    return dict(env, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_S3=str(tmp_path/'s3'), PYTHONPATH=str(PROJECT/'src'),
+                AWS_CONFIG_FILE=str(bin_dir/'aws-config'), AWS_SHARED_CREDENTIALS_FILE=str(bin_dir/'no-credentials'),
+                AWS_ENDPOINT_URL_S3='https://example.invalid', AWS_EC2_METADATA_DISABLED='true')
 
 
 def archive(tmp_path, *args, **env):
@@ -171,6 +168,19 @@ def test_the_commit_is_required_and_must_be_whole(tmp_path, run):
     assert archive(tmp_path, 'upload', run, '--commit', 'b' * 40)[0] == 0 and records(run)[0]['commit'] == 'b' * 40
 
 
+def signed_objects(reply):
+    from urllib.parse import parse_qs, urlsplit
+    from rewardhack.archive import URL_SECONDS
+    code, manifest = reply
+    assert code == 0, manifest
+    result = []
+    for digest, name, url in json.loads(manifest):
+        parts = urlsplit(url)
+        assert parts.netloc == 'example.invalid' and parse_qs(parts.query)['X-Amz-Expires'] == [str(URL_SECONDS)]
+        result.append((digest, name, parts.path))
+    return result
+
+
 def test_resume_names_one_checkpoint_and_the_run_files_and_the_pod_checks_them(tmp_path, run):
     """Owner, 26 Nov: Standard-IA charges per GB read, so a resume reads one checkpoint and the run files the trainer's
     resume needs (round 45), never snapshots or other checkpoints; the pod keeps them only when every SHA-256 matches."""
@@ -181,7 +191,8 @@ def test_resume_names_one_checkpoint_and_the_run_files_and_the_pod_checks_them(t
     names = [name for _, name, _ in json.loads(lines)]
     assert names == sorted([f'train-a/trainer/checkpoint-60/{part}' for part in CHECKPOINT_PARTS]
                            + [f'train-a/{name}' for name in hf_grpo.RESUME_RUN_FILES])
-    assert archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60')[1] == lines
+    other = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60')
+    assert signed_objects((code, lines)) == signed_objects(other)
     code, output = fetch(tmp_path, tmp_path/'pod', lines)
     assert code == 0, output
     assert (tmp_path/'pod'/'train-a'/'trainer'/'checkpoint-60'/'optimizer.pt').read_bytes() == bytes([60]) * 100
@@ -208,7 +219,7 @@ def test_resume_refuses_what_it_cannot_resume(tmp_path, run):
     code, output = archive(tmp_path, 'resume', '20261126T000000Z-runpod-part1-test-0123abcd', 'train-a/trainer/checkpoint-60')
     assert code != 0 and 'no archive' in output
     code, output = archive(tmp_path, 'resume', run_id, 'train-a/trainer/checkpoint-60', FAKE_SESSION_SECONDS='600')
-    assert code != 0 and 'aws sso logout' in output and 'https://' not in output
+    assert code != 0 and 'signing role expires' in output and 'https://' not in output
 
 
 def test_fetched_checkpoint_passes_the_trainers_resume_checks(tmp_path, run, monkeypatch):
@@ -254,7 +265,8 @@ def test_existing_s3_record_and_objects_are_read_without_rewriting(tmp_path, run
     local_before = (run/'archive.json').read_bytes()
     code, document = archive(tmp_path, 'resume', run_id, 'train-a/trainer/checkpoint-60')
     assert code == 0, document
-    assert archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60') == (0, document)
+    other = archive(tmp_path, 'resume', run/'archive.json', 'train-a/trainer/checkpoint-60')
+    assert signed_objects(other) == signed_objects((code, document))
     assert fetch(tmp_path, tmp_path/'pod', document)[0] == 0
     assert {p: p.read_bytes() for p in stored.rglob('*') if p.is_file()} == before
     assert (run/'archive.json').read_bytes() == local_before
