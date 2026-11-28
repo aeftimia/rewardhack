@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import deadline, generations, jsonl, provenance
+from . import deadline, generations, grader_tool, jsonl, provenance
 from ._hashing import file_sha256, source_sha256
 from .gpu import GpuSampler
 from .outcomes import accumulate, compare, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, SATURATED, saturated, RetryBudget, ScoringStopped, verifier_advice, completion_truncated, reward_groups, score, score_concurrently, stop_ids, summarize, tally, training_rewards, training_keep
@@ -80,7 +80,9 @@ RESUME_SETTINGS = ('model', 'revision', 'arm', 'penalty', 'report_mode', 'taskse
                    'prompts_per_step', 'max_completion_length', 'seed', 'save_every', 'stop_no_variation', 'stop_saturated', 'rollout_backend',
                    'judge', 'judge_model', 'judge_revision', 'judge_url', 'judge_extra', 'verifier_retry_seconds', 'adapter',
                    # The resumed run carries the original's before-evaluation over, so its after-evaluation must match it.
-                   'eval_limit', 'eval_samples', 'training_sampler', 'backward_batch_size')
+                   'eval_limit', 'eval_samples', 'training_sampler', 'backward_batch_size',
+                   # 0 is the single-submission control; N lets the model run the grader on N drafts (grader_tool.py).
+                   'grader_runs')
 RUN_SETTINGS = 'run-settings.json'
 
 
@@ -136,6 +138,15 @@ def original_records(args):
     return rows, lines
 
 
+def saved_settings(original):
+    """The settings a run recorded (RUN_SETTINGS)."""
+    saved = json.loads((original/RUN_SETTINGS).read_text())
+    if 'grader_runs' not in saved:
+        # Runs written before --grader-runs existed (28 Nov 2026) are its control: they sampled one submission, no tool.
+        saved['grader_runs'] = 0
+    return saved
+
+
 def check_resume(args):
     """Refuse a resume that would not continue the run that wrote the checkpoint (<run>/trainer/checkpoint-N).
 
@@ -152,7 +163,7 @@ def check_resume(args):
         raise ValueError(f'--out is the run that wrote the checkpoint; a resumed run writes a new folder, or the records of {original} would be overwritten')
     if not (original/RUN_SETTINGS).is_file():
         raise ValueError(f'{original} has no {RUN_SETTINGS}: it was written before runs could be resumed')
-    saved = json.loads((original/RUN_SETTINGS).read_text())
+    saved = saved_settings(original)
     # `run` writes summary.json as it starts and again as it ends; one killed from outside keeps the first, without an
     # early stop, which only a run that ended itself can record.
     outcome = json.loads((original/'summary.json').read_text())
@@ -228,8 +239,11 @@ def load_model(args, summary):
     tokenizer.padding_side = 'left'
     if not tokenizer.chat_template and args.model.startswith('hf-internal-testing/'):
         tokenizer.chat_template = "{% for m in messages %}{{ m['role'] }}: {{ m['content'] }}\n{% endfor %}assistant:"  # CPU dry run only
+    if args.grader_runs:
+        grader_tool.prepare_tokenizer(tokenizer)  # before settle_template edits the text TRL recognises the template by
     reads_clock = settle_template(tokenizer, args.reasoning_effort, args.thinking)
-    rendered = tokenizer.apply_chat_template(prompt('True', args.prompt_variant, args.report_mode), tokenize=False, add_generation_prompt=True, **template_kwargs(args))
+    rendered = tokenizer.apply_chat_template(prompt('True', args.prompt_variant, args.report_mode), tokenize=False, add_generation_prompt=True,
+                                             tools=[grader_tool.declaration(args.grader_runs)] if args.grader_runs else None, **template_kwargs(args))
     summary['prompt'] = {'date_in_template': PROMPT_DATE if reads_clock else None,
                          'sha256_of_prompt_for_statement_True': hashlib.sha256(rendered.encode()).hexdigest()}
     kwargs = {'revision': args.revision, 'attn_implementation': args.attn_implementation}
@@ -344,6 +358,18 @@ def evaluation_messages(tasks, args):
         yield task, generations.task_messages(prompt, task, args)
 
 
+def sample_ids(model, tokenizer, inputs, max_new_tokens, samples, stops):
+    """`samples` untruncated samples from `model` after `inputs` (input_ids and attention_mask tensors), stopping at
+    `stops`: the generated token IDs of each."""
+    import torch
+    with torch.inference_mode():
+        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=True, temperature=SAMPLING_KWARGS['temperature'],
+                                 top_p=SAMPLING_KWARGS['top_p'], top_k=SAMPLING_KWARGS['top_k'], num_return_sequences=samples,
+                                 pad_token_id=tokenizer.pad_token_id, eos_token_id=stops)
+    start = inputs['input_ids'].shape[1]
+    return [output[start:].tolist() for output in outputs]
+
+
 def trainer_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_model, stage):
     """Samples generated by the training model itself, one task at a time: for runs without a vLLM server (the CPU tests,
     the dry run, the probe). Yields (task, completion token ids, generation seconds)."""
@@ -355,15 +381,8 @@ def trainer_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_mo
         inputs = tokenizer.apply_chat_template(messages, tokenize=True, return_dict=True,
                                                return_tensors='pt', add_generation_prompt=True, **template_kwargs(args)).to(device)
         t0 = time.perf_counter()
-        with torch.inference_mode():
-            # dry-ok: src/rewardhack/hf_grpo.py::prepare_training | Both pass stop_ids(model, tokenizer), which returns tokenizer.eos_token_id in outcomes.py. prepare_training assigns that result to stops before constructing GRPOConfig. test_termination checks the exact EOS sent to each backend.
-            outputs = model.generate(**inputs, max_new_tokens=args.max_completion_length, do_sample=True,
-                                     temperature=SAMPLING_KWARGS['temperature'], top_p=SAMPLING_KWARGS['top_p'],
-                                     top_k=SAMPLING_KWARGS['top_k'],
-                                     num_return_sequences=samples, pad_token_id=tokenizer.pad_token_id,
-                                     eos_token_id=stop_ids(model, tokenizer))
-        start = inputs['input_ids'].shape[1]
-        completions = [output[start:].tolist() for output in outputs]
+        # dry-ok: src/rewardhack/hf_grpo.py::prepare_training | Both pass stop_ids(model, tokenizer), which returns tokenizer.eos_token_id in outcomes.py. prepare_training assigns that result to stops before constructing GRPOConfig. test_termination checks the exact EOS sent to each backend.
+        completions = sample_ids(model, tokenizer, inputs, args.max_completion_length, samples, stop_ids(model, tokenizer))
         seconds = time.perf_counter()-t0
         generations.record(args, tokenizer, stage, evaluation_step(args, stage),
                            ((task['id'], i, messages, inputs['input_ids'][0].tolist()) for i in range(samples)), completions)
@@ -400,6 +419,60 @@ def server_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_mod
         yield task, ids[index*samples:(index+1)*samples], seconds if index == 0 else 0.0
 
 
+def tool_chat(model, tokenizer, args):
+    """The grader tool's conversation helper, or None for the single-submission control (`--grader-runs 0`)."""
+    if args.grader_runs == 0:
+        return None
+    return grader_tool.ToolChat(tokenizer, model.config.model_type, template_kwargs(args), args.grader_runs)
+
+
+def server_turns(rollouts, served, stops):
+    """A grader_tool generator on the vLLM server, inside one `rollouts.awake` session."""
+    def generate(contexts, max_tokens, seeds):
+        ids, logprobs, _ = rollouts.completions(contexts, seeds=seeds, max_tokens=max_tokens, model=served, stops=stops)
+        return ids, logprobs
+    return generate
+
+
+def model_turns(model, tokenizer, stops):
+    """A grader_tool generator for runs without a vLLM server: `model` samples each context alone, from its own seed."""
+    import torch
+    device = next(model.parameters()).device
+
+    def generate(contexts, max_tokens, seeds):
+        turns = []
+        for context, limit, seed in zip(contexts, max_tokens, seeds, strict=True):
+            torch.manual_seed(seed)
+            ids = torch.tensor([context], device=device)
+            turns.extend(sample_ids(model, tokenizer, dict(input_ids=ids, attention_mask=torch.ones_like(ids)), limit, 1, stops))
+        return turns, None
+    return generate
+
+
+def episode_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_model, stage, chat):
+    """Grader-tool episodes for every task's samples in one batch, from the vLLM server when the run has one and from
+    `model` otherwise, with the evaluation seeds `server_samples` uses. Yields as server_samples, episodes in place of
+    token lists; the generation time includes the grader's Lean runs."""
+    from .vllm_rollouts import SEED_STRIDE
+    draws = [(task['id'], index, messages, chat.prompt_ids(messages))
+             for task, messages in evaluation_messages(tasks, args) for index in range(samples)]
+    statements = {task['id']: task['statement'] for task in tasks}
+    prompts, seed = [tokens for _, _, _, tokens in draws], evaluation_seed(args) * SEED_STRIDE
+    run = dict(prompts=prompts, statements=[statements[task_id] for task_id, _, _, _ in draws], lean=args.lean,
+               budget=args.max_completion_length, seed=seed)
+    t0 = time.perf_counter()
+    if rollouts is None:
+        model.eval()
+        episodes = grader_tool.run_episodes(chat, model_turns(model, tokenizer, chat.stops), **run)
+    else:
+        with rollouts.awake(adapter_model, prompts[0], dict(evaluation=stage, seed=seed)) as served:
+            episodes = grader_tool.run_episodes(chat, server_turns(rollouts, served, chat.stops), **run)
+    seconds = time.perf_counter()-t0
+    generations.record(args, tokenizer, stage, evaluation_step(args, stage), draws, [episode['completion'] for episode in episodes])
+    for index, task in enumerate(tasks):
+        yield task, episodes[index*samples:(index+1)*samples], seconds if index == 0 else 0.0
+
+
 def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, rollouts=None, adapter_model=None):
     """Score `samples` completions per task, sampled by the vLLM server when the run has one (`rollouts`) and by the training
     model otherwise. With `stop_at` (a `time.monotonic()` instant), stop between tasks when the slowest task so far would no
@@ -413,17 +486,25 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, r
     # The before- and after-evaluations of one run draw from the same stream, so their difference is the adapter's. The
     # stream follows --seed (owner, 26 Nov), so runs with different seeds are evaluated on different draws and count as
     # repeats; the offset keeps it apart from the training stream of the same seed.
-    sampler = trainer_samples if rollouts is None else server_samples
+    chat = tool_chat(model, tokenizer, args)
     # Whether each further task still has to be generated (the trainer, one task at a time) or was generated with the
-    # first (the server, one call): only work still to come counts against `stop_at`, so samples already paid for are
-    # scored, not dropped (review round 10). The single server call itself cannot be stopped part way: the after-evaluation
-    # reserve (--final-eval-seconds) is sized to hold it.
-    generates_each_task = {trainer_samples: True, server_samples: False}[sampler]
+    # first (the server, or the grader tool's episodes, one batch): only work still to come counts against `stop_at`, so
+    # samples already paid for are scored, not dropped (review round 10). The single batch itself cannot be stopped part
+    # way: the after-evaluation reserve (--final-eval-seconds) is sized to hold it.
+    generates_each_task = chat is None and rollouts is None
     path = args.out/f'{stage}-evaluation.jsonl'
     completed, slowest_generation, slowest_scoring = 0, 0.0, 0.0
     stops = stop_ids(model, tokenizer)
+
+    def decode(ids):
+        return evaluation_text(tokenizer, ids, args)
     with path.open('w') as sink:
-        drawn = sampler(model, tokenizer, tasks, args, samples, rollouts, adapter_model, stage)
+        if chat is not None:
+            drawn = episode_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_model, stage, chat)
+        elif rollouts is None:
+            drawn = trainer_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_model, stage)
+        else:
+            drawn = server_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_model, stage)
         for _ in tasks:
             ahead = slowest_scoring + (slowest_generation if generates_each_task else 0.0)
             if stop_at is not None and completed and time.monotonic()+1.25*ahead > stop_at:
@@ -431,14 +512,19 @@ def evaluate(model, tokenizer, tasks, args, stage, samples=None, stop_at=None, r
             task, completions, seconds = next(drawn)
             scoring_started = time.monotonic()
             t_gen += seconds
-            generated += sum(token != tokenizer.pad_token_id for new in completions for token in new)
+            if chat is None:
+                generated += sum(token != tokenizer.pad_token_id for new in completions for token in new)
+            else:
+                generated += sum(episode['model_tokens'] for episode in completions)
 
             def scored(sample, task=task):
                 index, new = sample
-                raw = evaluation_text(tokenizer, new, args)
-                truncated = completion_truncated(new, stops, args.max_completion_length)
+                if chat is None:
+                    raw, truncated, drafts = decode(new), completion_truncated(new, stops, args.max_completion_length), {}
+                else:
+                    raw, truncated, drafts = grader_tool.answer_fields(new, decode)
                 return dict(score(args.lean, task, raw, args.arm, args.penalty, args.judge_fn, truncated=truncated, retries=retries, report_mode=report_mode),
-                            **generations.identity(args, stage, evaluation_step(args, stage), task['id'], index))
+                            **drafts, **generations.identity(args, stage, evaluation_step(args, stage), task['id'], index))
             t0 = time.perf_counter()
             try:
                 scored_rows = score_concurrently(scored, list(enumerate(completions)))  # a task's samples at once
@@ -489,6 +575,10 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     report_mode = args.report_mode
     summary['report_mode'] = report_mode
     stops = stop_ids(model, tokenizer)  # the same stop IDs as `evaluate`, so both paths agree on a finished answer
+    chat = tool_chat(model, tokenizer, args)
+    summary['grader_runs'] = args.grader_runs
+    # Where one generation stops: the answer's EOS, and with the grader tool also the end of a tool-call turn.
+    turn_stops = [stops] if chat is None else chat.stops
     if (args.rollout_backend == 'vllm') != (rollouts is not None):
         raise ValueError('the requested rollout backend must match the supplied backend')
     if rollouts is not None:
@@ -546,12 +636,19 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
         completion_ids = kwargs.get('completion_ids')
         if completion_ids is None:
             raise ValueError('TRL must supply completion_ids to determine whether each answer stopped')
+        if chat is not None and [list(map(int, ids)) for ids in completion_ids] != [e['completion'] for e in trainer.episodes]:
+            raise ValueError('the scored completions are not the episodes this step generated')
+
         def scored(answer):
             index, (completion, identifier, token_ids) = answer
-            raw = completion[-1]['content'] if isinstance(completion, list) else completion
-            truncated = completion_truncated(token_ids, stops, args.max_completion_length)
+            if chat is None:
+                raw = completion[-1]['content'] if isinstance(completion, list) else completion
+                truncated, drafts = completion_truncated(token_ids, stops, args.max_completion_length), {}
+            else:
+                # The answering turn alone, decoded as TRL decodes the control's completions for this reward.
+                raw, truncated, drafts = grader_tool.answer_fields(trainer.episodes[index], lambda ids: tokenizer.decode(ids, skip_special_tokens=True))
             return dict(score(args.lean, by_id[identifier], raw, args.arm, args.penalty, args.judge_fn, truncated=truncated,
-                              retries=retries, report_mode=report_mode), step=step,
+                              retries=retries, report_mode=report_mode), step=step, **drafts,
                         **generations.identity(args, 'training', step, identifier, index))
         try:
             rows = score_concurrently(scored, list(enumerate(zip(completions, task_id, completion_ids, strict=True))))
@@ -675,7 +772,7 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
                         # size of a reward gap is invisible within a group; 'none' keeps it. See --scale-rewards.
                         scale_rewards=args.scale_rewards, max_grad_norm=args.max_grad_norm, optim='adamw_torch', weight_decay=0.0,
                         warmup_steps=0, adam_beta1=0.9, adam_beta2=0.999, adam_epsilon=1e-8,
-                        logging_nan_inf_filter=False, generation_kwargs={'eos_token_id': stops},
+                        logging_nan_inf_filter=False, generation_kwargs={'eos_token_id': stops if chat is None else turn_stops},
                         # vLLM samples from the MXFP4 base; the trainer scores with bf16 weights. TRL's default 'sequence_mask'
                         # multiplies per-token ratios over the whole answer, which drove long answers' weights to about 0 and so
                         # reweighted outcomes by length (notes section 66). Per-token ratios capped at 3 do not compound.
@@ -712,8 +809,45 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
                     torch.randperm(sampler.num_samples, generator=sampler.generator)
             return sampler
 
-        def _generate_single_turn(self, prompt_ids, images, multimodal_fields, num_generations, has_tool_images=False):
+        def _tokenize_prompts(self, prompts):
+            if chat is None:
+                return super()._tokenize_prompts(prompts)
+            return [chat.prompt_ids(messages) for messages in prompts], None, {}  # the same request, with the tool declared
+
+        def _generate(self, prompts):
+            generated = super()._generate(prompts)
+            if chat is None:
+                return generated
+            if generated[2] is not None:
+                raise ValueError('TRL produced its own tool mask beside the grader-tool episodes')
+            # Tool results were not generated by the model: their tokens are context, never loss (TRL's `tool_mask`).
+            return (*generated[:2], [episode['mask'] for episode in self.episodes], *generated[3:])
+
+        def episode_batch(self, prompt_ids, images, multimodal_fields, has_tool_images):
+            """One grader-tool episode per prompt: the step's batch in the shape `_generate_single_turn` returns."""
+            if images is not None or multimodal_fields or has_tool_images:
+                raise ValueError('grader-tool episodes are text-only')
+            run = dict(prompts=prompt_ids, statements=[by_id[row['task_id']]['statement'] for row in self.generation_inputs],
+                       lean=args.lean, budget=args.max_completion_length)
             if rollouts is None:
+                def generate(contexts, max_tokens, seeds):
+                    # TRL's own generation (its settings, stopping at turn_stops), cut to each episode's remaining budget.
+                    turns, _, _ = GRPOTrainer._generate_single_turn(self, contexts, None, {}, 1)
+                    return [list(turn)[:limit] for turn, limit in zip(turns, max_tokens, strict=True)], None
+                self.episodes = grader_tool.run_episodes(chat, generate, **run, seed=0)
+            else:
+                if self.accelerator.num_processes != 1:
+                    raise ValueError('external adapter rollouts support one process')
+                seed = rollouts.training_seed(self, prompt_ids)
+                with rollouts.awake(self.model, prompt_ids[0], dict(rollouts.training_record(self), seed=seed)) as served:
+                    self.episodes = grader_tool.run_episodes(chat, server_turns(rollouts, served, chat.stops), **run, seed=seed)
+            logprobs = None if self.episodes[0]['logprobs'] is None else [episode['logprobs'] for episode in self.episodes]
+            return [episode['completion'] for episode in self.episodes], logprobs, None
+
+        def _generate_single_turn(self, prompt_ids, images, multimodal_fields, num_generations, has_tool_images=False):
+            if chat is not None:
+                batch = self.episode_batch(prompt_ids, images, multimodal_fields, has_tool_images)
+            elif rollouts is None:
                 batch = super()._generate_single_turn(prompt_ids, images, multimodal_fields, num_generations, has_tool_images)
             else:
                 if images is not None or multimodal_fields or has_tool_images:
@@ -745,7 +879,9 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     board.logging_dir = str(args.out/'tensorboard')
     # TRL 1.19 unions model-only stops into its completion mask. Keep that mask
     # aligned with our explicit generation stop and evaluation cutoff detector.
-    trainer.eos_token_ids = [stops]
+    # With the grader tool a turn also ends at its tool-call token; the completion mask does not cut there (it is all ones
+    # for token lists), and the loss mask comes from the episodes.
+    trainer.eos_token_ids = turn_stops
     if rollouts is not None:
         # Initialize without TRL's native VLLMGeneration (which imports the other
         # environment's Torch and transfers full weights). The overridden method
@@ -861,7 +997,7 @@ def run(args):
         from .vllm_rollouts import AdapterRollouts, check_args
         check_args(args)
         if args.rollout_backend == 'vllm':
-            rollouts = AdapterRollouts(args, [])
+            rollouts = AdapterRollouts(args, [], result_tokens=grader_tool.result_reserve(args.grader_runs))
             rollouts.preflight()  # prove the server is sleeping before loading the training model
         summary['controls'] = controls(args.lean)
         summary['lean'] = lean_version(args.lean)
@@ -901,7 +1037,9 @@ def run(args):
             adapter = weights if stage == 'after' or args.adapter else None
             return evaluate(weights, tokenizer, evaluation, args, stage, rollouts=rollouts, adapter_model=adapter, stop_at=stop_at)
 
-        if args.resume_from:
+        # The before-evaluation measures the base model either way. A continuation that switches the grader tool on or off
+        # measures it again under its own condition, rather than copying the parent's from the other condition.
+        if args.resume_from and saved_settings(resume_point(args)[0])['grader_runs'] == args.grader_runs:
             copy_before(args, summary)
         else:
             summary['before'] = paired_evaluation('before', model)

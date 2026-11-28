@@ -31,7 +31,7 @@ def run_id_directory(state, run_id):
     return Path(state) / run_id
 
 # These changes preserve the shapes and ordering of the saved optimizer and sampler.
-CONTINUATION_OVERRIDES = frozenset({'max_completion_length', 'prompt_variant', 'report_mode', 'arm', 'penalty'})
+CONTINUATION_OVERRIDES = frozenset({'max_completion_length', 'prompt_variant', 'report_mode', 'arm', 'penalty', 'grader_runs'})
 
 
 def training_keys():

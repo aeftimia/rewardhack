@@ -113,7 +113,8 @@ SETTINGS = dict(model='m', revision='r', arm='report_correct', penalty=0.5, repo
                 scale_rewards='none', max_grad_norm=1.0, router_aux_loss_coef=0.0, beta=0.0, num_generations=4, prompts_per_step=1,
                 max_completion_length=2048, seed=7, save_every=2, stop_no_variation=99, stop_saturated=True, rollout_backend='vllm', judge='api',
                 judge_model='gpt-5.4-nano', judge_revision=None, judge_url='https://api.openai.com/v1', judge_extra={},
-                verifier_retry_seconds=120.0, adapter=None, eval_limit=12, eval_samples=2, training_sampler='uniform', backward_batch_size=None)
+                verifier_retry_seconds=120.0, adapter=None, eval_limit=12, eval_samples=2, training_sampler='uniform', backward_batch_size=None,
+                grader_runs=0)
 
 
 @pytest.mark.parametrize('saved_step', [2, 6])
@@ -159,6 +160,19 @@ def resume_args(saved, tmp_path, **changes):
 
 def test_the_same_settings_pass(saved, tmp_path):
     hf_grpo.check_resume(resume_args(saved, tmp_path))
+
+
+def test_a_run_saved_before_the_grader_tool_resumes_as_its_control(saved, tmp_path):
+    """Runs written before --grader-runs existed record no such setting: they sampled one submission, the control."""
+    settings = json.loads((saved/hf_grpo.RUN_SETTINGS).read_text())
+    del settings['grader_runs']
+    (saved/hf_grpo.RUN_SETTINGS).write_text(json.dumps(settings))
+    hf_grpo.check_resume(resume_args(saved, tmp_path))
+    with pytest.raises(ValueError, match='grader_runs 0 -> 3'):
+        hf_grpo.check_resume(resume_args(saved, tmp_path, grader_runs=3))
+    # A registered continuation may switch the tool on from a control checkpoint (run_registry.CONTINUATION_OVERRIDES).
+    hf_grpo.check_resume(resume_args(saved, tmp_path, grader_runs=3, continuation_overrides={'grader_runs'}))
+    assert hf_grpo.saved_settings(saved)['grader_runs'] == 0
 
 
 def test_archived_resume_with_new_ceiling_still_checks_seed(saved, tmp_path):
@@ -381,7 +395,9 @@ def test_the_summary_is_written_as_a_run_starts(tmp_path, monkeypatch):
 
 def test_every_tally_key_has_a_rule_for_combining_steps():
     rows = [dict(fresh_row, claim='OK', honest=True) for fresh_row in [__import__('test_scan_fixes').fresh()]]
-    assert set(outcomes.tally(rows)) == set(outcomes.COMBINE)
+    drafted = [dict(row, grader_drafts=[], grader_runs_used=0, episode_end='answer') for row in rows]
+    assert set(outcomes.tally(drafted)) == set(outcomes.COMBINE)  # the grader tool's counts appear with its rows only
+    assert set(outcomes.tally(rows)) < set(outcomes.COMBINE)
     with pytest.raises(KeyError):
         outcomes.accumulate({}, {'unlisted': 1})  # refused at the first step, not the second
 

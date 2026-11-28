@@ -167,7 +167,8 @@ def main():
         if step and not backend.checked_reload:
             backend.verify_reload(tokens[0])
         def sample(checkpoint, panel_tasks, seed):
-            ids, _, _ = backend.completions(tokens, seed=seed, max_tokens=args.max_completion_length, model=served)
+            ids, _, _ = backend.completions(tokens, seeds=[seed + index for index in range(len(tokens))],
+                                            max_tokens=[args.max_completion_length] * len(tokens), model=served)
             return [(evaluation_text(tokenizer, seq, args), completion_truncated(seq, backend.stops, args.max_completion_length)) for seq in ids]
         seed = (args.seed + {'screen': 1, 'confirmation': 2}[phase]) * SEED_STRIDE
         return evaluate_checkpoint(tasks, step, phase, draws, seed, sample, lean, args.report_mode, cli.out/f'{phase}-{step}.jsonl')

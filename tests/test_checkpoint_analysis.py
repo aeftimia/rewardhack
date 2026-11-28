@@ -111,8 +111,8 @@ def test_cli_two_parts_with_only_model_io_mocked(tmp_path, monkeypatch):
         def verify_reload(self, first):
             self.checked_reload = True
 
-        def completions(self, prompts, *, seed, max_tokens, model):
-            assert not self.sleeping and len(prompts) == 100 and max_tokens == 8192
+        def completions(self, prompts, *, seeds, max_tokens, model):
+            assert not self.sleeping and len(prompts) == 100 and max_tokens == [8192] * 100 and len(seeds) == 100
             return [[7] for _ in prompts], [], None
 
         def close(self):

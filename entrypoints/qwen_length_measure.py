@@ -43,10 +43,10 @@ if __name__ == '__main__':
     lock = threading.Lock()
 
     class SavedResponses(AdapterRollouts):
-        def parse_completion(self, index, reply, max_tokens):
+        def parse_completion(self, index, reply, max_tokens, stops):
             with lock, (args.out/'responses.jsonl').open('a') as sink:
                 jsonl.write(sink, dict(index=index, response=reply))
-            tokens, values = super().parse_completion(index, reply, max_tokens)
+            tokens, values = super().parse_completion(index, reply, max_tokens, stops)
             task_id, round_index, _, _ = draws[index]
             row = dict(task_id=task_id, round=round_index, arm='baseline', scored=False,
                        report_mode=args.report_mode, raw=evaluation_text(tokenizer, tokens, args),

@@ -21,6 +21,11 @@ def backend(tmp_path):
     backend.close()
 
 
+def _completions(backend, prompts, seed, max_tokens):
+    """The control's request: one sample per prompt with seeds from `seed`, all at the same token limit."""
+    return backend.completions(prompts, seeds=[seed + i for i in range(len(prompts))], max_tokens=[max_tokens] * len(prompts), model='m')
+
+
 def connect(backend, handler):
     backend.client.close()
     backend.client = httpx.Client(base_url=backend.args.rollout_url, transport=httpx.MockTransport(handler))
@@ -40,7 +45,7 @@ def test_parallel_responses_preserve_group_order_and_unique_seeds(backend):
         time.sleep((3-index)*0.005)
         return httpx.Response(200, json={'choices': [choice(3+index % 2)]})
     connect(backend, handler)
-    ids, logs, masks = backend.completions([[8], [8], [9], [9]], seed=7, max_tokens=2, model='m')
+    ids, logs, masks = _completions(backend, [[8], [8], [9], [9]], 7, 2)
     assert ids == [[3, 1], [4, 1], [3, 1], [4, 1]]
     assert masks is None and len(logs) == 4
     assert all((b['sampling_params']['temperature'], b['sampling_params']['top_p'], b['sampling_params']['top_k']) == (1.0, 1.0, 0) for b in seen)
@@ -56,7 +61,7 @@ def test_long_evaluation_requests_allow_generation_and_queue_time(backend):
         seen.append(request.extensions['timeout']['read'])
         return httpx.Response(200, json={'choices': [choice()]})
     connect(backend, handler)
-    ids, _, _ = backend.completions([[8]] * 24, seed=7, max_tokens=8192, model='m')
+    ids, _, _ = _completions(backend, [[8]] * 24, 7, 8192)
     assert len(ids) == 24
     assert seen == [2640] * 24
 
@@ -67,7 +72,7 @@ def test_completion_timeout_remains_finite_and_propagates(backend):
         raise httpx.ReadTimeout('generation exceeded its bound', request=request)
     connect(backend, handler)
     with pytest.raises(httpx.ReadTimeout, match='generation exceeded'):
-        backend.completions([[8]], seed=7, max_tokens=2, model='m')
+        _completions(backend, [[8]], 7, 2)
 
 
 @pytest.mark.parametrize('damage', ['misaligned', 'nonfinite', 'missing_stop', 'extra', 'http'])
@@ -79,7 +84,7 @@ def test_invalid_rollouts_fail_instead_of_training(backend, damage):
     connect(backend, lambda request: httpx.Response(503 if damage == 'http' else 200,
         json={'choices': [row, row] if damage == 'extra' else [row]}))
     with pytest.raises((ValueError, KeyError, httpx.HTTPStatusError)):
-        backend.completions([[8]], seed=7, max_tokens=2, model='m')
+        _completions(backend, [[8]], 7, 2)
 
 
 @pytest.mark.parametrize('wrong', ['version', 'model', 'logprobs', 'mask', 'context', 'awake'])
@@ -151,7 +156,7 @@ def test_reload_uses_later_tokens_and_records_failed_restoration(backend, monkey
     values = iter([(3, -2.0), (3, -2.16), (3, -2.3), (3, -2.0), (4, -3.0),
                    (3 if restored == -2.0 else 4, restored - 0.315)])
     def sample(*args, **kwargs):
-        assert kwargs['max_tokens'] == RELOAD_PROBE_TOKENS
+        assert kwargs['max_tokens'] == [RELOAD_PROBE_TOKENS]
         token, score = next(values)
         return [[200005, token]], [[0.0, score]], None
     monkeypatch.setattr(backend, 'completions', sample)
@@ -353,7 +358,7 @@ def test_a_request_longer_than_the_server_context_is_refused_before_it_is_sent(b
     """A fixed 4,096-token server context refused every request once the answer limit was 4,096 (review round 6)."""
     connect(backend, lambda request: pytest.fail('an over-long request reached the server'))
     with pytest.raises(ValueError, match='exceed the vLLM context'):
-        backend.completions([[8]*15], seed=7, max_tokens=2, model='m')
+        _completions(backend, [[8]*15], 7, 2)
 
 
 def test_sampling_without_an_adapter_asks_the_served_base_model_and_loads_nothing(backend):

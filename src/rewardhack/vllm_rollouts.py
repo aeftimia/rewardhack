@@ -4,6 +4,7 @@ TRL 1.19.0's native backend merges and transfers the entire model and imports vL
 into the training environment. Here only generation is replaced; TRL still owns
 log-probability recomputation, importance ratios, rewards, and the GRPO loss.
 """
+import contextlib
 import importlib.metadata
 import json
 import math
@@ -67,8 +68,9 @@ def check_args(args):
 
 
 class AdapterRollouts:
-    def __init__(self, args, stops):
-        self.args, self.stops = args, stops
+    def __init__(self, args, stops, result_tokens=0):
+        """`result_tokens`: context reserved for tool results beyond the answer budget (grader_tool.result_reserve)."""
+        self.args, self.stops, self.result_tokens = args, stops, result_tokens
         # 3x estimated 40 s for an adapter operation; completion requests use
         # the answer-length and batch-size bound in completion_timeout.
         self.client = httpx.Client(base_url=args.rollout_url, timeout=120, trust_env=False)
@@ -101,8 +103,10 @@ class AdapterRollouts:
             raise ValueError(f'rollout server does not advertise the pinned model {expected}')
         config = self.request('GET', '/server_info?config_format=json').json()['vllm_config']['model_config']
         self.max_model_len = config['max_model_len']
-        if self.max_model_len <= self.args.max_completion_length:
-            raise ValueError(f'vLLM context {self.max_model_len} leaves no room for a prompt beside {self.args.max_completion_length} answer tokens')
+        # With the grader tool, an episode's context also holds its tool results (grader_tool.result_reserve).
+        reserved = self.args.max_completion_length + self.result_tokens
+        if self.max_model_len <= reserved:
+            raise ValueError(f'vLLM context {self.max_model_len} leaves no room for a prompt beside {reserved} answer and tool-result tokens')
         # Sampling is untruncated (sampling.py), so the trainer's full-vocabulary log-probabilities are the sampler's own
         # and no per-token candidate set is needed; a server that sends one was started for some other setting.
         if config['logprobs_mode'] != 'processed_logprobs' or config['return_sampling_mask']:
@@ -119,22 +123,26 @@ class AdapterRollouts:
         if self.request('POST', '/reset_prefix_cache').json()['success'] is not True:
             raise RuntimeError('vLLM did not reset the prefix cache')
 
-    def completions(self, prompts, *, seed, max_tokens, model):
-        if not prompts:
-            raise ValueError('rollout prompts must not be empty')
-        longest = max(map(len, prompts))
-        if longest + max_tokens > self.max_model_len:
-            raise ValueError(f'a {longest}-token prompt and {max_tokens} answer tokens exceed the vLLM context of {self.max_model_len}')
-        request_timeout = completion_timeout(len(prompts), max_tokens)
+    def completions(self, prompts, *, seeds, max_tokens, model, stops=None):
+        """One sample per prompt with its own seed and token limit, stopping at `stops`; None stops at the EOS alone."""
+        stops = [self.stops] if stops is None else list(stops)
+        if not prompts or len(seeds) != len(prompts) or len(max_tokens) != len(prompts):
+            raise ValueError('rollout prompts must be nonempty, with one seed and one token limit each')
+        if min(max_tokens) <= 0:
+            raise ValueError('every rollout request needs a positive token limit')
+        longest = max(len(prompt) + limit for prompt, limit in zip(prompts, max_tokens, strict=True))
+        if longest > self.max_model_len:
+            raise ValueError(f'a prompt and its answer tokens ({longest}) exceed the vLLM context of {self.max_model_len}')
+        request_timeout = completion_timeout(len(prompts), max(max_tokens))
         def send(item):
             index, prompt = item
             # dry-ok: src/rewardhack/hf_grpo.py::trainer_samples | prepare_training assigns rollouts.stops = stop_ids(model, tokenizer), the same tokenizer EOS passed to Transformers. vLLM must ignore its model's own default EOS and stop at the explicitly listed tokenizer ID. test_vllm_rollouts asserts ignore_eos and [1] on the wire together.
-            params = dict(n=1, max_tokens=max_tokens, **SAMPLING_KWARGS,
-                          seed=seed+index, stop_token_ids=[self.stops], ignore_eos=True,
+            params = dict(n=1, max_tokens=max_tokens[index], **SAMPLING_KWARGS,
+                          seed=seeds[index], stop_token_ids=stops, ignore_eos=True,
                           skip_special_tokens=False, logprobs=0, output_kind=2)
             body = dict(model=model, request_id=str(uuid.uuid4()), token_ids=prompt, sampling_params=params)
             reply = self.request('POST', '/inference/v1/generate', body=body, timeout=request_timeout).json()
-            return self.parse_completion(index, reply, max_tokens)
+            return self.parse_completion(index, reply, max_tokens[index], stops)
         # executor.map preserves prompt/group order despite out-of-order replies.
         with ThreadPoolExecutor(max_workers=min(32, len(prompts))) as pool:
             choices = list(pool.map(send, enumerate(prompts)))
@@ -142,7 +150,7 @@ class AdapterRollouts:
         # No sampling mask: TRL then normalises the trainer's log-probabilities over the whole vocabulary, as sampled.
         return list(ids), list(probabilities), None
 
-    def parse_completion(self, index, reply, max_tokens):
+    def parse_completion(self, index, reply, max_tokens, stops):
         """Validate one reply in its worker so observers can retain each completed draw."""
         if len(reply['choices']) != 1:
             raise ValueError('vLLM must return exactly one completion per request')
@@ -157,11 +165,11 @@ class AdapterRollouts:
             raise ValueError('vLLM returned invalid or misaligned token IDs/log probabilities')
         if choice['finish_reason'] not in ('stop', 'length'):
             raise ValueError(f"unexpected finish reason {choice['finish_reason']!r}")
-        if choice['finish_reason'] == 'stop' and tokens[-1] != self.stops:
+        if choice['finish_reason'] == 'stop' and tokens[-1] not in stops:
             raise ValueError('vLLM stopped without returning a configured stop token')
         if choice['finish_reason'] == 'length' and len(tokens) != max_tokens:
             raise ValueError('vLLM reached a length limit before the requested completion budget')
-        if self.stops in tokens[:-1]:
+        if any(token in stops for token in tokens[:-1]):
             raise ValueError('vLLM continued past the configured stop token')
         return tokens, values
 
@@ -193,7 +201,7 @@ class AdapterRollouts:
         # a comparison that already drifts with unchanged weights.
         def reset_and_sample():
             self.reset_prefix_cache()
-            return self.completions([prompt], seed=0, max_tokens=RELOAD_PROBE_TOKENS, model=self.name)
+            return self.completions([prompt], seeds=[0], max_tokens=[RELOAD_PROBE_TOKENS], model=self.name)
         before = reset_and_sample()
         for stage in ('unchanged-repeat', 'identical-reload'):
             if stage == 'identical-reload':
@@ -237,18 +245,31 @@ class AdapterRollouts:
                 group != prompts[start] for start in range(0, len(prompts), num_generations)
                 for group in prompts[start:start+num_generations]):
             raise ValueError('TRL must supply contiguous repeated prompt groups')
-        # `step` counts from 1, as the rollout rows and steps.jsonl do. Each run's seeds start SEED_STRIDE apart, so runs whose
-        # --seed differs by one do not share request seeds a slot apart (a run uses far fewer than SEED_STRIDE requests).
-        return self.sample(trainer.model, prompts, seed=self.args.seed * SEED_STRIDE + trainer.state.global_step * len(prompts),
-                           record=dict(step=trainer.state.global_step + 1))
+        return self.sample(trainer.model, prompts, seed=self.training_seed(trainer, prompts), record=self.training_record(trainer))
+
+    def training_seed(self, trainer, prompts):
+        """`step` counts from 1, as the rollout rows and steps.jsonl do. Each run's seeds start SEED_STRIDE apart, so runs
+        whose --seed differs by one do not share request seeds a slot apart (a run uses far fewer than SEED_STRIDE requests)."""
+        return self.args.seed * SEED_STRIDE + trainer.state.global_step * len(prompts)
+
+    def training_record(self, trainer):
+        return dict(step=trainer.state.global_step + 1)
 
     def sample(self, adapter_model, prompts, *, seed, record):
-        """Wake the server, load `adapter_model`'s current adapter (None: sample the served base model), sample each
-        prompt once with seeds from `seed`, and put the server back to sleep whatever happens. Training rollouts and the
-        before- and after-evaluations all come through here; each call is a line of rollout-backend.jsonl."""
+        """Sample each prompt once with seeds from `seed`, from `adapter_model`'s current adapter (None: the served base
+        model). Training rollouts and the before- and after-evaluations come through here, or through `awake` for episodes."""
+        with self.awake(adapter_model, prompts[0], dict(record, seed=seed)) as served:
+            return self.completions(prompts, seeds=[seed + index for index in range(len(prompts))],
+                                    max_tokens=[self.args.max_completion_length] * len(prompts), model=served)
+
+    @contextlib.contextmanager
+    def awake(self, adapter_model, probe_prompt, record):
+        """Wake the server, load `adapter_model`'s current adapter (None: the served base model) and yield the model name to
+        request; then put the server back to sleep whatever happens. A grader-tool episode samples all its turns inside
+        one session. Each session is a line of rollout-backend.jsonl; `probe_prompt` serves the first reload check."""
         import torch
         began = time.monotonic()
-        record = dict(record, seed=seed, adapter_sha256=None, status='failed')
+        record = dict(record, adapter_sha256=None, status='failed')
         if adapter_model is not None:
             adapter_model.save_pretrained(self.path, safe_serialization=True)
             record['adapter_sha256'] = file_sha256(self.path/'adapter_model.safetensors')
@@ -264,10 +285,9 @@ class AdapterRollouts:
             if adapter_model is not None:
                 self.load(self.path)
                 if not self.checked_reload:
-                    record['reload_check'] = self.verify_reload(prompts[0])
+                    record['reload_check'] = self.verify_reload(probe_prompt)
             record['sync_seconds'] = time.monotonic() - began
-            served = self.name if adapter_model is not None else f'{self.args.model}@{self.args.revision}'
-            ids, logprobs, masks = self.completions(prompts, seed=seed, max_tokens=self.args.max_completion_length, model=served)
+            yield self.name if adapter_model is not None else f'{self.args.model}@{self.args.revision}'
             record['status'] = 'completed'
         finally:
             # A failed sleep is fatal too: never proceed into backward with the
@@ -277,7 +297,6 @@ class AdapterRollouts:
             record['seconds'] = time.monotonic() - began
             with self.log.open('a') as sink:
                 sink.write(json.dumps(record, allow_nan=False) + '\n')
-        return ids, logprobs, masks
 
     def close(self):
         self.client.close()
