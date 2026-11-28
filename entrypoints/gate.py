@@ -43,6 +43,7 @@ def hook(args):
 
 
 def launch(args):
+    # dry-ok: src/rewardhack/gates.py::driver_check | ops/drive_runpod.sh exits at the DRIVE_CHECK_ONLY branch before its gate.sh launch call. gate.sh launch receives only --remote and --deadline plus the environment. Host and port are absent from driver_launch's signature and launch-record identity. driver_check can pass with no launch record, when this CLI must refuse; on success only this CLI consumes it. tests/test_gates.py exercises both the no-record and single-use cases.
     return refuse(driver_launch(ROOT, args.remote, args.deadline, os.environ), 2,
                   'gate: ops/drive_runpod.sh refuses to start: the launch record does not cover this launch.')
 

@@ -9,4 +9,6 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 COMMON=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR git -C "$HERE" rev-parse --path-format=absolute --git-common-dir)
 PYTHON=$(dirname "$COMMON")/.tools/venv/bin/python
 [[ -x $PYTHON ]] || { echo "gate: no project Python at $PYTHON, so nothing can be checked and everything is refused. Create the virtual environment there." >&2; exit 2; }
-PYTHONPATH="$HERE/src" exec "$PYTHON" "$HERE/entrypoints/gate.py" "$@"
+ENTRYPOINT=gate.py
+if [[ ${1:-} == runpod ]]; then ENTRYPOINT=runpod_ops.py; shift; fi
+PYTHONPATH="$HERE/src" exec "$PYTHON" "$HERE/entrypoints/$ENTRYPOINT" "$@"

@@ -110,12 +110,12 @@ def test_the_driver_is_asked_before_anything_is_deployed_and_the_grace_is_counte
     assert 'LEAN_ISOLATION=required cannot work' in settle(repo, settings=dict(LEAN_ISOLATION='required'))[1][0]
     assert 'not settings ops/drive_runpod.sh reads: SMOKE_steps' in settle(repo, settings=dict(SMOKE_steps='4'))[1][0]
     assert 'at least 5 min' in settle(repo, deadline=4, basis='2x measured 2 min')[1][0]
-    # Besides the deadline: the driver's wait for SSH (SSH_UP_SECONDS and ARM_SECONDS, 10 min), the provisional timer, and the runner's 30 s kill-after
+    # Besides the deadline: API endpoint discovery plus driver SSH/arming (20 min), the provisional timer, and the runner's 30 s kill-after
     # with the grace, rounded up together (review round 30).
     record, refused = settle(repo, settings=dict(LEAN_ISOLATION='none', AUTOSTOP_GRACE_SECONDS='3600', SMOKE_STEPS='4'))
-    assert refused == [] and record['worst_case_minutes'] == 60 + 10 + 15 + 61
+    assert refused == [] and record['worst_case_minutes'] == 60 + 20 + 15 + 61
     record, refused = settle(repo, settings=dict(KEEP_POD='1'))
-    assert refused == [] and record['worst_case_minutes'] == 96 and record['worst_case_usd'] == pytest.approx(2.70*96/60)
+    assert refused == [] and record['worst_case_minutes'] == 106 and record['worst_case_usd'] == pytest.approx(2.70*106/60)
     (repo / 'ops' / 'drive_runpod.sh').write_text('exit 9\n')
     assert 'has no DRIVE_CHECK_ONLY mode' in settle(repo)[1][0]
 
@@ -124,7 +124,7 @@ def test_the_worst_case_reads_the_kill_after_from_the_pod_pins(repo):
     pins = repo / 'ops' / 'pod_pins.env'
     pins.write_text(pins.read_text().replace('KILL_AFTER_SECONDS=30\n', 'KILL_AFTER_SECONDS=600\n'))
     run(repo, 'commit', '-qam', 'longer kill-after')
-    assert settle(repo)[0]['worst_case_minutes'] == 60 + 10 + 15 + 20
+    assert settle(repo)[0]['worst_case_minutes'] == 60 + 20 + 15 + 20
     pins.write_text(pins.read_text().replace('KILL_AFTER_SECONDS=600\n', ''))
     run(repo, 'commit', '-qam', 'no kill-after')
     assert 'must set KILL_AFTER_SECONDS once' in settle(repo)[1][0]
@@ -181,6 +181,29 @@ def test_the_record_stops_covering_a_changed_tree_commit_or_ledger(repo):
     with (repo / 'spending' / 'ledger.csv').open('a') as ledger:
         ledger.write('2026-11-25,runpod,x,y,z,0.2,2.70,0,0.54,done,results/x,gpt-oss-20b-gpu\n')
     assert 'ledger has changed' in '\n'.join(gates.launch_problems(repo))
+
+
+def test_api_driver_cannot_consume_a_replaced_approval(repo):
+    first, problems = settle(repo)
+    assert problems == []
+    replacement, problems = settle(repo)
+    assert problems == [] and replacement['record_id'] != first['record_id']
+    reasons = launch(repo, {gates.EXPECTED_RECORD_ID: first['record_id']})
+    assert 'changed since API deployment' in '\n'.join(reasons)
+    with pytest.raises(ValueError, match='changed after validation'):
+        gates.mark_launched(repo, first)
+    assert json.loads((repo / gates.RECORD).read_text()) == replacement
+
+
+def test_cleanup_can_mark_the_same_approval_without_replacing_it(repo):
+    record, problems = settle(repo)
+    assert problems == []
+    gates.mark_launched(repo, record)
+    consumed = (repo / gates.RECORD).read_text()
+    with pytest.raises(ValueError, match='already started'):
+        gates.mark_launched(repo, record)
+    gates.mark_launched(repo, record, cleanup=True)
+    assert (repo / gates.RECORD).read_text() == consumed
 
 
 @pytest.fixture
@@ -249,12 +272,14 @@ def test_a_job_or_a_machine_started_around_the_driver_is_refused(repo, command):
     assert problems(repo, command)
 
 
-def test_a_job_with_the_timer_and_a_new_machine_still_need_the_record(repo):
+def test_machine_creation_needs_approval_but_raw_jobs_always_need_the_driver(repo):
     job = "ssh root@1.2.3.4 'REQUIRE_AUTOSTOP=1 nohup bash pilot-repo/ops/remote_job.sh pilot-repo/ops/remote_runpod_smoke.sh 3600 &'"
     create = 'runpodctl create pod --gpuType "RTX PRO 6000"'
-    assert 'no launch record' in problems(repo, job)[0] and 'no launch record' in '\n'.join(problems(repo, create))
+    assert 'exact launch-record check' in problems(repo, job)[0]
+    assert 'no launch record' in '\n'.join(problems(repo, create))
     settle(repo)
-    assert problems(repo, job) == [] and problems(repo, create) == []
+    assert 'exact launch-record check' in problems(repo, job)[0]
+    assert problems(repo, create) == []
 
 
 @pytest.mark.parametrize('command', [
