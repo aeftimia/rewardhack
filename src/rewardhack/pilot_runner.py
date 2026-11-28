@@ -45,7 +45,7 @@ def _reserve(spec, out, stage, spec_hash):
             raise ValueError('stage already reserved without a completed receipt; manual reconciliation required')
         rows = budget.read_ledger(ledger, include_reservations=False) + reservations
         commitment = _usd(stage['max_usd'])
-        _, problems = budget.check(rows, spec['budget']['line'], 0, 0, commitment, commitment)
+        problems = budget.reservation_problems(rows, spec['budget']['line'], commitment)
         if problems:
             return None, problems
         reservations.append(dict(key=key, line=spec['budget']['line'], total_usd=commitment, approved_usd=0.0,

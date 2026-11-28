@@ -12,7 +12,7 @@ from pathlib import Path
 from transformers import AutoTokenizer
 
 from rewardhack import jsonl, provenance
-from rewardhack.hf_grpo import evaluation_draws, settle_template, stage_tasks, template_kwargs
+from rewardhack.hf_grpo import evaluation_draws, evaluation_text, settle_template, stage_tasks, template_kwargs
 from rewardhack.outcomes import completion_truncated
 from rewardhack.sampling import DEFAULT_SEED
 from rewardhack.vllm_rollouts import AdapterRollouts
@@ -33,8 +33,9 @@ if __name__ == '__main__':
     settle_template(tokenizer, args.reasoning_effort, args.thinking)
     tasks = stage_tasks('hard', 'before', 12)
     template = template_kwargs(args)
+    # dry-ok: src/rewardhack/hf_grpo.py::server_samples | This replay fixes the two samples per task of the measured 8k run. Both paths call evaluation_draws for ordering, template and seed. test_length_probe_uses_evaluation_draws_and_saves_partial_answers checks all 24 identities.
     seed, draws = evaluation_draws(tokenizer, tasks, args, 2)
-    prompts = [ids for _, _, ids in draws]
+    prompts = [ids for _, _, _, ids in draws]
     meta = provenance.meta(model=args.model, revision=args.revision, arm=None, penalty=None,
                            stage='untrained', report_mode=args.report_mode, taskset='hard', tasks='all',
                            part='evaluation', variant=args.prompt_variant, template=template, run=args.out.name)
@@ -46,9 +47,9 @@ if __name__ == '__main__':
             with lock, (args.out/'responses.jsonl').open('a') as sink:
                 jsonl.write(sink, dict(index=index, response=reply))
             tokens, values = super().parse_completion(index, reply, max_tokens)
-            task, round_index, _ = draws[index]
-            row = dict(task_id=task['id'], round=round_index, arm='baseline', scored=False,
-                       report_mode=args.report_mode, raw=tokenizer.decode(tokens, skip_special_tokens=False),
+            task_id, round_index, _, _ = draws[index]
+            row = dict(task_id=task_id, round=round_index, arm='baseline', scored=False,
+                       report_mode=args.report_mode, raw=evaluation_text(tokenizer, tokens, args),
                        tokens=len(tokens), truncated=completion_truncated(tokens, self.stops, max_tokens),
                        termination_schema='cutoff-v1', meta=meta)
             with lock, (args.out/'rows.jsonl').open('a') as sink:

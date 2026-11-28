@@ -154,6 +154,11 @@ def grant_spent(rows):
     return nonnegative_finite(sum(spent(rows, line=line) for line in LINES), 'grant total')
 
 
+def reservation_problems(rows, line, amount):
+    _, problems = check(rows, line, 0, 0, amount, amount)
+    return problems
+
+
 def check(rows, line, hourly, hours, other=0.0, launch_cap=None):
     """Worst-case cost of a launch and the reasons to refuse it. `launch_cap` is the ceiling approved for this one launch."""
     hourly = nonnegative_finite(hourly, 'hourly price')

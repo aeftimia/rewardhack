@@ -41,7 +41,7 @@ def test_the_launch_gate_counts_what_the_driver_and_runner_actually_do():
     driver = (ROOT/'ops/drive_runpod.sh').read_text()
     runner = (ROOT/'ops/remote_job.sh').read_text()
     assert f'--arm-only {gates.PROVISIONAL_MINUTES*60}' in driver
-    assert f'AUTOSTOP_GRACE_SECONDS:-{gates.DRIVER_GRACE_SECONDS}}}' in runner
+    assert f'\n  GRACE={gates.DRIVER_GRACE_SECONDS}\n' in runner
     assert driver.count(f'JUDGE_MAX_USD:-{gates.DRIVER_JUDGE_MAX_USD:g}}}') == driver.count('JUDGE_MAX_USD:-1') > 0
     # What the pod is sent when a setting is unset (notes section 80 moved these out of the launch line).
     assert f'else SENT_JUDGE_MAX_USD={gates.DRIVER_JUDGE_MAX_USD:g}; fi' in driver

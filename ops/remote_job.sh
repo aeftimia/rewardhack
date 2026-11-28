@@ -11,11 +11,12 @@ set -euo pipefail
 KILL_AFTER_SECONDS=30
 OUT=${REMOTE_JOB_OUT:-$HOME/out}
 echo "runner output directory: $OUT (REMOTE_JOB_OUT overrides the standard HOME/out path)"
-GRACE=${AUTOSTOP_GRACE_SECONDS:-600}  # time for the driver to copy results before the pod is removed
-if [[ -n ${AUTOSTOP_GRACE_SECONDS-} ]]; then
+if [[ ${AUTOSTOP_GRACE_SECONDS+x} ]]; then
+  GRACE=${AUTOSTOP_GRACE_SECONDS:?set a whole number of seconds or unset the override}
   echo "runner grace period: ${GRACE}s from AUTOSTOP_GRACE_SECONDS"
 else
-  echo "runner grace period: ${GRACE}s from the standard copy window (override unset or empty)"
+  GRACE=600
+  echo "runner grace period: ${GRACE}s from the standard copy window (override unset)"
 fi
 mkdir -p "$OUT" || { echo "cannot create runner output directory: $OUT" >&2; exit 3; }
 # An SSH session does not inherit the container's environment, where RunPod puts the pod's id and its own key.

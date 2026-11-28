@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from . import gates
-from .state_files import atomic_json, file_lock
+from .state_files import atomic_json, file_lock, pod_receipt
 
 API_SECONDS = gates.RUNPOD_API_SECONDS
 POLL_SECONDS = 5
@@ -163,7 +163,7 @@ def launch(client, root, config_path, results):
     if '22/tcp' not in config['ports'] or ':' not in config['image']:
         raise ValueError('Deployment needs port 22/tcp and an explicitly tagged image')
     destination = root / results
-    receipt = destination.with_suffix('.pod.json')
+    receipt = pod_receipt(destination)
     if destination.exists() or destination.is_symlink() or receipt.exists() or receipt.is_symlink() or any(c.isspace() for c in str(results)):
         raise ValueError('The results directory must be new and its driver argument must contain no spaces')
     (root / '.tools').mkdir(exist_ok=True)

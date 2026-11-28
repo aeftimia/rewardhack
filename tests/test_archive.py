@@ -44,6 +44,8 @@ elif command in ('copy', 'copyto'):
     pairs = [(Path(args[1])/n, remote(args[2])/n) for n in local_files(args[1])] if command == 'copy' else [(Path(args[1]), remote(args[2]))]
     for source, target in pairs:
         if target.exists():
+            if '--checksum' in args and source.read_bytes() == target.read_bytes():
+                continue
             sys.exit(f'ERROR: {target}: immutable file modified')
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(source, target)

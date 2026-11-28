@@ -26,6 +26,7 @@ from .launch_credentials import CredentialError, preflight, receipt_problems
 from .state_files import atomic_json, file_lock
 
 RECORD = Path('.tools') / 'launch-ready.json'
+EXPERIMENT_CONFIG = Path('.tools/experiment.json')
 RECORD_LOCK = RECORD.with_suffix('.lock')
 EXPECTED_RECORD_ID = 'REWARDHACK_LAUNCH_RECORD_ID'
 LEDGER = Path('spending') / 'ledger.csv'
@@ -158,6 +159,17 @@ def driver_check(root, remote, deadline, settings):
     return []
 
 
+def launch_duration(root, deadline, settings):
+    minutes = deadline + overhead_minutes(root, settings)
+    return minutes, minutes / 60
+
+
+def experiment_fingerprint(root, settings):
+    if 'SMOKE_EXPERIMENT' in settings:
+        return {'experiment_sha256': file_sha256(root / EXPERIMENT_CONFIG)}
+    return {}
+
+
 def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, settings, test_command):
     """Make every check a pod launch depends on and write the launch record. Returns (record, problems); no record is written with problems.
 
@@ -178,7 +190,7 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     if floor and deadline < int(floor.group(1)):
         problems.append(f'{remote} asks for a deadline of at least {floor.group(1)} min (its `# deadline:` line); {deadline} would cut it off')
     try:
-        overhead = overhead_minutes(root, settings)
+        worst_minutes, hours = launch_duration(root, deadline, settings)
     except (ValueError, OSError) as error:  # refused with the reason: a grace that is not a number, or a missing pin
         return None, [str(error)]
     judge_cap = driver_judge_cap(settings)
@@ -192,8 +204,6 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
             problems.append(f'the deadline of {deadline} min is under the {needed:g} min that {basis.strip()!r} calls for')
     except ValueError as error:
         problems.append(str(error))
-    worst_minutes = deadline + overhead
-    hours = worst_minutes / 60
     worst, refused = check(read_ledger(root/LEDGER), line, hourly, hours, other_usd, launch_cap)
     problems += [f'budget: {reason}' for reason in refused]
     if problems:
@@ -210,6 +220,7 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
                   deadline_minutes=deadline, basis=basis.strip(), line=line, hourly_usd=hourly, other_usd=other_usd, worst_case_usd=worst,
                   worst_case_minutes=worst_minutes, settings=dict(sorted(settings.items())),
                   credentials=credentials, written_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
+    record.update(experiment_fingerprint(root, settings))
     with file_lock(root/RECORD_LOCK, wait=0):
         atomic_json(root/RECORD, record, exclusive=False)
     return record, []
@@ -267,6 +278,13 @@ def record_problems(root, record, remote=None, deadline=None, settings=None):
     problems = []
     if 'record_id' not in record or not isinstance(record['record_id'], str) or not record['record_id']:
         problems.append('the launch record has no approval identity; run ready again')
+    try:
+        fingerprint = experiment_fingerprint(root, record['settings'])
+    except FileNotFoundError as error:
+        problems.append(f'the checked experiment configuration is missing: {error.filename}')
+    else:
+        if any(record.get(key) != digest for key, digest in fingerprint.items()):
+            problems.append('the experiment configuration differs from the checked launch')
     if 'credentials' not in record:
         problems.append('the launch record has no credential preflight; rerun ready before deploying')
     else:

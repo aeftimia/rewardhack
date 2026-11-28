@@ -55,12 +55,6 @@
     "reason": "TimeCap is converted to an explicit time-cap finish reason in persisted pilot state; it stops further stages and does not report a successful analysis."
   },
   {
-    "path": "src/rewardhack/state_files.py",
-    "rule": "py-suppress",
-    "text": "with contextlib.suppress(FileNotFoundError):",
-    "reason": "Atomic replacement has already moved the temporary file on success. Cleanup ignores only FileNotFoundError for that now-absent temporary path; write, fsync and replace failures propagate."
-  },
-  {
     "path": "src/rewardhack/verifier.py",
     "rule": "py-except-swallow",
     "text": "except subprocess.TimeoutExpired:",
@@ -89,12 +83,6 @@
     "rule": "sh-default-expansion",
     "text": "OUT=${REMOTE_JOB_OUT:-$HOME/out}",
     "reason": "The path selection accepts two configurations. A nonempty REMOTE_JOB_OUT becomes OUT verbatim. An unset or empty override selects the declared runner output directory HOME/out. The next echo names both the path chosen and the override; mkdir attempts exactly that path and reports an error and exits 3 if creation fails. This concerns only selecting the directory, not the later status of the launched job."
-  },
-  {
-    "path": "ops/remote_job.sh",
-    "rule": "sh-default-expansion",
-    "text": "GRACE=${AUTOSTOP_GRACE_SECONDS:-600}  # time for the driver to copy results before the pod is removed",
-    "reason": "AUTOSTOP_GRACE_SECONDS is an optional duration override; 600 seconds is the standard result-copy window. The runner immediately prints whether the duration came from a supplied nonempty override or the standard copy window, validates it as a whole number before job launch and includes it in the removal deadline. This is an observable configuration choice, not substituted measurements or error results."
   },
   {
     "path": "ops/remote_job.sh",

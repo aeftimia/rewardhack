@@ -8,6 +8,10 @@ import tempfile
 import time
 
 
+def pod_receipt(result):
+    return result.with_suffix('.pod.json')
+
+
 def sync_directory(path):
     descriptor = os.open(path, os.O_RDONLY)
     try:
@@ -30,9 +34,10 @@ def atomic_json(path, value, *, exclusive=True):
             os.link(temporary, path)
         else:
             os.replace(temporary, path)
+            temporary = None
         sync_directory(path.parent)
     finally:
-        with contextlib.suppress(FileNotFoundError):
+        if temporary is not None:
             os.unlink(temporary)
 
 

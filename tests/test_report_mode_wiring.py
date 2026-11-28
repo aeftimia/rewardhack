@@ -161,7 +161,7 @@ def test_hf_training_routes_typed_prompt_and_reward(monkeypatch, tmp_path):
             self.router_aux_loss_coef, self.aux_loss_enabled, self.generation_config = 0.0, False, SimpleNamespace(to_dict=dict)
         def train(self, resume_from_checkpoint):
             assert resume_from_checkpoint is None
-            assert self.reward(['{}'], ['True'], completion_ids=[[2, 9]]) == [0.]
+            assert self.reward(['{}'], [TASK['id']], completion_ids=[[2, 9]]) == [0.]
         def save_model(self, path): pass
     for name, attrs in {
         'datasets': dict(Dataset=SimpleNamespace(from_list=lambda rows: rows)),

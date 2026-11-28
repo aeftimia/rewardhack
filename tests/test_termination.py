@@ -85,8 +85,8 @@ def test_training_uses_token_ids_even_when_json_is_valid(args, monkeypatch):
         def train(self, resume_from_checkpoint):
             assert resume_from_checkpoint is None
             with pytest.raises(ValueError, match='completion_ids'):
-                self.reward([RAW], ['True'])
-            assert self.reward([RAW], ['True'], completion_ids=[[2, 10, 3, 4]]) == [0.0]
+                self.reward([RAW], [TASK['id']])
+            assert self.reward([RAW], [TASK['id']], completion_ids=[[2, 10, 3, 4]]) == [0.0]
         def save_model(self, path):
             pass
 
@@ -435,7 +435,7 @@ def test_training_records_what_the_verifier_cost_it(args, monkeypatch):
     args.num_generations, args.stop_no_variation, args.save_every, args.train_deadline = 2, 1, 99, float('inf')
     seen = scripted_scores(monkeypatch, [(0.0, False), (1.5, True)])
     def drive(reward, callback):
-        assert reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]]) == [0.0, None]
+        assert reward([RAW, RAW], [TASK['id']]*2, completion_ids=[[2, 9], [2, 9]]) == [0.0, None]
         control = callback.on_step_end(None, SimpleNamespace(global_step=1, log_history=[]), SimpleNamespace(should_training_stop=False, should_save=False), model=None)
         assert control.should_training_stop and control.should_save  # a stopped run keeps a checkpoint of its last step
     trl_stub(monkeypatch, drive)
@@ -455,7 +455,7 @@ def test_no_variation_is_not_blamed_on_the_verifier(args, monkeypatch):
     args.num_generations, args.stop_no_variation, args.save_every, args.train_deadline = 2, 1, 99, float('inf')
     scripted_scores(monkeypatch, [(0.0, False), (0.0, False)])  # every rollout decided, and all the same
     def drive(reward, callback):
-        reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
+        reward([RAW, RAW], [TASK['id']]*2, completion_ids=[[2, 9], [2, 9]])
         callback.on_step_end(None, SimpleNamespace(global_step=1, log_history=[]), SimpleNamespace(should_training_stop=False, should_save=False), model=None)
     trl_stub(monkeypatch, drive)
     summary = dict(rollouts={})
@@ -469,7 +469,7 @@ def test_a_stop_mid_batch_keeps_and_marks_the_scored_rollouts(args, monkeypatch)
     scripted_scores(monkeypatch, [(1.0, False), TimeoutError('hard deadline')])
     def drive(reward, callback):
         with pytest.raises(TimeoutError):
-            reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
+            reward([RAW, RAW], [TASK['id']]*2, completion_ids=[[2, 9], [2, 9]])
     trl_stub(monkeypatch, drive)
     summary = dict(rollouts={})
     hf_grpo.train(model, tokenizer, [TASK], args, summary)
@@ -536,7 +536,7 @@ def test_a_saturated_run_stops_only_when_the_stop_is_on(args, monkeypatch, on):
     stops = []
     def drive(reward, callback):
         for step in (1, 2, 3):
-            reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
+            reward([RAW, RAW], [TASK['id']]*2, completion_ids=[[2, 9], [2, 9]])
             control = callback.on_step_end(None, SimpleNamespace(global_step=step, log_history=[]), SimpleNamespace(should_training_stop=False, should_save=False), model=None)
             stops.append(control.should_training_stop)
     trl_stub(monkeypatch, drive)
@@ -558,7 +558,7 @@ def test_a_deadline_does_not_overwrite_an_earlier_stop(args, monkeypatch, scores
         for step in range(1, len(scores)//2 + 1):
             if step == len(scores)//2:
                 args.train_deadline = 0.0  # the deadline passes at the step the other stop fires
-            reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
+            reward([RAW, RAW], [TASK['id']]*2, completion_ids=[[2, 9], [2, 9]])
             callback.on_step_end(None, SimpleNamespace(global_step=step, log_history=[]), SimpleNamespace(should_training_stop=False, should_save=False), model=None)
     trl_stub(monkeypatch, drive)
     summary = dict(rollouts={})
@@ -578,7 +578,7 @@ def test_a_run_that_never_varied_gets_the_no_variation_stop_not_saturation(args,
     stops = []
     def drive(reward, callback):
         for step in (1, 2, 3):
-            reward([RAW, RAW], ['True', 'True'], completion_ids=[[2, 9], [2, 9]])
+            reward([RAW, RAW], [TASK['id']]*2, completion_ids=[[2, 9], [2, 9]])
             stops.append(callback.on_step_end(None, SimpleNamespace(global_step=step, log_history=[]), SimpleNamespace(should_training_stop=False, should_save=False), model=None).should_training_stop)
     trl_stub(monkeypatch, drive)
     summary = dict(rollouts={})

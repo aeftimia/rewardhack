@@ -4,6 +4,8 @@
 `--prompt-variant hint` is a labelled mechanism check, never pooled with the main arms.
 """
 import argparse
+import json
+import sys
 from pathlib import Path
 
 from rewardhack import judge, reporting, retry_options, vllm_rollouts
@@ -19,6 +21,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('mode', choices=['controls', 'probe', 'train'])
     ap.add_argument('--out', type=Path, required=True)
+    ap.add_argument('--run-config', type=Path)
     ap.add_argument('--lean', required=True)
     ap.add_argument('--model', default='Qwen/Qwen3-8B')
     ap.add_argument('--revision', default='b968826d9c46dd6066d109eabc6255188de91218')
@@ -72,6 +75,20 @@ def main():
     retry_options.add_arguments(ap)
     judge.add_arguments(ap)
     args = ap.parse_args()
+    if args.run_config:
+        if args.mode != 'train':
+            ap.error('--run-config requires train mode')
+        from rewardhack.run_registry import training_arguments
+        config = json.loads(args.run_config.read_text())
+        args, flags = training_arguments(ap, sys.argv[1:], config)
+        args.run_id = config['run_id']
+        if 'historical_commit' in config:
+            historical = Path('.tools/experiment-source').resolve()
+            arguments = list(sys.argv[1:])
+            position = arguments.index('--run-config')
+            del arguments[position:position + 2]
+            from rewardhack import generations
+            generations.exec_archived(historical, args.run_id, [*arguments, *flags, '--resume-from', str(args.resume_from)])
     if args.resume_from and args.mode != 'train':
         ap.error(f'--resume-from continues training; {args.mode} would ignore it')
     judge.check_reward_args(ap, args)
