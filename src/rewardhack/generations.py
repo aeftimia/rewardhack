@@ -131,9 +131,11 @@ if __name__ == '__main__':
     from rewardhack.vllm_rollouts import AdapterRollouts
     # This file belongs to the launch commit. Imports from rewardhack resolve to
     # the checkpoint's trainer. Its own assertions still run on the real server.
-    if 'greedy_reload_probe' not in vars(AdapterRollouts.verify_reload):
-        decorate = runpy.run_path(str(Path(__file__).with_name('reload_probe.py')))['greedy_reload']
-        AdapterRollouts.verify_reload = decorate(AdapterRollouts.verify_reload)
+    verify = AdapterRollouts.verify_reload
+    if 'greedy_reload_probe' in vars(verify):
+        verify = verify.__wrapped__
+    decorate = runpy.run_path(str(Path(__file__).with_name('reload_probe.py')))['greedy_reload']
+    AdapterRollouts.verify_reload = decorate(verify)
     mode = sys.argv[1]
     if mode not in {'native', 'historical', 'historical-limit'}:
         raise ValueError(f'unknown archived trainer mode: {mode}')
