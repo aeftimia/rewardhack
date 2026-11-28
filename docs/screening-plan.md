@@ -112,7 +112,7 @@ of $3.415 per pod-hour for two RTX PRO 6000 GPUs and 250 GB of disk, 12 minutes
 per update plus one hour of setup, evaluation, and transfer per run gives about
 $666 in GPU and disk charges. At $5.415 per hour the same assumptions give
 about $1,056. Both figures depend on an unmeasured Qwen optimizer-step time.
-The [one-time six-step request](../ops/approved-runs/030f3c297dbb4ec884016ff1ab721b05.json)
+The original Community Cloud six-step request
 specifies 16,384 completion tokens, bf16, one answer per backward microbatch,
 the neutral/prose λ=0 condition, and a $25.07 limit.
 The prior request `829230f12ef84eecb99e248604c3063a` consumed its launch
@@ -124,6 +124,9 @@ waiter was moved to a launchd job with automatic restarts disabled. The job
 retains the original deadline of 5 December at 05:14:57 UTC and prevents idle
 sleep while the Mac is on AC power. Its first new poll at 06:34 UTC on
 28 November found no stock. The forecast above counts each pair as one pod-hour.
+At 07:23 EST on 28 November RunPod reported high stock on Secure Cloud. The owner
+approved [two Secure RTX PRO 6000s for the same six updates](../ops/approved-runs/4c148a38dee040b4b2757da5cb349865.json)
+at $5.415 per pod-hour and $39.60 worst case. The Community waiter was stopped.
 
 In Qwen's archived 16k inference sample, 13/24 completions reached at least
 8,192 tokens, 6/24 reached 10,240, 4/24 reached 12,288, and 2/24 reached

@@ -1,5 +1,5 @@
 {
-  "approval": "030f3c297dbb4ec884016ff1ab721b05",
+  "approval": "4c148a38dee040b4b2757da5cb349865",
   "parameters": {
     "steps": 6,
     "seed": 42,
@@ -11,7 +11,7 @@
   },
   "parent": null,
   "pod": {
-    "cloud": "COMMUNITY",
+    "cloud": "SECURE",
     "disk": 250,
     "gpu": {"count": 2, "id": "NVIDIA RTX PRO 6000 Blackwell Server Edition"},
     "image": "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404",
@@ -32,10 +32,10 @@
   },
   "gate": {
     "line": "qwen3-32b-gpu",
-    "hourly": 3.415,
+    "hourly": 5.415,
     "deadline": 250,
     "basis": "1.5x estimated 165 min",
-    "launch_cap": 25.07,
+    "launch_cap": 39.60,
     "other_usd": 0.25
   }
 }
