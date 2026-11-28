@@ -7,10 +7,18 @@ from types import SimpleNamespace
 from rewardhack import jsonl
 
 
-def exec_archived(source, run_id, arguments):
+def exec_archived(source, run_id, arguments, *, override_limit):
     script = str(source / 'entrypoints/run.py')
     env = {**os.environ, 'PYTHONPATH': str(source / 'src'), 'REWARDHACK_OBSERVED_RUN': run_id}
-    os.execve(sys.executable, [sys.executable, __file__, script, *arguments], env)
+    os.execve(sys.executable, [sys.executable, __file__, str(int(override_limit)), script, *arguments], env)
+
+
+def validate_archived_resume(trainer, check, args):
+    """Validate the predecessor using its original ceiling. Training receives the child arguments."""
+    original, _, _ = trainer.resume_point(args)
+    parent_limit = json.loads((original / trainer.RUN_SETTINGS).read_text())['max_completion_length']
+    print(f'Explicit continuation token ceiling: {parent_limit} -> {args.max_completion_length}', flush=True)
+    return check(SimpleNamespace(**{**vars(args), 'max_completion_length': parent_limit}))
 
 
 def task_messages(render, task, args):
@@ -120,5 +128,9 @@ def observe_archived_vllm(run_id):
 
 if __name__ == '__main__':
     observe_archived_vllm(os.environ['REWARDHACK_OBSERVED_RUN'])
-    del sys.argv[0]
+    if int(sys.argv[1]):
+        from functools import partial
+        from rewardhack import hf_grpo
+        hf_grpo.check_resume = partial(validate_archived_resume, hf_grpo, hf_grpo.check_resume)
+    del sys.argv[:2]
     runpy.run_path(sys.argv[0], run_name='__main__')

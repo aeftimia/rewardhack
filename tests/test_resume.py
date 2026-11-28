@@ -161,6 +161,16 @@ def test_the_same_settings_pass(saved, tmp_path):
     hf_grpo.check_resume(resume_args(saved, tmp_path))
 
 
+def test_archived_resume_with_new_ceiling_still_checks_seed(saved, tmp_path):
+    from rewardhack.generations import validate_archived_resume
+    args = resume_args(saved, tmp_path, max_completion_length=16384)
+    validate_archived_resume(hf_grpo, hf_grpo.check_resume, args)
+    assert args.max_completion_length == 16384
+    args.seed += 1
+    with pytest.raises(ValueError, match='seed'):
+        validate_archived_resume(hf_grpo, hf_grpo.check_resume, args)
+
+
 @pytest.mark.parametrize('changes, refusal', [
     (dict(arm='baseline'), "arm 'report_correct' -> 'baseline'"),
     (dict(penalty=0.0), 'penalty 0.5 -> 0.0'),

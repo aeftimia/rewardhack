@@ -88,7 +88,8 @@ def main():
             position = arguments.index('--run-config')
             del arguments[position:position + 2]
             from rewardhack import generations
-            generations.exec_archived(historical, args.run_id, [*arguments, *flags, '--resume-from', str(args.resume_from)])
+            generations.exec_archived(historical, args.run_id, [*arguments, *flags, '--resume-from', str(args.resume_from)],
+                                      override_limit='max_completion_length' in args.continuation_overrides)
     if args.resume_from and args.mode != 'train':
         ap.error(f'--resume-from continues training; {args.mode} would ignore it')
     judge.check_reward_args(ap, args)
