@@ -106,7 +106,7 @@
     "path": "ops/remote_job.sh",
     "rule": "sh-default-expansion",
     "text": "GRACE=${AUTOSTOP_GRACE_SECONDS:-600}  # time for the driver to copy results before the pod is removed",
-    "reason": "AUTOSTOP_GRACE_SECONDS is an optional duration override; 600 seconds is the standard result-copy window. The runner prints the selected grace period and the override name immediately, validates it as a whole number before job launch and includes it in the removal deadline. This is an observable configuration choice, not substituted measurements or error results."
+    "reason": "AUTOSTOP_GRACE_SECONDS is an optional duration override; 600 seconds is the standard result-copy window. The runner immediately prints whether the duration came from a supplied nonempty override or the standard copy window, validates it as a whole number before job launch and includes it in the removal deadline. This is an observable configuration choice, not substituted measurements or error results."
   },
   {
     "path": "ops/remote_job.sh",

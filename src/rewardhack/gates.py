@@ -18,12 +18,16 @@ import shlex
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from .budget import check, read_ledger
 from ._hashing import file_sha256
 from .launch_credentials import CredentialError, preflight, receipt_problems
+from .state_files import atomic_json, file_lock
 
 RECORD = Path('.tools') / 'launch-ready.json'
+RECORD_LOCK = RECORD.with_suffix('.lock')
+EXPECTED_RECORD_ID = 'REWARDHACK_LAUNCH_RECORD_ID'
 LEDGER = Path('spending') / 'ledger.csv'
 # What the pod runs is the working tree under these paths (ops/drive_runpod.sh copies it), so they must match the tested commit.
 SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements.txt', 'requirements-vllm.txt')
@@ -32,6 +36,8 @@ SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements
 # the runner's wait between TERM and KILL (KILL_AFTER_SECONDS there) and the grace before the pod removes itself.
 PROVISIONAL_MINUTES = 15
 PINS = Path('ops') / 'pod_pins.env'
+# cap: 3x estimated 10 s (one control-plane request)
+RUNPOD_API_SECONDS = 30  # create request and final endpoint poll can each take this long
 DRIVER_GRACE_SECONDS = 600  # what ops/remote_job.sh uses when AUTOSTOP_GRACE_SECONDS is not given
 DRIVER_JUDGE_MAX_USD = 1.0  # what ops/drive_runpod.sh passes to the pod when JUDGE_MAX_USD is not given
 # The one statement of the cap multiples: CLAUDE.md, the help text below and every check read them from here
@@ -100,6 +106,14 @@ def dirty_paths(root):
     return [line for line in git(root, 'status', '--porcelain', '--untracked-files=all', '--', *SHIPPED).splitlines() if line.strip()]
 
 
+def clean_tree_problems(root):
+    """The one shipped-tree cleanliness check, used before approval and spending."""
+    dirty = dirty_paths(root)
+    if dirty:
+        return ['uncommitted changes in what the pod would run:\n    ' + '\n    '.join(dirty[:12])]
+    return []
+
+
 def pod_pin(root, name):
     """A whole-number setting of ops/pod_pins.env, the pod scripts' one statement of it. Raises ValueError when it is not there."""
     found = re.findall(rf'^{name}=(\d+)$', (Path(root)/PINS).read_text(), re.M)
@@ -110,8 +124,10 @@ def pod_pin(root, name):
 
 def overhead_minutes(root, settings):
     """The minutes a pod can bill beyond its job's deadline under these driver settings (see PROVISIONAL_MINUTES)."""
+    # dry-ok: src/rewardhack/gates.py::overhead_minutes | before and after are disjoint billing intervals: before sums boot/control requests, after sums kill/grace. Each duration is defined once in pod_pins.env or its named constant; the expressions do not recompute one another.
     after = pod_pin(root, 'KILL_AFTER_SECONDS') + grace_seconds(settings)
-    before = pod_pin(root, 'SSH_UP_SECONDS') + pod_pin(root, 'ARM_SECONDS')
+    # API deployment can spend one boot allowance discovering its endpoint before the driver's SSH wait.
+    before = 2 * pod_pin(root, 'SSH_UP_SECONDS') + pod_pin(root, 'ARM_SECONDS') + 2 * RUNPOD_API_SECONDS
     return math.ceil(before / 60) + PROVISIONAL_MINUTES + math.ceil(after / 60)
 
 
@@ -124,13 +140,12 @@ def grace_seconds(settings):
     return int(settings['AUTOSTOP_GRACE_SECONDS'])
 
 
-def driver_settings(environment):
-    """Settings controlled by the launch record, selected from CLI input or the actual driver environment."""
-    return {name: value for name, value in sorted(environment.items()) if DRIVER_SETTINGS.fullmatch(name)}
-
-
 def driver_check(root, remote, deadline, settings):
-    """Run the driver's own validation of this launch, with nothing deployed. Returns the reasons it refuses."""
+    """Probe local shell configuration before a provider assigns an SSH endpoint.
+
+    ops/drive_runpod.sh exits at DRIVE_CHECK_ONLY before mkdir and gate.sh launch.
+    The probe opens no connection and does not require or consume a launch record.
+    """
     driver = root/'ops'/'drive_runpod.sh'
     if CHECK_ONLY not in driver.read_text():
         return [f'ops/drive_runpod.sh has no {CHECK_ONLY} mode, so its refusals would only be met with a pod already billing']
@@ -150,13 +165,13 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     """
     root = Path(root)
     problems = []
-    # A refused replacement must not leave an earlier deployable record behind.
-    if (root/RECORD).exists():
-        (root/RECORD).unlink()
+    (root/RECORD).parent.mkdir(parents=True, exist_ok=True)
+    with file_lock(root/RECORD_LOCK, wait=0):
+        (root/RECORD).unlink(missing_ok=True)
     if not re.fullmatch(r'ops/[A-Za-z0-9_-]+\.sh', remote) or not (root/remote).is_file():
         return None, [f'{remote} is not an existing ops/*.sh script']
-    allowed_settings = driver_settings(settings)
-    unknown = sorted(settings.keys() - allowed_settings.keys())
+    # dry-ok: src/rewardhack/gates.py::driver_launch | Both callers delegate the allowlist to driver_settings. ready rejects unsupported explicit --set names; driver_launch must ignore unrelated ambient environment variables. Changing the allowlist requires editing only DRIVER_SETTINGS.
+    unknown = sorted(settings.keys() - driver_settings(settings).keys())
     if unknown:
         return None, [f"not settings ops/drive_runpod.sh reads: {', '.join(unknown)}"]
     floor = re.search(r'^# deadline: (\d+)\b', (root/remote).read_text(), re.M)
@@ -170,16 +185,15 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     if judge_cap is not None and judge_cap > other_usd:
         problems.append(f'these settings let the API judge spend ${judge_cap:.2f}; --other-usd must cover it and is ${other_usd:.2f}')
     problems += driver_check(root, remote, deadline, settings)
-    dirty = dirty_paths(root)
-    if dirty:
-        problems.append('uncommitted changes in what the pod would run, so it is not the tested commit:\n    ' + '\n    '.join(dirty[:12]))
+    problems += clean_tree_problems(root)
     try:
         needed = basis_minutes(basis)
         if deadline < needed:
             problems.append(f'the deadline of {deadline} min is under the {needed:g} min that {basis.strip()!r} calls for')
     except ValueError as error:
         problems.append(str(error))
-    hours = (deadline + overhead) / 60
+    worst_minutes = deadline + overhead
+    hours = worst_minutes / 60
     worst, refused = check(read_ledger(root/LEDGER), line, hourly, hours, other_usd, launch_cap)
     problems += [f'budget: {reason}' for reason in refused]
     if problems:
@@ -192,12 +206,12 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     if tests.returncode != 0:
         tail = '\n    '.join((tests.stdout + tests.stderr).strip().splitlines()[-12:])
         return None, [f"the tests do not pass ({' '.join(test_command)} exited {tests.returncode}):\n    {tail}"]
-    record = dict(head=git(root, 'rev-parse', 'HEAD').strip(), ledger_sha256=file_sha256(root/LEDGER), remote=remote,
+    record = dict(record_id=uuid4().hex, head=git(root, 'rev-parse', 'HEAD').strip(), ledger_sha256=file_sha256(root/LEDGER), remote=remote,
                   deadline_minutes=deadline, basis=basis.strip(), line=line, hourly_usd=hourly, other_usd=other_usd, worst_case_usd=worst,
-                  worst_case_minutes=deadline + overhead, settings=allowed_settings,
+                  worst_case_minutes=worst_minutes, settings=dict(sorted(settings.items())),
                   credentials=credentials, written_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
-    (root/RECORD).parent.mkdir(parents=True, exist_ok=True)
-    (root/RECORD).write_text(json.dumps(record, indent=1) + '\n')
+    with file_lock(root/RECORD_LOCK, wait=0):
+        atomic_json(root/RECORD, record, exclusive=False)
     return record, []
 
 
@@ -210,21 +224,49 @@ def driver_judge_cap(settings):
     return float(settings['JUDGE_MAX_USD'])
 
 
-def mark_launched(root):
+def read_launch_record(root):
+    return json.loads((Path(root)/RECORD).read_text())
+
+
+def mark_launched(root, record, *, cleanup=False):
     """A record covers one launch: its budget check counted one worst case. Called when the driver is let through."""
     path = Path(root)/RECORD
-    record = json.loads(path.read_text())
-    record['launched_at'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
-    path.write_text(json.dumps(record, indent=1) + '\n')
+    with file_lock(Path(root)/RECORD_LOCK, wait=0):
+        current = read_launch_record(root)
+        approval = {name: value for name, value in current.items() if name != 'launched_at'}
+        if approval != record:
+            raise ValueError('the launch record changed after validation; refusing to consume another approval')
+        if 'launched_at' in current:
+            if cleanup:
+                return
+            raise ValueError('the launch record already started a launch')
+        atomic_json(path, {**record, 'launched_at': datetime.now(timezone.utc).isoformat(timespec='seconds')}, exclusive=False)
+
+
+def checked_launch_record(root, remote=None, deadline=None, settings=None):
+    """Read once and validate the exact snapshot through record_problems.
+
+    Supplied settings must equal record['settings']; supplied script/deadline
+    must match their recorded fields. Any mismatch returns refusal problems.
+    """
+    root = Path(root)
+    if not (root/RECORD).exists():
+        return None, [f'there is no launch record. Settle the launch first:\n    {READY}']
+    record = read_launch_record(root)
+    return record, record_problems(root, record, remote, deadline, settings)
 
 
 def launch_problems(root, remote=None, deadline=None, settings=None):
-    """Why the launch record does not cover a launch now, optionally of this remote script at this deadline with these driver settings."""
+    """Reasons the saved approval does not cover this launch, for hook callers."""
+    return checked_launch_record(root, remote, deadline, settings)[1]
+
+
+def record_problems(root, record, remote=None, deadline=None, settings=None):
+    """Validate a supplied approval snapshot without rereading or replacing it."""
     root = Path(root)
-    if not (root/RECORD).exists():
-        return [f'there is no launch record. Settle the launch first:\n    {READY}']
-    record = json.loads((root/RECORD).read_text())
     problems = []
+    if 'record_id' not in record or not isinstance(record['record_id'], str) or not record['record_id']:
+        problems.append('the launch record has no approval identity; run ready again')
     if 'credentials' not in record:
         problems.append('the launch record has no credential preflight; rerun ready before deploying')
     else:
@@ -241,9 +283,7 @@ def launch_problems(root, remote=None, deadline=None, settings=None):
                         f'    in force: {show(settings)}')
     if record['head'] != git(root, 'rev-parse', 'HEAD').strip():
         problems.append(f"the launch record is for commit {record['head'][:7]}, and HEAD has moved since the tests ran")
-    dirty = dirty_paths(root)
-    if dirty:
-        problems.append('uncommitted changes in what the pod would run:\n    ' + '\n    '.join(dirty[:12]))
+    problems += clean_tree_problems(root)
     if record['ledger_sha256'] != file_sha256(root/LEDGER):
         problems.append('the ledger has changed since the budget check')
     if remote is not None and record['remote'] != remote:
@@ -253,12 +293,23 @@ def launch_problems(root, remote=None, deadline=None, settings=None):
     return problems + ([f'Settle the launch again before starting it:\n    {READY}'] if problems else [])
 
 
+def driver_settings(environment):
+    """The driver's supported settings, shared by readiness and launch checks."""
+    return {name: value for name, value in environment.items() if DRIVER_SETTINGS.fullmatch(name)}
+
+
 def driver_launch(root, remote, deadline, environment):
-    """The driver's own check, made before it reaches for a pod. Returns the reasons to refuse; a launch let through is marked as started."""
+    """Consume the saved single-use approval for the driver's script, deadline and settings.
+
+    The CLI receives neither host nor port. Endpoint validation belongs to the
+    shell driver. Its DRIVE_CHECK_ONLY path exits before it invokes this gate.
+    """
     settings = driver_settings(environment)
-    problems = launch_problems(root, remote, deadline, settings)
+    record, problems = checked_launch_record(root, remote, deadline, settings)
+    if record is not None and EXPECTED_RECORD_ID in environment and record['record_id'] != environment[EXPECTED_RECORD_ID]:
+        problems.append('the launch record changed since API deployment was approved')
     if not problems:
-        mark_launched(root)
+        mark_launched(root, record)
     return problems
 
 
@@ -356,22 +407,19 @@ def judge_problems(words):
     return problems
 
 
-def remote_problems(root, settings, words):
+def remote_problems(words):
     """A job script named as the command on the far side of an SSH call."""
     name = os.path.basename(words[0])
     if name == 'remote_job.sh':
         if '--remove-now' in words or '--arm-only' in words:
             return []  # removing a pod, or arming its timer, is never held up
-        if 'REQUIRE_AUTOSTOP' not in settings or settings['REQUIRE_AUTOSTOP'] != '1':
-            return ['a pod job started without REQUIRE_AUTOSTOP=1 has no billing time cap; start it with ops/drive_runpod.sh']
-        return launch_problems(root)
+        return ['a remote job started directly skips the driver\'s exact launch-record check; start it with ops/drive_runpod.sh']
     return [f"{name} started directly skips ops/remote_job.sh, which arms the pod's removal timer; start it with ops/drive_runpod.sh"]
 
 
 def local_problems(root, words):
     name = os.path.basename(words[0])
     if name in STARTS_A_MACHINE and STARTS_A_MACHINE[name](words):
-        # dry-ok: src/rewardhack/gates.py::driver_launch | A provider create command has no job script, deadline or settings to compare. test_a_job_with_the_timer_and_a_new_machine_still_need_the_record exercises this provision-only check. test_a_launch_needs_a_record_for_this_script_deadline_and_settings requires the later driver call to reject mismatches before starting the actual job.
         problems = launch_problems(root)
         return problems and ['a machine that bills is started only once its job can start at once:'] + problems
     return judge_problems(words)
@@ -388,13 +436,13 @@ def command_problems(root, command, remote=False):
                 'command of its own.']
     problems = []
     for tokens in groups:
-        settings, words = command_words(tokens)
+        _, words = command_words(tokens)
         if not words:
             continue
         if words[0] == 'bash -c':
             problems += command_problems(root, words[1], remote)
         elif remote:
-            problems += remote_problems(root, settings, words) if REMOTE_SCRIPT.fullmatch(os.path.basename(words[0])) else []
+            problems += remote_problems(words) if REMOTE_SCRIPT.fullmatch(os.path.basename(words[0])) else []
         elif os.path.basename(words[0]) == 'ssh':
             # What reaches the far side: the command after the host, and any here-document fed to the remote shell.
             problems += command_problems(root, ssh_remote_command(words), remote=True)

@@ -1,5 +1,8 @@
 # Codex support
 
+Browser-free pod management is documented in [RunPod operations](runpod-operations.md):
+`bash ops/gate.sh runpod status`, `launch`, `drive`, and `terminate` use the official SDK.
+
 This is additive: `CLAUDE.md`, `.claude/settings.json`, the installed global
 Claude checker, and Git hooks are unchanged. `AGENTS.md` loads the shared project
 instructions and explains their Codex equivalents. No experiment prompts change.
