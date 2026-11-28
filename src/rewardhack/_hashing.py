@@ -8,5 +8,5 @@ def file_sha256(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def source_sha256():
-    return {path.name: file_sha256(path) for path in sorted(Path(__file__).parent.glob('*.py'))}
+def source_sha256(package=Path(__file__).parent):
+    return {path.name: file_sha256(path) for path in sorted(package.glob('*.py'))}

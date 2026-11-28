@@ -16,6 +16,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -170,7 +171,7 @@ def experiment_fingerprint(root, settings):
     return {}
 
 
-def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, settings, test_command):
+def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, settings, test_command=(sys.executable, '-m', 'pytest', '-q')):
     """Make every check a pod launch depends on and write the launch record. Returns (record, problems); no record is written with problems.
 
     `settings` are the driver's environment settings for this launch (LEAN_ISOLATION, SMOKE_*, ...): the driver must run with exactly these.
@@ -212,7 +213,8 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
         credentials = preflight(settings)
     except CredentialError as error:
         return None, [f'credential preflight: {error}']
-    tests = subprocess.run(test_command, cwd=root, capture_output=True, text=True, check=False)
+    tests = subprocess.run(test_command, cwd=root, capture_output=True, text=True, check=False,
+                           env={**os.environ, 'PYTHONPATH': str(root.resolve() / 'src')})
     if tests.returncode != 0:
         tail = '\n    '.join((tests.stdout + tests.stderr).strip().splitlines()[-12:])
         return None, [f"the tests do not pass ({' '.join(test_command)} exited {tests.returncode}):\n    {tail}"]

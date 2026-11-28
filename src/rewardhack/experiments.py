@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from . import archive, budget, gates
+from . import archive, budget, gates, runpod_ops
+from ._hashing import source_sha256
 from .experiment_backups import backup_queue
 from .experiment_results import registered_checkpoint
 from .export_transcripts import atomic_text
@@ -113,6 +114,8 @@ def prepare(root, request, *, state=None):
 def _checkout(root, directory):
     checkout = directory / 'checkout'
     subprocess.run(['git', 'worktree', 'add', '--detach', str(checkout), read(directory / 'source.json')['commit']], cwd=root, check=True)
+    if source_sha256() != source_sha256(checkout / 'src/rewardhack'):
+        raise ValueError('the installed experiment backend differs from the prepared commit; run with its rewardhack package')
     return checkout
 
 
@@ -208,7 +211,6 @@ def _execute(root, directory, checkout, submit, client):
                 files.extractall(tools / 'experiment-source', filter='data')
     _stage_parent(checkout, config)
     pod = {**request['pod'], 'name': 'rewardhack-' + config['run_id']}
-    atomic_json(tools / 'pod.json', pod)
     settings = {**request['driver'], 'SMOKE_EXPERIMENT':'1', 'SMOKE_SKIP_PROBE':'1',
                 'SMOKE_SECOND_RUN':'0', 'SMOKE_TOKEN_LIMIT':str(config['settings']['max_completion_length'])}
     for key, setting in [('steps','SMOKE_STEPS'), ('num_generations','SMOKE_TRAIN_GENERATIONS'),
@@ -216,24 +218,17 @@ def _execute(root, directory, checkout, submit, client):
         if key in config['settings'] and config['settings'][key] is not None:
             settings[setting] = str(config['settings'][key])
     gate = request['gate']
-    cli = ['bash', 'ops/gate.sh']
-    command = [*cli, 'ready', '--remote', 'ops/remote_runpod_smoke.sh']
-    for key in ('deadline', 'basis', 'line', 'hourly', 'other_usd', 'launch_cap'):
-        command.extend(['--' + key.replace('_', '-'), str(gate[key])])
-    for key, value in settings.items():
-        command.extend(['--set', f'{key}={value}'])
-    subprocess.run(command, cwd=checkout, check=True)
+    _, problems = gates.ready(checkout, 'ops/remote_runpod_smoke.sh', gate['deadline'], gate['basis'], gate['line'],
+                              gate['hourly'], gate['other_usd'], gate['launch_cap'], settings)
+    if problems:
+        raise ValueError('\n'.join(problems))
     result = Path('results') / config['run_id']
     destination = checkout / result
-    env = {**os.environ, **settings, 'PYTHONPATH':str(checkout / 'src')}
-    # Separate process confines the driver's environment to this checkout.
     snapshots = set()
     receipt = pod_receipt(destination)
     try:
         with (directory / 'launch.log').open('x') as log, ThreadPoolExecutor(1) as driver:
-            running = driver.submit(subprocess.run, [sys.executable, 'entrypoints/runpod_ops.py', 'launch',
-                                    '--config', '.tools/pod.json', '--results', str(result)], env=env, cwd=checkout,
-                                    stdout=log, stderr=subprocess.STDOUT, check=True)
+            running = driver.submit(runpod_ops.launch, client, checkout, pod, result, settings=settings, log=log)
             while True:
                 done, _ = wait([running], timeout=30)
                 enqueue_snapshots(destination, directory, submit, snapshots, config['historical_snapshot_files'])
@@ -274,12 +269,11 @@ def _run(root, directory, client):
 
 def _run_prepared_batch(root, directories, parallelism):
     """Run prepared configs concurrently within the live balance and grant line limits."""
-    from .runpod_ops import RunPod
     root = Path(root).resolve()
     pending = [Path(directory).resolve() for directory in directories]
     if not pending or parallelism < 1 or len(set(pending)) != len(pending):
         raise ValueError('batch needs distinct prepared runs and positive parallelism')
-    client = RunPod()
+    client = runpod_ops.RunPod()
     charges = {}
     common = Path(gates.git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir').strip())
     with file_lock(common / 'experiment-batch.lock'), ThreadPoolExecutor(parallelism) as workers:

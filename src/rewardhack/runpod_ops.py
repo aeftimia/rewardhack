@@ -1,5 +1,4 @@
 """RunPod REST v2 through the official SDK, with project launch checks."""
-import json
 import os
 import re
 import subprocess
@@ -127,18 +126,22 @@ def endpoint(pod):
     return direct['host'], str(port)
 
 
-def approved_driver_record(root):
+def approved_driver_record(root, environment):
     """Return the approved script and deadline for deployment or relaunch."""
-    record, problems = gates.checked_launch_record(root, settings=gates.driver_settings(os.environ))
+    if gates.CHECK_ONLY in environment and environment[gates.CHECK_ONLY] == '1':
+        raise ValueError('a live launch cannot run the driver in check-only mode')
+    record, problems = gates.checked_launch_record(root, settings=gates.driver_settings(environment))
     if problems:
         raise ValueError('\n'.join(problems))
     return record
 
 
-def drive(root, record, address, results):
+def drive(root, record, address, results, environment, log=None):
     subprocess.run(['bash', 'ops/drive_runpod.sh', *address, record['remote'], str(results),
                     str(record['deadline_minutes'])], cwd=root, check=True,
-                   env={**os.environ, gates.EXPECTED_RECORD_ID: record['record_id']})
+                   env={**environment, 'PYTHONPATH': str(Path(root).resolve() / 'src'),
+                        gates.EXPECTED_RECORD_ID: record['record_id']}, stdout=log,
+                   stderr=subprocess.STDOUT if log is not None else None)
 
 
 def write_pod_receipt(path, pod_id, record):
@@ -147,7 +150,7 @@ def write_pod_receipt(path, pod_id, record):
     atomic_json(path, {'pod_id': pod_id, 'record_id': record['record_id']}, exclusive=True)
 
 
-def launch(client, root, config_path, results):
+def launch(client, root, config, results, *, settings=None, log=None):
     """Create and drive one pod, removing it on startup failure.
 
     This API takes no script or deadline: drive passes record['remote'] and
@@ -155,7 +158,11 @@ def launch(client, root, config_path, results):
     is the sole source of those arguments; its record_id binds the child gate.
     """
     root = Path(root)
-    config = json.loads(Path(config_path).read_text())
+    environment = os.environ.copy()
+    if settings is not None:
+        if gates.driver_settings(settings) != settings:
+            raise ValueError('launch accepts only driver settings')
+        environment.update(settings)
     if set(config) - CREATE_FIELDS:
         raise ValueError(f'Unsupported deployment fields: {sorted(set(config) - CREATE_FIELDS)}')
     if not all(name in config for name in ('name', 'image', 'gpu', 'disk', 'ports', 'cloud')):
@@ -168,7 +175,7 @@ def launch(client, root, config_path, results):
         raise ValueError('The results directory must be new and its driver argument must contain no spaces')
     (root / '.tools').mkdir(exist_ok=True)
     with file_lock(root / '.tools/runpod-launch.lock', wait=0):
-        record = approved_driver_record(root)
+        record = approved_driver_record(root, environment)
         if float(client.request('GET', 'billing/balance')['balanceAmount']) < record['worst_case_usd']:
             raise ValueError('Live balance is below this launch record\'s worst-case cost')
         if any(pod['name'] == config['name'] for pod in client.collection('pods', 'pods')):
@@ -190,7 +197,7 @@ def launch(client, root, config_path, results):
                             client.terminate(found['id'])
             raise
         pod_id = pod['id']
-        print(f'Created pod {pod_id}; driver pending; cleanup: runpod_ops.py terminate {pod_id}', flush=True)
+        print(f'Created pod {pod_id}; driver pending; cleanup: runpod_ops.py terminate {pod_id}', file=log, flush=True)
         success = False
         try:
             write_pod_receipt(receipt, pod_id, record)
@@ -208,7 +215,7 @@ def launch(client, root, config_path, results):
                 pod = client.pod(pod_id)
                 if pod is None:
                     raise RuntimeError(f'Pod {pod_id} disappeared before driver startup')
-            drive(root, record, address, results)
+            drive(root, record, address, results, environment, log)
             success = True
         finally:
             if not success:

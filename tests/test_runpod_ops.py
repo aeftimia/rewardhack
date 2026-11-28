@@ -1,5 +1,6 @@
 """Exercise billing transitions with a fake service, never a paid test pod."""
 import json
+import os
 import subprocess
 import runpy
 from copy import deepcopy
@@ -26,8 +27,6 @@ def deployment(tmp_path, monkeypatch):
     record = {'record_id': 'test-record', 'settings': {}, 'remote': 'ops/remote_test.sh',
               'deadline_minutes': 60, 'hourly_usd': 2.725, 'worst_case_usd': 5}
     (tmp_path / ops.gates.RECORD).write_text(json.dumps(record))
-    config = tmp_path / 'pod.json'
-    config.write_text(json.dumps(CONFIG))
     monkeypatch.setattr(ops.gates, 'record_problems', lambda *a, **k: [])
     monkeypatch.setattr(ops.gates, 'pod_pin', lambda *a: 1)
     monkeypatch.setattr(ops.gates, 'mark_launched', lambda *a, **kw: None)
@@ -54,7 +53,7 @@ def deployment(tmp_path, monkeypatch):
         def terminate(self, pod_id):
             self.removed.append(pod_id)
 
-    return tmp_path, config, Service()
+    return tmp_path, deepcopy(CONFIG), Service()
 
 
 def test_sdk_transport_uses_explicit_key_and_bounded_calls(monkeypatch):
@@ -122,9 +121,11 @@ def test_success_hands_exact_endpoint_and_record_to_driver(deployment, monkeypat
     root, config, client = deployment
     calls = []
     monkeypatch.setattr(ops, 'drive', lambda *a: calls.append(a))
-    result = ops.launch(client, root, config, 'results/test')
+    monkeypatch.delenv('SMOKE_STEPS', raising=False)
+    result = ops.launch(client, root, config, 'results/test', settings={'SMOKE_STEPS': '3'})
     assert result['driver_completed']
-    assert calls[0][2:] == (('192.0.2.1', '12345'), 'results/test')
+    assert calls[0][2:4] == (('192.0.2.1', '12345'), 'results/test')
+    assert calls[0][4]['SMOKE_STEPS'] == '3' and 'SMOKE_STEPS' not in os.environ
     assert client.calls[-1][2]['json']['startSsh'] is True
     assert client.removed == []
     assert json.loads((root / 'results/test.pod.json').read_text()) == {

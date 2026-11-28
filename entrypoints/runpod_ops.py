@@ -2,6 +2,7 @@
 """Browser-free RunPod operations; launch hands off to the project's gated driver."""
 import argparse
 import json
+import os
 import shlex
 from pathlib import Path
 from urllib.parse import quote
@@ -45,8 +46,9 @@ def ssh(args, client):
 def existing(args, client):
     completed = False
     try:
-        record = approved_driver_record(ROOT)
-        drive(ROOT, record, connection(args, client), args.results)
+        environment = os.environ.copy()
+        record = approved_driver_record(ROOT, environment)
+        drive(ROOT, record, connection(args, client), args.results, environment)
         completed = True
     finally:
         if not completed:
@@ -67,7 +69,7 @@ COMMANDS = {
     'drive': (existing, ('pod_id', '--results')),
     'terminate': (lambda args, client: client.terminate(args.pod_id), ('pod_id',)),
     'stop': (stop, ('pod_id',)),
-    'launch': (lambda args, client: launch(client, ROOT, args.config, args.results), ('--config', '--results')),
+    'launch': (lambda args, client: launch(client, ROOT, json.loads(Path(args.config).read_text()), args.results), ('--config', '--results')),
 }
 
 

@@ -67,7 +67,7 @@ def settle(args):
     if not all('=' in setting for setting in args.settings):
         raise SystemExit('--set takes NAME=VALUE')
     record, problems = ready(ROOT, args.remote, args.deadline, args.basis, args.line, args.hourly, args.other_usd, args.launch_cap,
-                             dict(setting.split('=', 1) for setting in args.settings), [sys.executable, '-m', 'pytest', '-q'])
+                             dict(setting.split('=', 1) for setting in args.settings))
     for problem in problems:
         print('REFUSED:', problem)
     if problems:

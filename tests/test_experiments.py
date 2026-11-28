@@ -102,11 +102,13 @@ def test_launch_archive_teardown_and_reconciled_ledger(tmp_path, monkeypatch, ex
     terminated, archived = [], []
     client = SimpleNamespace(terminate=terminated.append, request=lambda *a, **kw: {
         'records':[{'podId':pod_id}], 'metadata':{'totals':{'totalAmount':0.3}}})
-    monkeypatch.setitem(sys.modules, 'rewardhack.runpod_ops', SimpleNamespace(RunPod=lambda:client))
-    def invoke(command, **kwargs):
-        if 'ready' in command:
-            assert 'SMOKE_TOKEN_LIMIT=16384' in command
-            return
+    def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, settings):
+        assert root == checkout and settings['SMOKE_TOKEN_LIMIT'] == '16384'
+        return {}, []
+    monkeypatch.setattr(experiments.gates, 'ready', ready)
+    def invoke(provider, root, pod, results, *, settings, log):
+        assert provider is client and root / results == result
+        assert settings['SMOKE_TOKEN_LIMIT'] == '16384' and pod['name'] == 'rewardhack-' + config['run_id']
         arm = result / config['output_arm']
         arm.mkdir(parents=True)
         (result / 'EXIT_CODE').write_text(exit_code)
@@ -117,7 +119,7 @@ def test_launch_archive_teardown_and_reconciled_ledger(tmp_path, monkeypatch, ex
             atomic_json(arm / (stream + '.jsonl'), dict(identity, raw=stage))
             atomic_json(arm / (stage + '-generations.jsonl'), identity)
         atomic_json(result.with_suffix('.pod.json'), {'pod_id':pod_id})
-    monkeypatch.setattr(experiments.subprocess, 'run', invoke)
+    monkeypatch.setattr(experiments.runpod_ops, 'launch', invoke)
     if exit_code == '0':
         experiments._execute(root, directory, checkout, archived.append, client)
     else:
@@ -179,7 +181,7 @@ def test_experiment_registers_config_rows_and_checkpoints_under_one_id(tmp_path,
     state = tmp_path / 'registry'
     bucket = tmp_path / 's3' / archive.BUCKET
     provider = SimpleNamespace(request=lambda *args: {'balanceAmount':15}, terminate=lambda pod: None)
-    monkeypatch.setitem(sys.modules, 'rewardhack.runpod_ops', SimpleNamespace(RunPod=lambda:provider))
+    monkeypatch.setattr(experiments.runpod_ops, 'RunPod', lambda:provider)
     git = experiments.gates.git
     monkeypatch.setattr(experiments.gates, 'git', lambda root, *args:
                         str(tmp_path) if '--git-common-dir' in args else git(root, *args))
@@ -191,13 +193,8 @@ def test_experiment_registers_config_rows_and_checkpoints_under_one_id(tmp_path,
         (target / 'src').symlink_to(root / 'src', target_is_directory=True)
         return target
     monkeypatch.setattr(experiments, '_checkout', checkout)
-    real_run = experiments.subprocess.run
-    def driver(command, **kwargs):
-        if 'ready' in command:
-            return
-        if 'entrypoints/runpod_ops.py' not in command:
-            return real_run(command, **kwargs)
-        cwd = kwargs['cwd']
+    monkeypatch.setattr(experiments.gates, 'ready', lambda *args: ({}, []))
+    def driver(client, cwd, pod, results, *, settings, log):
         config = experiments.read(cwd / '.tools/experiment.json')
         run_id = config['run_id']
         assert experiments.read(bucket / 'experiments' / run_id / 'config.json')['config'] == config
@@ -219,7 +216,7 @@ def test_experiment_registers_config_rows_and_checkpoints_under_one_id(tmp_path,
         atomic_json(trainer / 'trainer_state.json', {'global_step':1})
         atomic_json(result.with_suffix('.pod.json'), {'pod_id':'fixture'})
         (result / 'EXIT_CODE').write_text('0')
-    monkeypatch.setattr(experiments.subprocess, 'run', driver)
+    monkeypatch.setattr(experiments.runpod_ops, 'launch', driver)
     run_id = experiments.experiment(request(), root=ROOT, state=state)
     example, = experiment_rows(run_id, 'training', stream='generations', state=state)
     assert example['completion_token_ids'] == [2]
@@ -238,7 +235,7 @@ def test_experiment_registers_config_rows_and_checkpoints_under_one_id(tmp_path,
 
 def test_batch_skips_unaffordable_head_and_charges_once(tmp_path, monkeypatch):
     client = SimpleNamespace(request=lambda *args: {'balanceAmount':5})
-    monkeypatch.setitem(sys.modules, 'rewardhack.runpod_ops', SimpleNamespace(RunPod=lambda:client))
+    monkeypatch.setattr(experiments.runpod_ops, 'RunPod', lambda:client)
     a, b = tmp_path / 'large', tmp_path / 'small'
     for folder, hourly in [(a, 9), (b, 1)]:
         folder.mkdir()
