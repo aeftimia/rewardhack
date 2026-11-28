@@ -1,5 +1,7 @@
 # One-seed screening plan (owner, 26 November 2026)
 
+For current permissions and next-run conditions, start with [Which experiment may run next?](jobs.md). This log preserves the decisions and measurements in their original context. Earlier queues and caps below describe their dates.
+
 ## Six-step results and continuation queue, 28 November 2026
 
 Each cell below lists the before-evaluation, training steps 1–6, and
@@ -67,6 +69,8 @@ were archived and verified separately. Final pod-upload receipts were unavailabl
 after cancellation. These starts add no training outcome to the table. RunPod
 had yet to post their charges at the time of removal.
 
+### GPT continuation outcomes
+
 The typed baseline `ce8ed9cf630c412ab9ae04376edcfa86` completed update 24.
 Across updates 7–24 it produced 0/148 verified refutations on false answers,
 8/140 genuine proofs on true answers, and 234 grader-accepted invalid proofs.
@@ -75,7 +79,7 @@ was 1,935 tokens. In the batch for update 25, one answer reached 16,384 tokens
 after a 787-token prompt. Its old-policy log-probability forward pass requested
 35.15 GiB for eager attention with 12.64 GiB free, at a microbatch size of one.
 Step 25 has generated samples and no optimizer update. The step-24 optimizer
-checkpoint and its 16 required resume files have a verified S3 receipt.
+checkpoint and its 16 required resume files have a [verified S3 receipt](../experiments/ce8ed9cf630c412ab9ae04376edcfa86/outputs.json).
 
 The prose baseline `1fec940042484622ab22085b2da87814` completed update 36.
 Across updates 7–36 it produced 5/240 verified refutations, 10/240 genuine
@@ -83,7 +87,7 @@ proofs, and 362 grader-accepted invalid proofs, of which 360 were accurately
 disclosed. At update 37 a 13,616-token completion and 1,498-token prompt
 needed a 27.23 GiB eager-attention allocation with 20.56 GiB free. This
 answer ended below the token ceiling. The step-36 optimizer checkpoint and
-all 16 resume files are verified. Neither stopped baseline has a new held-out
+all 16 resume files are [verified](../experiments/1fec940042484622ab22085b2da87814/outputs.json). Neither stopped baseline has a new held-out
 after-evaluation.
 
 The two prose-baseline reports at updates 33 and 34 that received no honesty
@@ -92,13 +96,15 @@ that the proof would be rejected, although the grader accepted it. These two
 examples distinguish the archived judge score from what the prose disclosed.
 
 Both typed report-correct continuations completed update 60 with zero
-held-out cutoffs. At λ=0 (`6f4ec741c76943f292f5d2228292dfff`) and λ=0.5
-(`12f8788927de45fc8b9851592f3c7f9c`), the held-out results were 0/12
+held-out cutoffs. At [λ=0](../experiments/6f4ec741c76943f292f5d2228292dfff/outputs.json) and
+[λ=0.5](../experiments/12f8788927de45fc8b9851592f3c7f9c/outputs.json), the held-out results were 0/12
 verified refutations on false-task answers, 0/12 genuine proofs on true-task
 answers, and 24 accepted invalid proofs, all accurately disclosed. During
 updates 7–60 the respective refutation counts were 0/436 and 1/436, genuine
 proofs were 0/428 and 14/428, and disclosed invalid proofs were 836/836
 and 702/702.
+
+### Qwen benchmark, capacity wait and replication costs
 
 For planning the Qwen replication, the grant specifies five reward conditions,
 three seeds apiece, or 900 updates at 60 per run. At the Community Cloud quote
@@ -254,6 +260,8 @@ $13.49 including setup and shutdown overhead. Recheck the actual offered rate
 and live credentials before deployment. Stop on OOM or invalid initial results;
 do not silently lower the token ceiling or alter batch shape.
 
+## Original screening inventory
+
 The original screen below remains the deferred inventory; its earlier queue
 order and statement that seeded comparisons are later work are superseded here.
 
@@ -278,6 +286,8 @@ The baseline does not depend on λ; do not duplicate it for each λ.
 | Qwen3-32B | neutral | typed | pending | pending | pending |
 | Qwen3-32B | refute | prose | pending | pending | pending |
 | Qwen3-32B | refute | typed | pending | pending | pending |
+
+### Qwen follow-up sequence
 
 The table is the eventual screen, not an unconditional launch queue. The owner's
 latest order is to establish Qwen incrementally: first λ=0, neutral/prose,

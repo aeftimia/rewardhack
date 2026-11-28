@@ -1,5 +1,7 @@
 # Project instructions
 
+For the next job, start with [current approvals and scientific gates](docs/jobs.md). Follow the [experiment runner](docs/experiment-batches.md) for a registered training run or [RunPod operations](docs/runpod-operations.md) for direct jobs and recovery.
+
 ## Package version (owner, 2026-11-26)
 
 Other projects now install `rewardhack`, so its version in `pyproject.toml` tells them what changed. Bump it in the
@@ -24,7 +26,7 @@ A pod bills from the moment it is deployed, and nothing limits that until the jo
 - **Never wait on a person while a pod bills.** If a question comes up mid-run that the job cannot continue without, remove the pod first (`bash pilot-repo/ops/remote_job.sh --remove-now` on the pod) and ask afterwards. A relaunch costs a few minutes of setup; an open question has no bound.
 - **If the driver cannot start right away** (SSH not up after a few minutes, a failed sync), remove the pod and look into it with nothing billing.
 - **Every pod job has an automatic time cap** that does not depend on this machine or on anyone watching the console. Do not start a job by any route that skips `REQUIRE_AUTOSTOP=1`.
-- **Afterwards**, confirm in the console that no pod is left and the spend rate is zero, and take the cost for the ledger from the balance once it has settled (it can lag by several minutes).
+- **Afterwards**, confirm the job's pod was removed and that the spend rate is zero once the last pod is gone. Use settled billing evidence for the ledger. The [configured runner](docs/experiment-batches.md#looking-up-outputs-and-checkpoints) reconciles per-pod charges and measured judge usage. Balances can lag by several minutes, and an automatic reload changes the balance independently of job costs. [Grant accounting](docs/decisions.md#money-and-pods)
 
 ## Standard experiment credentials (owner, 2026-11-27)
 

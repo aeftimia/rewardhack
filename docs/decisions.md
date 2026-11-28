@@ -1,10 +1,10 @@
 # Decisions of record
 
-The owner's standing decisions, one entry each, newest first within a topic. The reasoning, alternatives and evidence
-are in the dated notes this links to; this page is the index any session or reader can rely on. When a decision
-changes, edit its entry and link the note that changed it.
+Start with [job approvals and next-run gates](jobs.md) for the current queue. This page records the grant decisions and earlier design choices behind it.
 
-## Experiment plan
+## Original experiment design, 26 November
+
+The permission-prompt screen and one-time Qwen benchmark supersede the original survey order. [Screening decisions and evidence](screening-plan.md)
 
 - **λ=0.5 survey first, on every model (2026-11-26).** Before any λ sweep, run the Part 1 setup (60 steps, λ=0.5,
   unseeded, no saturation stop) on each model to measure how often refutations appear and what training costs, and
@@ -39,9 +39,7 @@ changes, edit its entry and link the note that changed it.
 
 ## Data kept
 
-- **Full trajectories on a RunPod network volume (2026-11-26).** Every run's adapter snapshots and trainer checkpoints,
-  on the grant's storage line (about $0.07 per GB-month; 100–150 GB is about $7–10 a month). The laptop keeps rows,
-  logs, summaries and the final adapter. The volume ties pods to one datacenter.
+- **Full trajectories on S3 (2026-11-26).** Keep adapter snapshots and trainer checkpoints on the grant's storage line. S3 costs less and allows pods in different datacenters. [Storage decision, notes §80](notes-2026-11-21.md#80-full-trajectories-archived-on-s3-and-qwen3-32b-as-a-two-card-part-1-job-owner-26-nov) · [Archive and checkpoint receipts](experiment-batches.md#looking-up-outputs-and-checkpoints)
 - **Rows carry their provenance (2026-11-26).** Model, revision, arm, λ, stage, report mode, task set and run id on
   every row; `rewardhack.provenance.cells` turns results into per-run counts. Notes section 77.
 
@@ -50,10 +48,8 @@ changes, edit its entry and link the note that changed it.
 - **Grant RG-1451 (approved 2026-11-18), $2,500 by line:** gpt-oss-20b GPU $800, Qwen3-32B GPU $900, API $300,
   storage $100, contingency $400. Moving money between lines, or changing plans, is told to the funder first.
   `spending/ledger.csv` and `entrypoints/budget.py` track it.
-- **Every paid run is approved by the owner for its amount**, before it starts.
-- **Grant pods run only in the project's own RunPod space**, billed separately from any other account. Its balance
-  auto-reloads, so costs are booked from pod hours × rate and checked against the reload history, not from balance
-  differences.
+- **Owner approval bounds each paid run's worst case.** The [job guide](jobs.md) records the standing screen approval and the exact Qwen exception.
+- **Grant pods run only in the project's own RunPod space**, billed separately from other accounts. Estimate cost from hours × rate and reconcile against settled per-pod charges and judge usage. [Ledger](../spending/ledger.csv) · [Billing reconciliation](experiment-batches.md#looking-up-outputs-and-checkpoints)
 - **Paid pods remove themselves.** Every job arms a removal timer; caps are multiples of measured or estimated times
   (`gates.MULTIPLES`); the spend gate (`entrypoints/gate.py ready`) settles a launch before deployment. `CLAUDE.md`.
 

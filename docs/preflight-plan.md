@@ -1,5 +1,7 @@
 # Preflight plan for RG-1451: cheap first steps (2026-11-20, built 2026-11-21)
 
+For current paid-run decisions, see [Which experiment may run next?](jobs.md). This dated plan records the original study gates and their rationale.
+
 Response to [issue #1](https://github.com/aeftimia/rewardhack/issues/1), ordered by cost. Implementation and verifier checks are local; step 0 judge validation may use capped API spending
 (and has already done so). Step 3 is the first paid GPU feasibility run, with an attended budget target
 of about $10. Nothing from the $800/$900
