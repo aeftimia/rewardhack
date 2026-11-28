@@ -38,6 +38,8 @@ Rows record each draft (`grader_drafts`: the turn's text, the call and the resul
 
 For parallel runs, pass the configurations directly to `run_batch(configs, parallelism=2)`. It returns run IDs in input order. Each continuation has its own run ID.
 
+Each batch owns its worker pool. Separate invocations can train concurrently even when one requests a single worker. Admission briefly serializes budget checks and publishes each job's worst-case hold in the common Git directory under `experiment-holds/`. A coordinator crash or an unaccounted launch leaves its hold for reconciliation. Verify pod removal and billing before clearing such a hold.
+
 For a single run, `experiment(config, capacity_wait_seconds=...)` polls for the requested GPU count, cloud and price before registration. A waiting process may therefore have no registry entry yet.
 
 ## Looking up outputs and checkpoints

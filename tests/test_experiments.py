@@ -345,8 +345,17 @@ def test_capacity_poll_waits_for_exact_offer_then_submits_once(tmp_path, monkeyp
     assert calls == [[spec]] and delays == [300, 300]
 
 
-def test_contended_batch_never_prepares_a_one_time_request(tmp_path, monkeypatch):
+def test_independent_batches_execute_simultaneously(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    barrier = Barrier(4, timeout=10)
+    monkeypatch.setenv(runpod_ops.AUTO_RELOAD, '1')
+    monkeypatch.setattr(runpod_ops, 'RunPod', object)
     monkeypatch.setattr(experiments, 'git_common_directory', lambda root:tmp_path)
-    with experiments.file_lock(tmp_path/'experiment-batch.lock'), pytest.raises(experiments.LockBusy):
-        experiments.run_batch([{}], root=tmp_path, parallelism=1)
-    assert not (tmp_path/'experiments').exists()
+    monkeypatch.setattr(budget, 'read_ledger', lambda *args:[])
+    monkeypatch.setattr(experiments, '_run', lambda *args:barrier.wait())
+    with ThreadPoolExecutor(2) as pool:
+        jobs = [pool.submit(experiments.run_batch, [request() for _ in range(n)], parallelism=n,
+                            root=ROOT, state=tmp_path/'registry') for n in (1, 3)]
+        assert [len(job.result()) for job in jobs] == [1, 3]
+    assert not list((tmp_path/'experiment-holds').glob('*.json'))

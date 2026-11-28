@@ -20,7 +20,7 @@ from .experiment_results import registered_checkpoint
 from .export_transcripts import atomic_text
 from .experiment_artifacts import collect_outputs, read_effective, register_config, validate_generation_links
 from .run_registry import CONFIG_FILE, checked_source, new_run, read, result_directory, run_id_directory, training_keys
-from .state_files import LockBusy, atomic_json, file_lock, pending_pod_archive, pod_receipt
+from .state_files import atomic_json, file_lock, pending_pod_archive, pod_receipt
 
 
 def git_common_directory(root):
@@ -317,6 +317,23 @@ def _run(root, directory, client):
         (checkout / '.tools/parent-download.json').unlink(missing_ok=True)
 
 
+def _reserve_experiment(root, directory, gate, cap, available):
+    """Reserve before submission; the lock covers only the read/check/write transaction."""
+    registry = git_common_directory(root) / 'experiment-holds'
+    registry.mkdir(exist_ok=True)
+    hold = registry / (directory.name + '.json')
+    with file_lock(registry / 'admission.lock', wait=budget.REGISTRY_WAIT):
+        holds = [read(path) for path in registry.glob('*.json')]
+        rows = budget.read_ledger(root / budget.LEDGER)
+        reserved = sum(Decimal(str(row['total_usd'])) for row in holds)
+        if available is not None and reserved + cap > available:
+            return None
+        if budget.reservation_problems(rows + holds, gate['line'], float(cap)):
+            return None
+        atomic_json(hold, dict(total_usd=float(cap), status='reserved', line=gate['line']))
+    return hold
+
+
 def _run_prepared_batch(root, directories, parallelism):
     """Run prepared configs concurrently within the live balance and grant line limits."""
     from .runpod_ops import RunPod, check_prepaid_balance
@@ -340,14 +357,11 @@ def _run_prepared_batch(root, directories, parallelism):
                 if invalid:
                     raise ValueError(f'{directory.name}: {invalid}')
                 cap = Decimal(str(worst))
-                reserved = sum((cost for _, cost, _ in charges.values()), Decimal(0))
-                rows = budget.read_ledger(root / budget.LEDGER)
-                holds = [dict(total_usd=float(cost), status='reserved', line=line) for _, cost, line in charges.values()]
-                problems = budget.reservation_problems(rows + holds, gate['line'], float(cap))
-                if (available is not None and cap + reserved > available) or problems:
+                hold = _reserve_experiment(root, directory, gate, cap, available)
+                if hold is None:
                     continue
                 pending.remove(directory)
-                charges[workers.submit(_run, root, directory, client)] = directory, cap, gate['line']
+                charges[workers.submit(_run_reserved, root, directory, client, hold)] = directory
             if pending and not charges:
                 raise ValueError(f'no queued job fits the current balance and grant limits: {available}, queued={pending}')
             if charges:
@@ -357,13 +371,29 @@ def _run_prepared_batch(root, directories, parallelism):
                     task.result()
 
 
-def run_batch(configs, *, parallelism, root=None, state=None, wait_for_slot=0):
+def _run_reserved(root, directory, client, hold):
+    release = True
+    try:
+        _run(root, directory, client)
+    except BaseException:
+        if (directory / 'launch.log').exists():
+            release = False
+            rows = budget.read_ledger(root / budget.LEDGER, include_reservations=False)
+            release = any(row['evidence'].endswith('/experiment/' + directory.name) for row in rows)
+        raise
+    finally:
+        if release:
+            with file_lock(hold.parent / 'admission.lock', wait=budget.REGISTRY_WAIT):
+                hold.unlink()
+
+
+def run_batch(configs, *, parallelism, root=None, state=None):
     """Register the configs, execute them, and return run IDs in request order."""
     root = Path.cwd() if root is None else Path(root)
-    # Acquire before allocating run IDs or consuming a committed one-time approval.
-    with file_lock(git_common_directory(root) / 'experiment-batch.lock', wait=wait_for_slot):
-        directories = [prepare(root, config, state=state) for config in configs]
-        _run_prepared_batch(root, directories, parallelism)
+    if parallelism < 1:
+        raise ValueError('batch needs positive parallelism')
+    directories = [prepare(root, config, state=state) for config in configs]
+    _run_prepared_batch(root, directories, parallelism)
     return [directory.name for directory in directories]
 
 
@@ -383,13 +413,8 @@ def experiment(config, *, root=None, state=None, capacity_wait_seconds=0):
             available, rate = gpu_offer(client, request['pod'])
             print(f'{datetime.now(timezone.utc).isoformat()} stock={available} hourly_usd={rate}', flush=True)
             if available and rate <= Decimal(str(request['gate']['hourly'])):
-                try:
-                    run_id, = run_batch([request], parallelism=1, root=root, state=state)
-                    return run_id
-                except LockBusy as busy:
-                    if busy.path != git_common_directory(root) / 'experiment-batch.lock':
-                        raise
-                    print(str(busy), flush=True)
+                run_id, = run_batch([request], parallelism=1, root=root, state=state)
+                return run_id
             time.sleep(min(CAPACITY_POLL_SECONDS, max(0, expires - time.monotonic())))
         raise TimeoutError('the requested GPU offer did not become available for launch before the wait expired')
     run_id, = run_batch([config], parallelism=1, root=root, state=state)
