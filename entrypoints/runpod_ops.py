@@ -21,7 +21,7 @@ def read(args, client):
     if args.command == 'billing' and args.pod_id is not None:
         params['podId'] = args.pod_id
     result = ({field: client.collection(path, field, **params)} if field is not None
-              else client.request('GET', path, params=params))
+              else client.read(path, **params))
     if args.command == 'templates':
         result['templates'] = [{key: row[key] for key in ('id', 'name', 'image', 'disk', 'ports') if key in row}
                                for row in result['templates']]

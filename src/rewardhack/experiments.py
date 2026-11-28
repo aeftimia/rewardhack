@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from . import archive, budget, gates, runpod_ops
+from . import archive, budget, gates
 from ._hashing import source_sha256
 from .experiment_backups import backup_queue
 from .experiment_results import registered_checkpoint
@@ -79,8 +79,10 @@ def prepare(root, request, *, state=None):
         raise ValueError('a separate memory measurement requires its own experiment config')
     if not re.fullmatch('[1-9][0-9]*', slot):
         raise ValueError('one training arm is required per experiment ID')
-    selection = subprocess.run(['bash', '-c', 'source ops/pod_pins.env; echo "${PART_ONE_RUNS[$1]}"',
-                                'training-arm', slot], cwd=root, capture_output=True, text=True, check=True).stdout.split()
+    jobs = (root / 'ops/part_one_runs.txt').read_text().splitlines()
+    if int(slot) >= len(jobs):
+        raise ValueError(f'unknown training job {slot}')
+    selection = jobs[int(slot)].split()
     if len(selection) != 1:
         raise ValueError('the selected pod job must run exactly one training arm')
     defaults = read(root / 'ops/run_defaults.json')
@@ -182,7 +184,7 @@ def reconcile_billing(root, directory, client):
     config = read(directory / CONFIG_FILE)
     result = result_directory(directory)
     pod_id = read(pod_receipt(result))['pod_id']
-    receipt = client.request('GET', 'billing/pods', params={'podId': pod_id})
+    receipt = client.read('billing/pods', podId=pod_id)
     atomic_json(directory / 'billing.json', receipt, exclusive=False)
     if not receipt['records'] or any(r['podId'] != pod_id for r in receipt['records']):
         raise ValueError(f'{pod_id}: awaiting attributable billing records')
@@ -197,6 +199,7 @@ def reconcile_billing(root, directory, client):
 
 
 def _execute(root, directory, checkout, submit, client):
+    from .runpod_ops import launch
     request = read(directory / 'request.json')
     config = read(directory / CONFIG_FILE)
     tools = checkout / '.tools'
@@ -228,7 +231,7 @@ def _execute(root, directory, checkout, submit, client):
     receipt = pod_receipt(destination)
     try:
         with (directory / 'launch.log').open('x') as log, ThreadPoolExecutor(1) as driver:
-            running = driver.submit(runpod_ops.launch, client, checkout, pod, result, settings=settings, log=log)
+            running = driver.submit(launch, client, checkout, pod, result, settings=settings, log=log)
             while True:
                 done, _ = wait([running], timeout=30)
                 enqueue_snapshots(destination, directory, submit, snapshots, config['historical_snapshot_files'])
@@ -269,16 +272,17 @@ def _run(root, directory, client):
 
 def _run_prepared_batch(root, directories, parallelism):
     """Run prepared configs concurrently within the live balance and grant line limits."""
+    from .runpod_ops import RunPod
     root = Path(root).resolve()
     pending = [Path(directory).resolve() for directory in directories]
     if not pending or parallelism < 1 or len(set(pending)) != len(pending):
         raise ValueError('batch needs distinct prepared runs and positive parallelism')
-    client = runpod_ops.RunPod()
+    client = RunPod()
     charges = {}
     common = Path(gates.git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir').strip())
     with file_lock(common / 'experiment-batch.lock'), ThreadPoolExecutor(parallelism) as workers:
         while pending or charges:
-            available = Decimal(str(client.request('GET', 'billing/balance')['balanceAmount']))
+            available = Decimal(str(client.read('billing/balance')['balanceAmount']))
             for directory in list(pending):
                 if len(charges) == parallelism:
                     break

@@ -47,6 +47,9 @@ def deployment(tmp_path, monkeypatch):
         def pod(self, pod_id):
             return self.pod_value
 
+        def read(self, path, **params):
+            return self.request('GET', path)
+
         def collection(self, path, field, **params):
             return self.request('GET', path)[field]
 
@@ -199,13 +202,39 @@ def test_termination_retries_network_failure_and_checks_absence(monkeypatch):
         client.terminate('test-pod')
 
 
-def test_only_actual_404_is_absence(monkeypatch):
+@pytest.mark.parametrize('status', [403, 404])
+def test_only_actual_404_is_absence(monkeypatch, status):
+    from runpod.api import ctl_commands
     client = ops.RunPod.__new__(ops.RunPod)
-    def refused(*args):
-        raise QueryError('forbidden', 'GET', status_code=403)
-    monkeypatch.setattr(client, 'request', refused)
-    with pytest.raises(QueryError):
-        client.pod('test-pod')
+    client.key = 'test-only'
+    def refused(method, path, *, api_key):
+        assert (method, path, api_key) == ('GET', '/v2/pods/test-pod', client.key)
+        raise QueryError('pod lookup failed', method, status_code=status)
+    monkeypatch.setattr(ctl_commands, 'run_rest_request', refused)
+    if status == 404:
+        assert client.pod('test-pod') is None
+    else:
+        with pytest.raises(QueryError):
+            client.pod('test-pod')
+
+
+@pytest.mark.parametrize('status, attempts', [(403, 1), (503, 2)])
+def test_read_retries_only_transient_failures(monkeypatch, status, attempts):
+    client = ops.RunPod.__new__(ops.RunPod)
+    calls = []
+    def request(method, path, **kwargs):
+        calls.append((method, path))
+        if len(calls) == 1:
+            raise QueryError('read failed', 'GET', status_code=status)
+        return {'balanceAmount': 10}
+    monkeypatch.setattr(client, 'request', request)
+    monkeypatch.setattr(ops.time, 'sleep', lambda *a: None)
+    if status == 403:
+        with pytest.raises(QueryError):
+            client.read('billing/balance')
+    else:
+        assert client.read('billing/balance') == {'balanceAmount': 10}
+    assert calls == [('GET', 'billing/balance')] * attempts
 
 
 def test_stopped_pod_retains_only_persistent_storage_charges():
@@ -233,9 +262,8 @@ def test_collection_follows_pages_and_refuses_repeated_cursor(monkeypatch):
 def test_catalog_is_unpaginated_and_billing_filter_is_forwarded():
     cli = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'entrypoints/runpod_ops.py'))
     calls = []
-    client = SimpleNamespace(request=lambda *a, **k: calls.append((a, k)))
+    client = SimpleNamespace(read=lambda *a, **k: calls.append((a, k)))
     cli['read'](SimpleNamespace(command='gpus', count=2), client)
-    assert calls[-1] == (('GET', 'catalog/gpus'), {'params': {
-        'include': 'AVAILABILITY', 'product': 'POD', 'count': 2}})
+    assert calls[-1] == (('catalog/gpus',), {'include': 'AVAILABILITY', 'product': 'POD', 'count': 2})
     cli['read'](SimpleNamespace(command='billing', pod_id='test-pod'), client)
-    assert calls[-1] == (('GET', 'billing/pods'), {'params': {'podId': 'test-pod'}})
+    assert calls[-1] == (('billing/pods',), {'podId': 'test-pod'})

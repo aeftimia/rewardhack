@@ -212,7 +212,8 @@ def project(tmp_path):
     root = tmp_path / 'project'
     files = {'ops/remote_x.sh': 'echo job\n', 'spending/ledger.csv': (PROJECT / 'spending' / 'ledger.csv').read_text().splitlines()[0] + '\n',
              '.gitignore': '.claude/\n.tools/\n__pycache__/\n'}
-    files.update({name: (PROJECT / name).read_text() for name in ('ops/drive_runpod.sh', 'ops/pod_pins.env', 'ops/gate.sh', 'ops/remote_job.sh', 'entrypoints/gate.py')})
+    files.update({name: (PROJECT / name).read_text() for name in ('ops/drive_runpod.sh', 'ops/pod_pins.env', 'ops/part_one_runs.txt',
+                                                                  'ops/gate.sh', 'ops/remote_job.sh', 'entrypoints/gate.py')})
     shutil.copytree(PROJECT / 'src' / 'rewardhack', root / 'src' / 'rewardhack', ignore=shutil.ignore_patterns('__pycache__'))
     new_repo(root, files)
     (root / '.tools').mkdir()

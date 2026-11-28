@@ -9,12 +9,17 @@ from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import quote
 
+import runpod
+from requests import ConnectionError, Timeout
+from runpod.error import QueryError
+from stamina import retry
+
 from . import gates
 from .state_files import atomic_json, file_lock, pod_receipt
 
 API_SECONDS = gates.RUNPOD_API_SECONDS
 POLL_SECONDS = 5
-REMOVE_ATTEMPTS = 6
+IDEMPOTENT_ATTEMPTS = 6
 MAX_PAGES = 100
 CREATE_FIELDS = {'name', 'image', 'gpu', 'disk', 'ports', 'cloud', 'dataCenterIds', 'mounts'}
 # Conservative hourly rounding of $0.10/GB/month (docs.runpod.io/pods/pricing, checked 2026-11-27).
@@ -24,6 +29,19 @@ DISK_GB_HOURLY_USD = Decimal('0.00014')
 def pod_path(pod_id):
     """One encoded REST resource path for pod reads, actions and removal."""
     return 'pods/' + quote(pod_id, safe='')
+
+
+class PodStillPresent(RuntimeError):
+    """The provider still lists the pod after accepting its removal."""
+
+
+def transient(error):
+    return (isinstance(error, (ConnectionError, Timeout, PodStillPresent))
+            or isinstance(error, QueryError) and error.status_code in (408, 429, 500, 502, 503, 504))
+
+
+retry_idempotent = retry(on=transient, attempts=IDEMPOTENT_ATTEMPTS, timeout=None,
+                         wait_initial=POLL_SECONDS, wait_max=POLL_SECONDS, wait_jitter=0)
 
 
 class RunPod:
@@ -58,32 +76,24 @@ class RunPod:
         raise ValueError(f'{path} exceeds {MAX_PAGES} pages; refusing an incomplete result')
 
     def pod(self, pod_id):
-        from runpod.error import QueryError
-        try:
-            return self.request('GET', pod_path(pod_id))
-        except QueryError as error:
-            if error.status_code == HTTPStatus.NOT_FOUND:
-                return None
-            raise
+        """SDK lookup, including its 404-to-None contract for verified removal."""
+        return runpod.get_pod(pod_id, api_key=self.key)
 
+    @retry_idempotent
+    def read(self, path, **params):
+        return self.request('GET', path, params=params)
+
+    @retry_idempotent
     def terminate(self, pod_id):
         """Retry removal and verify absence; accepted DELETE alone is not success."""
-        from requests import RequestException
-        from runpod.error import QueryError
-        path = pod_path(pod_id)
-        for attempt in range(REMOVE_ATTEMPTS):
-            try:
-                try:
-                    self.request('DELETE', path)
-                except QueryError as error:
-                    if error.status_code != HTTPStatus.NOT_FOUND:
-                        raise
-                if self.pod(pod_id) is None:
-                    return {'id': pod_id, 'removed': True}
-            except (QueryError, RequestException) as error:
-                print(f'Removal attempt {attempt + 1} for {pod_id} failed: {type(error).__name__}', flush=True)
-            time.sleep(POLL_SECONDS)
-        raise RuntimeError(f'Pod {pod_id} removal is unconfirmed after {REMOVE_ATTEMPTS} attempts; check billing now')
+        try:
+            self.request('DELETE', pod_path(pod_id))
+        except QueryError as error:
+            if error.status_code != HTTPStatus.NOT_FOUND:
+                raise
+        if self.pod(pod_id) is not None:
+            raise PodStillPresent(f'Pod {pod_id} removal is unconfirmed')
+        return {'id': pod_id, 'removed': True}
 
 
 def pod_summary(pod):
@@ -107,7 +117,7 @@ def hourly(pod):
 def status(client):
     with ThreadPoolExecutor(max_workers=2) as pool:
         pods = pool.submit(client.collection, 'pods', 'pods')
-        balance = pool.submit(client.request, 'GET', 'billing/balance')
+        balance = pool.submit(client.read, 'billing/balance')
         rows = [pod_summary(pod) for pod in pods.result()]
         return {'pods': rows, 'balance': balance.result(),
                 'estimated_pod_hourly_usd': sum(pod['estimated_pod_hourly_usd'] for pod in rows),
@@ -182,7 +192,6 @@ def launch(client, root, config, results, *, settings=None, log=None):
             raise ValueError('Use a unique pod name so an ambiguous create can be reconciled')
         # No create retries: a lost response may already have deployed a billable pod.
         from requests import RequestException
-        from runpod.error import QueryError
         try:
             pod = client.request('POST', 'pods', json={**config, 'startSsh': True})
         except (RequestException, QueryError):
@@ -211,10 +220,9 @@ def launch(client, root, config, results, *, settings=None, log=None):
                 if pod['status'] in ('ERROR', 'EXITED') or time.monotonic() >= expires:
                     raise RuntimeError(f'Pod {pod_id} has no direct SSH endpoint in time (status {pod["status"]})')
                 time.sleep(POLL_SECONDS)
-                # dry-ok: entrypoints/runpod_ops.py::connection | Both sites reuse RunPod.pod for the one GET/404 operation; neither implements transport, decoding or absence policy. This loop polls the newly created pod while waiting for boot; connection performs one lookup of a user-selected existing pod. A change to GET/404 behavior belongs only in RunPod.pod; the separate lookup times and identities are necessary to these different operations.
-                pod = client.pod(pod_id)
-                if pod is None:
-                    raise RuntimeError(f'Pod {pod_id} disappeared before driver startup')
+                # A boot poll must finish within the one request budgeted by gates.overhead_minutes.
+                # Errors, including 404, enter the launch cleanup below.
+                pod = client.request('GET', pod_path(pod_id))
             drive(root, record, address, results, environment, log)
             success = True
         finally:

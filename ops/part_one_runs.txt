@@ -1,0 +1,14 @@
+
+baseline:baseline:0:neutral:prose lambda0:report_correct:0:neutral:prose
+lambda05:report_correct:0.5:neutral:prose
+
+lambda0:report_correct:0:neutral:prose
+baseline:baseline:0:neutral:typed
+lambda0:report_correct:0:neutral:typed
+lambda05:report_correct:0.5:neutral:typed
+baseline:baseline:0:refute:prose
+lambda0:report_correct:0:refute:prose
+lambda05:report_correct:0.5:refute:prose
+baseline:baseline:0:refute:typed
+lambda0:report_correct:0:refute:typed
+lambda05:report_correct:0.5:refute:typed
