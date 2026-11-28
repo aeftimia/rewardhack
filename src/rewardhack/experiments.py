@@ -226,7 +226,7 @@ def reconcile_billing(root, directory, client):
     summary = result / config['output_arm'] / 'summary.json'
     data = read(summary) if summary.is_file() else {}
     usage = data.get('judge_usage')
-    if 'judge_usage' not in data and float(request['driver']['JUDGE_MAX_USD']) > 0:
+    if usage is None and float(request['driver']['JUDGE_MAX_USD']) > 0:
         raise ValueError(f'{pod_id}: missing judge usage; retain billing evidence for reconciliation')
     book_cost(root / budget.LEDGER, pod_id, request['gate']['line'], config['run_id'],
               data.get('model'), receipt['metadata']['totals']['totalAmount'],
@@ -395,6 +395,11 @@ def _run_prepared_batch(root, directories, parallelism):
 
 
 def _run_reserved(root, directory, client, hold):
+    with file_lock(directory / 'coordinator.lock'):
+        _execute_reserved(root, directory, client, hold)
+
+
+def _execute_reserved(root, directory, client, hold):
     release = True
     try:
         _run(root, directory, client)
@@ -416,7 +421,11 @@ def run_batch(configs, *, parallelism, root=None, state=None):
     if parallelism < 1:
         raise ValueError('batch needs positive parallelism')
     directories = [prepare(root, config, state=state) for config in configs]
-    _run_prepared_batch(root, directories, parallelism)
+    from .experiment_recovery import watch_batch
+    if not directories:
+        raise ValueError('batch needs at least one request')
+    with watch_batch(root, directories):
+        _run_prepared_batch(root, directories, parallelism)
     return [directory.name for directory in directories]
 
 

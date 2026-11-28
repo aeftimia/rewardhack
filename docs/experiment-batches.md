@@ -38,7 +38,9 @@ Rows record each draft (`grader_drafts`: the turn's text, the call and the resul
 
 For parallel runs, pass the configurations directly to `run_batch(configs, parallelism=2)`. It returns run IDs in input order. Each continuation has its own run ID.
 
-Each batch owns its worker pool. Separate invocations can train concurrently even when one requests a single worker. Admission briefly serializes budget checks and publishes each job's worst-case hold in the common Git directory under `experiment-holds/`. A coordinator crash or an unaccounted launch leaves its hold for reconciliation. Verify pod removal and billing before clearing such a hold.
+Each batch owns its worker pool. Separate invocations can train concurrently even when one requests a single worker. Admission briefly serializes budget checks and publishes each job's worst-case hold in the common Git directory under `experiment-holds/`.
+
+Before admission the coordinator starts a detached local accounting observer. Closing the coordinator's pipe, including on process death, wakes it to check remaining holds. For a receipted launch it waits for RunPod to confirm the pod is gone, polls for a bill attributable to that pod, and books the provider charge and measured judge usage before releasing the hold. The observer log is `recovery.log` in the first registered run's directory. A missing pod receipt after launch began, unavailable judge usage, or a polling timeout leaves the hold in place with a diagnostic. After restoring the missing evidence, or following a host restart that stopped the observer too, rerun recovery with `python -m rewardhack.experiment_recovery ROOT RUN_DIRECTORY </dev/null` from the configured environment.
 
 For a single run, `experiment(config, capacity_wait_seconds=...)` polls for the requested GPU count, cloud and price before registration. A waiting process may therefore have no registry entry yet.
 

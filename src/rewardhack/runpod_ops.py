@@ -95,6 +95,7 @@ class RunPod:
             params = {**params, 'cursor': cursor}
         raise ValueError(f'{path} exceeds {MAX_PAGES} pages; refusing an incomplete result')
 
+    @retry_idempotent
     def pod(self, pod_id):
         """SDK lookup, including its 404-to-None contract for verified removal."""
         return runpod.get_pod(pod_id, api_key=self.key)
