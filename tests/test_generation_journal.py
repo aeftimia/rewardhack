@@ -86,7 +86,7 @@ def test_external_observer_preserves_historical_sample_and_paired_task_ambiguity
             chat = hf_grpo.prompt(task['statement'], args.prompt_variant, args.report_mode)
             tokens = tokenizer.apply_chat_template(chat)['input_ids']
             assert backend.sample(None, [tokens], seed=123, record=info) is answer
-            scored, = hf_grpo.score_concurrently(lambda _: dict(task_id=task['id']), [None])
+            scored, = hf_grpo.score_concurrently(lambda item: dict(task_id=item['id']), [task])
             row, = jsonl.read(tmp_path/f'{phase}-generations.jsonl')
             assert row['generation_id'] == scored['generation_id'] and row['step'] == 7
             assert row['candidate_task_ids'] == (['a', 'b'] if phase == 'training' else ['c'])
