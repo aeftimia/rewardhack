@@ -1,0 +1,41 @@
+{
+  "approval": "829230f12ef84eecb99e248604c3063a",
+  "parameters": {
+    "steps": 6,
+    "seed": 42,
+    "max_completion_length": 16384,
+    "num_generations": 4,
+    "backward_batch_size": 1,
+    "save_every": 1,
+    "profile_backward": true
+  },
+  "parent": null,
+  "pod": {
+    "cloud": "COMMUNITY",
+    "disk": 250,
+    "gpu": {"count": 2, "id": "NVIDIA RTX PRO 6000 Blackwell Server Edition"},
+    "image": "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404",
+    "ports": ["22/tcp"]
+  },
+  "driver": {
+    "SMOKE_PART_ONE": "4",
+    "SMOKE_STRATIFIED": "1",
+    "SMOKE_VLLM_ROLLOUTS": "1",
+    "SMOKE_TRAIN_SECONDS": "9900",
+    "SMOKE_FINAL_EVAL_SECONDS": "1800",
+    "KEEP_POD": "1",
+    "AUTOSTOP_GRACE_SECONDS": "8100",
+    "FORWARD_JUDGE_KEY": "1",
+    "JUDGE_KIND": "api",
+    "JUDGE_MAX_USD": "0.25",
+    "LEAN_ISOLATION": "none"
+  },
+  "gate": {
+    "line": "qwen3-32b-gpu",
+    "hourly": 3.415,
+    "deadline": 250,
+    "basis": "1.5x estimated 165 min",
+    "launch_cap": 25.07,
+    "other_usd": 0.25
+  }
+}

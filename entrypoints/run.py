@@ -5,6 +5,7 @@
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -44,6 +45,8 @@ def main():
                        help="continue a train run from one of its checkpoints (<out>/trainer/checkpoint-N): weights, optimizer, step count, "
                             "random state and task order; the run's settings must match, and --steps is the new total")
     ap.add_argument('--steps', type=int, default=64)
+    ap.add_argument('--profile-backward', action=argparse.BooleanOptionalAction, default=False,
+                    help='record CUDA allocator peaks and sequence widths for each backward call')
     ap.add_argument('--prompts-per-step', type=int, default=1)
     ap.add_argument('--num-generations', type=int, default=8)
     ap.add_argument('--backward-batch-size', type=int,
@@ -80,6 +83,12 @@ def main():
             ap.error('--run-config requires train mode')
         from rewardhack.run_registry import training_arguments
         config = json.loads(args.run_config.read_text())
+        if 'native_trainer_commit' in config:
+            source = Path('.tools/experiment-source').resolve()
+            entrypoint = source / 'entrypoints/run.py'
+            if Path(__file__).resolve() != entrypoint:
+                os.execve(sys.executable, [sys.executable, str(entrypoint), *sys.argv[1:]],
+                          {**os.environ, 'PYTHONPATH':str(source / 'src')})
         args, flags = training_arguments(ap, sys.argv[1:], config)
         args.run_id = config['run_id']
         if 'historical_commit' in config:

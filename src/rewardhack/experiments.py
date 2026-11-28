@@ -22,6 +22,10 @@ from .run_registry import CONFIG_FILE, checked_source, new_run, read, result_dir
 from .state_files import atomic_json, file_lock, pending_pod_archive, pod_receipt
 
 
+def git_common_directory(root):
+    return Path(gates.git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir').strip())
+
+
 def _resolve_parent(root, state, spec):
     """Bind the selected step to its parent settings, trainer source and verified archive."""
     lineage = {'historical_snapshot_files': None}
@@ -49,6 +53,10 @@ def _resolve_parent(root, state, spec):
         parent, arm, receipt = registered_checkpoint(run_id_directory(state, parent_id), step)
         if 'historical_commit' in parent:
             lineage['historical_commit'] = parent['historical_commit']
+        elif 'native_trainer_commit' in parent:
+            lineage['native_trainer_commit'] = parent['native_trainer_commit']
+        else:
+            lineage['native_trainer_commit'] = receipt['commit']
     archive.checkpoint_members(receipt, arm, f'{arm}/trainer/checkpoint-{step}')
     lineage.update(checkpoint_arm=arm, parent_archive=receipt['run_id'])
     if 'historical_commit' in lineage:
@@ -66,7 +74,7 @@ def prepare(root, request, *, state=None):
     state = root / 'experiments' if state is None else Path(state)
     if isinstance(request, (str, Path)):
         request = read(request)
-    if set(request) - {'parameters', 'inherit', 'parent', 'pod', 'driver', 'gate'}:
+    if set(request) - {'parameters', 'inherit', 'parent', 'pod', 'driver', 'gate', 'approval'}:
         raise ValueError('unknown experiment request fields')
     unknown = set(request['parameters']) - training_keys()
     if unknown:
@@ -88,7 +96,11 @@ def prepare(root, request, *, state=None):
         raise ValueError('the selected pod job must run exactly one training arm')
     defaults = read(root / 'ops/run_defaults.json')
     approved = budget.nonnegative_finite(request['gate']['launch_cap'], 'requested launch cap')
-    if approved > defaults['max_run_usd']:
+    if 'approval' in request:
+        approval = run_id_directory(Path('ops/approved-runs'), request['approval']).with_suffix('.json')
+        if json.loads(gates.git(root, 'show', f'HEAD:{approval}')) != request:
+            raise ValueError('request differs from the committed one-time approval')
+    elif approved > defaults['max_run_usd']:
         raise ValueError(f"run cap exceeds the approved ${defaults['max_run_usd']}")
     parent, lineage = _resolve_parent(root, state, request['parent'])
     row = new_run(defaults, request['parameters'], parent=parent,
@@ -104,6 +116,9 @@ def prepare(root, request, *, state=None):
     row.update(lineage)
     if 'historical_commit' in row and row['settings']['rollout_backend'] != 'vllm':
         raise ValueError('exact historical trainer capture requires the vLLM sampler')
+    if 'approval' in request:
+        row['run_id'] = request['approval']
+        atomic_json(git_common_directory(root) / f"experiment-approval-{row['run_id']}.json", request)
     directory = run_id_directory(state, row['run_id'])
     directory.mkdir(parents=True, exist_ok=False)
     atomic_json(directory / CONFIG_FILE, row)
@@ -202,6 +217,19 @@ def reconcile_billing(root, directory, client):
               usage['usd'] if usage is not None else 0)
 
 
+def stage_historical_trainer(checkout, commit):
+    source = checkout / '.tools/experiment-source'
+    with tempfile.TemporaryFile() as bundle:
+        subprocess.run(['git', 'archive', commit, 'src', 'entrypoints/run.py', 'requirements-vllm.txt'],
+                       cwd=checkout, stdout=bundle, check=True)
+        bundle.seek(0)
+        with tarfile.open(fileobj=bundle) as files:
+            files.extractall(source, filter='data')
+    # Exercise the archived trainer's actual version read before provisioning.
+    subprocess.run([sys.executable, '-c', 'from rewardhack.vllm_rollouts import pinned_vllm; print(pinned_vllm())'],
+                   cwd=source, env={**os.environ, 'PYTHONPATH':str(source/'src')}, check=True)
+
+
 def _execute(root, directory, checkout, submit, client):
     from .runpod_ops import launch
     request = read(directory / 'request.json')
@@ -210,12 +238,9 @@ def _execute(root, directory, checkout, submit, client):
     tools.mkdir(exist_ok=True)
     atomic_json(checkout / gates.EXPERIMENT_CONFIG, config)
     if 'historical_commit' in config:
-        with tempfile.TemporaryFile() as bundle:
-            subprocess.run(['git', 'archive', config['historical_commit'], 'src', 'entrypoints/run.py'],
-                           cwd=checkout, stdout=bundle, check=True)
-            bundle.seek(0)
-            with tarfile.open(fileobj=bundle) as files:
-                files.extractall(tools / 'experiment-source', filter='data')
+        stage_historical_trainer(checkout, config['historical_commit'])
+    elif 'native_trainer_commit' in config:
+        stage_historical_trainer(checkout, config['native_trainer_commit'])
     _stage_parent(checkout, config)
     pod = {**request['pod'], 'name': 'rewardhack-' + config['run_id']}
     settings = {**request['driver'], 'SMOKE_EXPERIMENT':'1', 'SMOKE_SKIP_PROBE':'1',
@@ -285,7 +310,7 @@ def _run_prepared_batch(root, directories, parallelism):
         raise ValueError('batch needs distinct prepared runs and positive parallelism')
     client = RunPod()
     charges = {}
-    common = Path(gates.git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir').strip())
+    common = git_common_directory(root)
     with file_lock(common / 'experiment-batch.lock'), ThreadPoolExecutor(parallelism) as workers:
         while pending or charges:
             available = Decimal(str(client.read('billing/balance')['balanceAmount'])) if check_prepaid_balance() else None

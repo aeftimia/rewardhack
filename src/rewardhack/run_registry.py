@@ -36,7 +36,7 @@ CONTINUATION_OVERRIDES = frozenset({'max_completion_length', 'prompt_variant', '
 
 def training_keys():
     from .hf_grpo import RESUME_SETTINGS
-    return set(RESUME_SETTINGS) | {'steps'}
+    return set(RESUME_SETTINGS) | {'steps', 'profile_backward'}
 
 
 def training_arguments(parser, argv, config):

@@ -685,6 +685,13 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     _, started_at, epochs_done = resume_point(args) if args.resume_from else (None, 0, 0)
 
     class VerifiedTrainer(VerifierMaskMixin, GRPOTrainer):
+        def _compute_loss(self, model, inputs):
+            if torch.cuda.is_available() and args.profile_backward:
+                self.backward_shape = dict(prompt_width=inputs['prompt_ids'].shape[1],
+                                           completion_width=inputs['completion_ids'].shape[1],
+                                           completion_tokens=inputs['completion_mask'].sum(1).tolist())
+            return super()._compute_loss(model, inputs)
+
         def _generate_and_score_completions(self, inputs):
             self.generation_inputs = inputs
             return super()._generate_and_score_completions(inputs)
@@ -719,6 +726,9 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
 
     trainer = VerifiedTrainer(model=model, args=config, reward_funcs=reward_fn, train_dataset=dataset, processing_class=tokenizer, callbacks=[Instrument()],
                           peft_config=None if args.adapter else lora_config(model, args.lora_rank))
+    if torch.cuda.is_available() and args.profile_backward:
+        from .backward_profile import instrument_backward
+        instrument_backward(trainer, args.out, summary)
     summary['training_sampler'] = args.training_sampler
     if args.training_sampler == 'family-truth':
         schedule = trainer._get_train_sampler()
@@ -927,6 +937,9 @@ def run(args):
                        max_gpu_utilization=None if gpu['gpu_sampler_error'] else gpu['gpu_max_util'], gpu_sampler_error=gpu['gpu_sampler_error'])
         if 'torch' in sys.modules and sys.modules['torch'].cuda.is_available():
             torch_ = sys.modules['torch']
-            summary['peak_allocated_gib_all_gpus'] = sum(torch_.cuda.max_memory_allocated(i) for i in range(torch_.cuda.device_count()))/2**30
+            peaks = [torch_.cuda.max_memory_allocated(i) for i in range(torch_.cuda.device_count())]
+            if 'allocator_peaks_before_reset_bytes' in summary:
+                peaks = list(map(max, peaks, summary['allocator_peaks_before_reset_bytes']))
+            summary['peak_allocated_gib_all_gpus'] = sum(peaks)/2**30
         (args.out/'summary.json').write_text(json.dumps(summary, indent=1)+'\n')
         print(json.dumps({k: v for k, v in summary.items() if k != 'script_sha256'}, indent=1), flush=True)

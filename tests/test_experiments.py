@@ -36,6 +36,50 @@ def test_per_key_inheritance_and_identity():
         new_run(defaults, {}, inherit=True)
 
 
+def test_exact_one_time_cap_cannot_be_reused_in_another_registry(tmp_path, monkeypatch):
+    import json
+    original_git = experiments.gates.git
+    approval_id = 'a' * 32
+    spec = request()
+    spec['gate']['launch_cap'] = 25.07
+    with pytest.raises(ValueError, match='cap exceeds'):
+        experiments.prepare(ROOT, spec, state=tmp_path)
+    spec['approval'] = approval_id
+    approved = json.dumps(spec)
+    def git(root, *args):
+        if args == ('show', f'HEAD:ops/approved-runs/{approval_id}.json'):
+            return approved
+        if args[-1] == '--git-common-dir':
+            return str(tmp_path)
+        return original_git(root, *args)
+    monkeypatch.setattr(experiments.gates, 'git', git)
+    spec['parameters']['steps'] = 60
+    with pytest.raises(ValueError, match='differs'):
+        experiments.prepare(ROOT, spec, state=tmp_path/'first')
+    spec['parameters']['steps'] = 6
+    assert experiments.prepare(ROOT, spec, state=tmp_path/'first').name == approval_id
+    with pytest.raises(FileExistsError):
+        experiments.prepare(ROOT, spec, state=tmp_path/'second')
+
+
+def test_staged_historical_trainer_reads_its_committed_vllm_pin(tmp_path):
+    import subprocess
+    (tmp_path/'.tools').mkdir()
+    subprocess.run(['git','init','-q',str(tmp_path)],check=True)
+    for name in ('src/rewardhack/vllm_rollouts.py','entrypoints/run.py','requirements-vllm.txt'):
+        path = tmp_path/name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if name.endswith('vllm_rollouts.py'):
+            path.write_text("from pathlib import Path\ndef pinned_vllm():\n    return (Path(__file__).resolve().parents[2]/'requirements-vllm.txt').read_text()\n")
+        else:
+            path.write_text('vllm==fixture\n')
+    subprocess.run(['git','add','.'],cwd=tmp_path,check=True)
+    subprocess.run(['git','-c','user.name=fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture'],
+                   cwd=tmp_path,check=True)
+    experiments.stage_historical_trainer(tmp_path, 'HEAD')
+    assert (tmp_path/'.tools/experiment-source/requirements-vllm.txt').read_text() == 'vllm==fixture\n'
+
+
 @pytest.mark.parametrize('local', [True, False])
 def test_prepare_binds_continuation_to_the_archived_parent(tmp_path, monkeypatch, local):
     import json
