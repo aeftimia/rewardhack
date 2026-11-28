@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from .budget import check, read_ledger
+from .budget import LEDGER, check, read_ledger
 from ._hashing import file_sha256
 from .launch_credentials import CredentialError, preflight, receipt_problems
 from .state_files import atomic_json, file_lock
@@ -30,13 +30,11 @@ RECORD = Path('.tools') / 'launch-ready.json'
 EXPERIMENT_CONFIG = Path('.tools/experiment.json')
 RECORD_LOCK = RECORD.with_suffix('.lock')
 EXPECTED_RECORD_ID = 'REWARDHACK_LAUNCH_RECORD_ID'
-LEDGER = Path('spending') / 'ledger.csv'
 # What the pod runs is the working tree under these paths (ops/drive_runpod.sh copies it), so they must match the tested commit.
 SHIPPED = ('src', 'ops', 'entrypoints', 'tests', 'pyproject.toml', 'requirements.txt', 'requirements-vllm.txt')
 # A pod can bill outside the job's own deadline: while the driver waits for it to accept SSH and then arms the provisional
 # timer (SSH_UP_SECONDS and ARM_SECONDS in ops/pod_pins.env), for that timer before the job starts, and after the deadline for
 # the runner's wait between TERM and KILL (KILL_AFTER_SECONDS there) and the grace before the pod removes itself.
-PROVISIONAL_MINUTES = 15
 PINS = Path('ops') / 'pod_pins.env'
 # cap: 3x estimated 10 s (one control-plane request)
 RUNPOD_API_SECONDS = 30  # create request and final endpoint poll can each take this long
@@ -125,12 +123,12 @@ def pod_pin(root, name):
 
 
 def overhead_minutes(root, settings):
-    """The minutes a pod can bill beyond its job's deadline under these driver settings (see PROVISIONAL_MINUTES)."""
+    """The minutes a pod can bill beyond its job's deadline under these driver settings."""
     # dry-ok: src/rewardhack/gates.py::overhead_minutes | before and after are disjoint billing intervals: before sums boot/control requests, after sums kill/grace. Each duration is defined once in pod_pins.env or its named constant; the expressions do not recompute one another.
     after = pod_pin(root, 'KILL_AFTER_SECONDS') + grace_seconds(settings)
     # API deployment can spend one boot allowance discovering its endpoint before the driver's SSH wait.
     before = 2 * pod_pin(root, 'SSH_UP_SECONDS') + pod_pin(root, 'ARM_SECONDS') + 2 * RUNPOD_API_SECONDS
-    return math.ceil(before / 60) + PROVISIONAL_MINUTES + math.ceil(after / 60)
+    return math.ceil(before / 60) + math.ceil(pod_pin(root, 'PROVISIONAL_SECONDS') / 60) + math.ceil(after / 60)
 
 
 def grace_seconds(settings):
@@ -190,6 +188,7 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     floor = re.search(r'^# deadline: (\d+)\b', (root/remote).read_text(), re.M)
     if floor and deadline < int(floor.group(1)):
         problems.append(f'{remote} asks for a deadline of at least {floor.group(1)} min (its `# deadline:` line); {deadline} would cut it off')
+    # dry-ok: src/rewardhack/gates.py::launch_duration | ready calls launch_duration; it does not recompute deadline plus overhead. The helper is the single implementation of that policy.
     try:
         worst_minutes, hours = launch_duration(root, deadline, settings)
     except (ValueError, OSError) as error:  # refused with the reason: a grace that is not a number, or a missing pin

@@ -1,5 +1,27 @@
 # One-seed screening plan (owner, 26 November 2026)
 
+## GPT continuation startup attempt, 27 November 2026
+
+The registered prose-baseline continuation `b646203ec56c4da782c0a22b205348f7`
+was prepared from the verified step-6 trainer checkpoint of
+`1a1b20dae9a15e74bc24403df3e2df67`, with a 16,384-token ceiling and a
+step-12 target. Its exact launch source was `30a1f1ad35b5477aa1c18f26024c9adf2c1c6b5d`.
+No trainer job started. The local S3 checkpoint fetch completed before pod
+creation; the driver then uploaded the 2.1 GB checkpoint over SSH. Roughly
+eight minutes after the pod's provisional removal timer was armed, the upload
+was still incomplete. The pod was terminated and RunPod confirmed no active
+pods and zero hourly spend. The balance changed from $13.9754 to $13.7189;
+attributable billing records had not yet settled.
+
+No model download had begun on the pod. The driver now bounds startup sync
+inside a longer provisional timer and restores the parent checkpoint directly
+from S3 on the pod, with SHA-256 verification. It no longer stages the 2.1 GB
+checkpoint through the Mac or uploads it over SSH. A failed or timed-out restore
+stops before the trainer starts, and the driver removes an empty pod even with
+`KEEP_POD=1`. The reusable transfer monitor can project a finish time from
+progress if a future SSH upload needs it. Relaunch requires a new experiment ID,
+a fresh launch gate, sufficient prepaid balance, and its own verified results.
+
 ## GPT and Qwen handoff, 27 November 2026
 
 Five GPT refutation-permission runs completed six updates at an 8,192-token

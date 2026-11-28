@@ -35,5 +35,11 @@ notice, the patch number for fixes that change none of that.
   contents into tracked files.
 - A hook refusal is a finding to resolve, not an obstacle to bypass. Missing
   dependencies or an unreadable patch must be reported and resolved.
+- If Codex's automatic approval review blocks a retry of the configured DRY or
+  silent-failure judge, promptly show the refusal and ask the owner to authorize
+  that exact action. `CLAUDE.md` authorizes source review only at
+  `https://api.openai.com`; verify the installed judge's endpoint before retrying.
+  A judge's own failed review is a separate finding to diagnose, not permission
+  to skip the hook.
 
 See `docs/codex-setup.md` for activation, dependencies, and coverage limits.

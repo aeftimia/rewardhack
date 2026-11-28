@@ -281,13 +281,13 @@ finish() {
     if [[ $SSH_UP == 1 ]]; then why='the pod stopped answering after it accepted SSH, before this run armed a removal timer on it'
     else why='the pod never accepted SSH, so this run armed no removal timer on it'; fi
     say "REMINDER: $why (a kept pod keeps its earlier one). Terminate it in the RunPod console now unless out/autostop.log there shows one"; code=97
-  elif [[ ( $ARMED == 1 && ( $KEEP == 1 || $CHECKPOINTS == 0 ) ) || ( $ARMED == 0 && $HELD != empty ) ]]; then
+  elif [[ ( $ARMED == 1 && ( ( $KEEP == 1 && ( $LAUNCHED == 1 || $HELD != empty ) ) || $CHECKPOINTS == 0 ) ) || ( $ARMED == 0 && $HELD != empty ) ]]; then
     # Left running on purpose: say so only if a removal timer is really armed there. A pod that no longer answers has
     # most likely removed itself on its timer; that is said as such, not as a pod running without one.
     # The bracket keeps the pattern from matching the shell that runs this very command, which made the check always pass.
     if ! on_pod true; then
       if [[ $ARMED == 1 ]]; then
-        say "the pod no longer answers (ssh error above): it has removed itself on its timer, or the connection failed and its timer (armed $ARMED_AT, at most the provisional 15 minutes before the job's own replaces it) removes it. Confirm in the RunPod console"
+        say "the pod no longer answers (ssh error above): it has removed itself on its timer, or the connection failed and its timer (armed $ARMED_AT, at most $PROVISIONAL_SECONDS seconds before the job's own replaces it) removes it. Confirm in the RunPod console"
       else  # a kept pod with an earlier job's results, which this run armed no timer on (review round 47)
         say "REMINDER: the pod no longer answers, and this run armed no removal timer on it; a kept pod keeps its earlier one. Check in the RunPod console now that it is gone or has a timer (out/autostop.log there)"; code=97
       fi
@@ -336,20 +336,33 @@ SSH_UP=1
 # The job's own timer replaces it when the job starts.
 # Bounded as a whole (ARM_SECONDS, ops/pod_pins.env, counted by the gate): it asks the RunPod API whether the pod can
 # remove itself, and a stalled API would otherwise hold the driver here with no timer armed (review round 34).
-timeout "$ARM_SECONDS" "${SSH[@]}" "root@$HOST" 'bash -s -- --arm-only 900' < ops/remote_job.sh || { echo 'could not arm a provisional removal timer on the pod'; exit 1; }
+timeout "$ARM_SECONDS" "${SSH[@]}" "root@$HOST" "bash -s -- --arm-only $PROVISIONAL_SECONDS" < ops/remote_job.sh || { echo 'could not arm a provisional removal timer on the pod'; exit 1; }
 ARMED=1  # from here a removal timer runs on the pod, so a pod that stops answering has most likely removed itself
 ARMED_AT=$(date -u +%FT%TZ)
+SYNC_END=$((SECONDS + SYNC_SECONDS))
+sync_upload() {
+  local remaining=$((SYNC_END - SECONDS))
+  if ((remaining <= 0)) || ! timeout "$remaining" rsync "$@"; then
+    say 'pod sync exceeded its total allowance or failed; no job was launched'
+    exit 1
+  fi
+}
 # results/ stays behind except the model-read labels, which judge validation on the pod needs (7 MB).
-rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
+sync_upload -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --exclude spending --include 'results/' --include 'results/report-reading/***' --exclude 'results/*' -e "${SSH[*]}" ./ "root@$HOST:pilot-repo/"
 if [[ -n ${SMOKE_EXPERIMENT+set} ]]; then
   on_pod 'mkdir -p pilot-repo/.tools'
-  rsync -az --timeout=120 -e "${SSH[*]}" .tools/experiment.json "root@$HOST:pilot-repo/.tools/"
+  sync_upload -az --timeout=120 -e "${SSH[*]}" .tools/experiment.json "root@$HOST:pilot-repo/.tools/"
   if [[ -f .tools/parent-download.json ]]; then
-    # cap: 1.5x estimated 8 min to restore the parent within the armed startup window
-    timeout 720 "${SSH[@]}" "root@$HOST" 'cd pilot-repo && python3 ops/fetch_checkpoint.py .tools/experiment-parent' < .tools/parent-download.json
+    remaining=$((SYNC_END - SECONDS))
+    if ((remaining <= 0)) || ! timeout "$remaining" "${SSH[@]}" "root@$HOST" \
+      'cd pilot-repo && python3 ops/fetch_checkpoint.py .tools/experiment-parent' \
+      < .tools/parent-download.json; then
+      say 'direct checkpoint fetch failed or exceeded the startup allowance; no job was launched'
+      exit 1
+    fi
   fi
   if [[ -d .tools/experiment-source ]]; then
-    rsync -az --timeout=120 -e "${SSH[*]}" .tools/experiment-source "root@$HOST:pilot-repo/.tools/"
+    sync_upload -az --timeout=120 -e "${SSH[*]}" .tools/experiment-source "root@$HOST:pilot-repo/.tools/"
   fi
 fi
 # The API judge needs the OpenAI key on the pod. It is sent only on request, over the SSH channel into a mode-600

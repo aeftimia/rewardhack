@@ -33,6 +33,18 @@ the commit. Consolidate the implementations, correct the mismatch, or explain
 why the two sites need separate code with a peer-specific `dry-ok` comment.
 The structural checker also enforces new structural duplication.
 
+The managed auditor uses `gpt-5.4-mini` for this project's semantic hook and
+calls `gpt-5.4` only if mini still gives an unverifiable expression quote after
+one retry. The stronger model's quote must pass the same exact-site check.
+This changes only commit-time source review, not the experiment's report judge
+or reward function.
+
+The semantic hook blocks with its findings on a first commit attempt. After
+reviewing them, an identical second commit attempt acknowledges those findings
+from cache without another semantic model call. Any change to the staged files,
+HEAD, hook source, or review arguments requires a new first attempt. Other commit
+hooks still run on both attempts.
+
 The managed auditor reviews independent batches concurrently. Primary verdicts
 and follow-up reviews of explanations share a worker pool, with up to eight
 requests in flight by default. The installed auditor supplies this default on

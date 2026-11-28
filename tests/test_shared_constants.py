@@ -40,7 +40,9 @@ def test_the_launch_gate_counts_what_the_driver_and_runner_actually_do():
     set them must use the same numbers, or the budget check undercounts (DRY audit, 26 Nov)."""
     driver = (ROOT/'ops/drive_runpod.sh').read_text()
     runner = (ROOT/'ops/remote_job.sh').read_text()
-    assert f'--arm-only {gates.PROVISIONAL_MINUTES*60}' in driver
+    assert '--arm-only $PROVISIONAL_SECONDS' in driver
+    assert gates.pod_pin(ROOT, 'PROVISIONAL_SECONDS') == int(PINS['PROVISIONAL_SECONDS'])
+    assert gates.pod_pin(ROOT, 'SYNC_SECONDS') < gates.pod_pin(ROOT, 'PROVISIONAL_SECONDS')
     assert f'\n  GRACE={gates.DRIVER_GRACE_SECONDS}\n' in runner
     assert driver.count(f'JUDGE_MAX_USD:-{gates.DRIVER_JUDGE_MAX_USD:g}}}') == driver.count('JUDGE_MAX_USD:-1') > 0
     # What the pod is sent when a setting is unset (notes section 80 moved these out of the launch line).

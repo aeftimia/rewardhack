@@ -19,7 +19,7 @@ def write_stubs(tmp_path, **bodies):
     return str(bin_dir)+':'+os.environ['PATH']
 
 
-def drive(tmp_path, *, pull_fails=False, timer_running=True, keep_pod=False, close_stdout=False):
+def drive(tmp_path, *, pull_fails=False, upload_fails=False, timer_running=True, keep_pod=False, close_stdout=False):
     """Run the driver against a stub pod. Returns its exit status and the ordered list of what it sent."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     calls = tmp_path/'calls'
@@ -28,13 +28,17 @@ def drive(tmp_path, *, pull_fails=False, timer_running=True, keep_pod=False, clo
 [[ -e {tmp_path}/removed ]] && exit 255
 ''' + LAUNCH_RECEIPT_ANSWER + f'''for arg in "$@"; do
   if [[ $arg == *"cat EXIT_CODE"* ]]; then echo 0; fi
+  if [[ $arg == *'out.prev.*/remote.log'* ]]; then echo empty; fi
   if [[ $arg == *pgrep* ]]; then exit {0 if timer_running else 1}; fi
   if [[ $arg == *--remove-now* ]]; then touch {tmp_path}/removed; fi
 done
 exit 0
 '''
     rsync = f'''echo "rsync $*" >> {calls}
-for arg in "$@"; do if [[ $arg == *:./ ]]; then exit {1 if pull_fails else 0}; fi; done
+for arg in "$@"; do
+  if [[ $arg == *:pilot-repo/* ]]; then exit {1 if upload_fails else 0}; fi
+  if [[ $arg == *:./ ]]; then exit {1 if pull_fails else 0}; fi
+done
 exit 0
 '''
     env = dict(os.environ, PATH=write_stubs(tmp_path, ssh=ssh, rsync=rsync, sleep='exit 0\n'), JUDGE_KIND='pod', FORWARD_JUDGE_KEY='0', KEEP_POD='1' if keep_pod else '0',
@@ -49,10 +53,19 @@ exit 0
 def test_the_driver_bounds_billing_before_it_copies_anything(tmp_path):
     code, calls, result = drive(tmp_path)
     assert code == 0, result.stdout+result.stderr
-    arm = next(i for i, call in enumerate(calls) if '--arm-only 900' in call)
+    arm = next(i for i, call in enumerate(calls) if '--arm-only 1800' in call)
     assert arm < next(i for i, call in enumerate(calls) if call.startswith('rsync')), 'the repo was copied to a pod with no removal timer'
     assert any('--remove-now' in call for call in calls) and (tmp_path/'removed').exists()
     assert 'pod removed: it no longer answers' in (tmp_path/'results'/'driver.log').read_text()
+
+
+def test_failed_startup_sync_removes_even_a_kept_pod(tmp_path):
+    code, calls, result = drive(tmp_path, upload_fails=True, keep_pod=True)
+    assert code != 0, result.stdout+result.stderr
+    assert any('--arm-only 1800' in call for call in calls)
+    assert not any('remote_job.sh --launch' in call for call in calls)
+    assert any('--remove-now' in call for call in calls)
+    assert (tmp_path/'removed').exists()
 
 
 def test_results_that_were_not_copied_are_not_deleted_with_the_pod(tmp_path):
@@ -168,7 +181,7 @@ def test_the_driver_refuses_what_would_only_fail_on_a_billing_pod(tmp_path):
 
 
 def test_the_copy_to_the_pod_leaves_local_settings_and_tools_behind():
-    line = next(line for line in open('ops/drive_runpod.sh') if line.startswith('rsync -az') and 'pilot-repo' in line)
+    line = next(line for line in open('ops/drive_runpod.sh') if line.startswith('sync_upload -az') and 'pilot-repo' in line)
     for kept_out in ('.git', '.tools', '.claude', 'spending'):
         assert f'--exclude {kept_out} ' in line, kept_out
 
