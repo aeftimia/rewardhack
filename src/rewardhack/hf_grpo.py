@@ -854,7 +854,7 @@ def run(args):
 
     deadline.arm(args.max_seconds)
     hard_deadline = time.monotonic()+args.max_seconds
-    sampler = GpuSampler()
+    sampler = GpuSampler(args.out / 'gpu-samples.jsonl' if args.profile_backward else None)
     sampler.start()
     rollouts = None
     try:

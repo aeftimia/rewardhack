@@ -95,7 +95,7 @@ def staged(monkeypatch):
     monkeypatch.setattr(hf_grpo, 'load_model', lambda args, summary: (model, tokenizer))
     monkeypatch.setattr(hf_grpo, 'controls', lambda lean: {'stub': True})
     monkeypatch.setattr(subprocess, 'check_output', lambda *a, **kw: 'Lean (stub)\n')
-    monkeypatch.setattr(hf_grpo, 'GpuSampler', lambda: SimpleNamespace(start=lambda: None, summary=lambda: dict(gpu_sampler_error='no GPU in tests', gpu_peak_mib=0, gpu_max_util=0)))
+    monkeypatch.setattr(hf_grpo, 'GpuSampler', lambda samples: SimpleNamespace(start=lambda: None, summary=lambda: dict(gpu_sampler_error='no GPU in tests', gpu_peak_mib=0, gpu_max_util=0)))
     template = outcomes.score('unused', TASKS[0], '', 'baseline', truncated=True)
     state = dict(scored=0, fail_at=None)
 

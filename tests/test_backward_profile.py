@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from rewardhack import jsonl
+from rewardhack import gpu, jsonl
 from rewardhack.backward_profile import instrument_backward
 
 
@@ -34,3 +34,17 @@ def test_backward_memory_includes_failed_calls_and_preserves_earlier_peak(tmp_pa
     assert row['step'] == 3 and row['completed'] is (not fail)
     assert row['peak_allocated_bytes'] == 75 and row['completion_width'] == 128
     assert summary['allocator_peaks_before_reset_bytes'] == [90]
+
+
+def test_profile_records_each_gpu_and_keeps_aggregate_peak(tmp_path, monkeypatch):
+    sampler = gpu.GpuSampler(tmp_path/'gpu-samples.jsonl')
+    def smi(command, **kwargs):
+        assert command[1] == '--query-gpu=index,memory.used,utilization.gpu'
+        return '0, 65000, 70\n1, 82000, 92\n'
+    monkeypatch.setattr(gpu.subprocess, 'check_output', smi)
+    monkeypatch.setattr(gpu.time, 'sleep', lambda seconds: setattr(sampler, 'running', False))
+    sampler.run()
+    observation, = jsonl.read(sampler.samples)
+    assert observation['cards'] == [dict(device=0, used_mib=65000, utilization_pct=70),
+                                    dict(device=1, used_mib=82000, utilization_pct=92)]
+    assert sampler.summary() == dict(gpu_peak_mib=147000, gpu_max_util=92, gpu_sampler_error=None)
