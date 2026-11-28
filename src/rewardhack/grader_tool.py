@@ -36,19 +36,27 @@ RESULT_TOKENS = 2048
 # round; or its turn ended on the tool-call token but the parser found no call (recorded, never read as an answer).
 ENDS = ('answer', 'budget', 'turn_limit', 'unparsed_call')
 
-# Per model family (`config.model_type`): the token that ends a tool-call turn when it is not the EOS, and rewrites that
-# bring the call header the model writes to the form its TRL response parser reads. gpt-oss writes the harmony header
-# `<|channel|>commentary to=functions.X <|constrain|>json<|message|>`; TRL's parser reads only the order its chat
-# template renders, `to=functions.X<|channel|>commentary json<|message|>`. An unlisted family raises: check how it
-# writes tool calls, then add its row.
+# Per model family (`config.model_type`):
+# * `call_end`: the token that ends a tool-call turn when it is not the EOS;
+# * `rewrites`: bring the call header the model writes to the form its TRL response parser reads. gpt-oss's harmony
+#   format allows the recipient after the channel (`<|channel|>commentary to=functions.X <|constrain|>json<|message|>`)
+#   or in the header with a `<|constrain|>` token (`to=functions.X<|channel|>commentary <|constrain|>json<|message|>`);
+#   TRL's parser reads only what the chat template renders, `to=functions.X<|channel|>commentary json<|message|>`;
+# * `result`: how a tool result's content goes to the template. gpt-oss's template applies `tojson` to it, so text would
+#   reach the model as an escaped JSON string: it gets the object. The others write the content as given: JSON text.
+# Checked against the real gpt-oss-20b tokenizer at ops/pod_pins.env's revision (28 Nov 2026). An unlisted family
+# raises: check how it writes tool calls and renders tool results, then add its row.
 PROTOCOLS = {
-    'gpt_oss': dict(call_end='<|call|>', rewrites=(
+    'gpt_oss': dict(call_end='<|call|>', result='object', rewrites=(
         (r'<\|channel\|>commentary\s+to=functions\.([^\s<]+)\s*(?:<\|constrain\|>)?\s*json\s*<\|message\|>',
-         r' to=functions.\1<|channel|>commentary json<|message|>'),)),
-    'qwen3': dict(call_end=None, rewrites=()),
-    'qwen2': dict(call_end=None, rewrites=()),
-    'llama': dict(call_end=None, rewrites=()),
+         r' to=functions.\1<|channel|>commentary json<|message|>'),
+        (r'to=functions\.([^\s<]+)\s*<\|channel\|>commentary\s*<\|constrain\|>\s*json\s*<\|message\|>',
+         r'to=functions.\1<|channel|>commentary json<|message|>'))),
+    'qwen3': dict(call_end=None, result='text', rewrites=()),
+    'qwen2': dict(call_end=None, result='text', rewrites=()),
+    'llama': dict(call_end=None, result='text', rewrites=()),
 }
+RESULT_CONTENT = {'object': lambda content: content, 'text': lambda content: json.dumps(content, ensure_ascii=False)}
 
 
 def check_runs(runs):
@@ -149,12 +157,13 @@ class ToolChat:
         return [dict(name=call['function']['name'], arguments=call['function']['arguments']) for call in parsed['tool_calls']]
 
     def result_ids(self, results):
-        """Token IDs that follow a tool-call turn: each (name, content) result as the template renders it, then the
+        """Token IDs that follow a tool-call turn: each (name, content dict) result as the template renders it, then the
         assistant's next header. Found as the difference between a minimal conversation with and without the results,
         as TRL's own tool loop does (GRPOTrainer._get_tool_suffix_ids)."""
         calls = [{'type': 'function', 'function': {'name': name, 'arguments': {}}} for name, _ in results]
         minimal = [{'role': 'user', 'content': 'request'}, {'role': 'assistant', 'content': '', 'tool_calls': calls}]
-        tool_messages = [{'role': 'tool', 'name': name, 'content': content} for name, content in results]
+        content = RESULT_CONTENT[self.protocol['result']]
+        tool_messages = [{'role': 'tool', 'name': name, 'content': content(result)} for name, result in results]
         render = dict(tokenize=True, return_dict=True, tools=self.tools, chat_template=self.result_template, **self.template_kwargs)
         before = self.tokenizer.apply_chat_template(minimal, add_generation_prompt=False, **render)['input_ids']
         after = self.tokenizer.apply_chat_template(minimal + tool_messages, add_generation_prompt=True, **render)['input_ids']
@@ -250,7 +259,7 @@ def run_episodes(chat, generate, prompts, statements, *, lean, budget, seed, wor
             episode['drafts'].append(dict(turn=chat.tokenizer.decode(turn, skip_special_tokens=False),
                                           calls=[{k: r[k] for k in ('name', 'arguments')} for r in results],
                                           results=[r['result'] for r in results]))
-            suffix = chat.result_ids([(r['name'], json.dumps(r['result'], ensure_ascii=False)) for r in results])
+            suffix = chat.result_ids([(r['name'], r['result']) for r in results])
             episode['completion'] += suffix
             episode['mask'] += [0] * len(suffix)
             if episode['logprobs'] is not None:

@@ -101,8 +101,9 @@ def test_the_tool_is_declared_and_its_calls_and_results_go_through_the_template(
     context = chat.prompt_ids(MESSAGES)
     assert chat.calls(context, ids(chat, CALL[family['model_type']])) == [dict(name='run_grader', arguments={'proof_body': 'by sorry'})]
     assert chat.calls(context, ids(chat, ANSWER[family['model_type']])) == []
-    suffix = chat.tokenizer.decode(chat.result_ids([('run_grader', '{"reward": 1.0}')]), skip_special_tokens=False)
-    assert 'reward' in suffix and suffix.rstrip().endswith('assistant'), suffix
+    suffix = chat.tokenizer.decode(chat.result_ids([('run_grader', {'reward': 1.0})]), skip_special_tokens=False)
+    # The model reads a JSON object, not an escaped JSON string (gpt-oss's template applies tojson to the content).
+    assert '{"reward": 1.0}' in suffix and '\\"' not in suffix and suffix.rstrip().endswith('assistant'), suffix
 
 
 def test_gpt_oss_tool_call_written_in_template_order_is_also_read():
@@ -110,6 +111,9 @@ def test_gpt_oss_tool_call_written_in_template_order_is_also_read():
     turn = ('<|channel|>analysis<|message|>hm<|end|><|start|>assistant to=functions.run_grader<|channel|>commentary json'
             '<|message|>{"proof_body": "by decide"}<|call|>')
     assert chat.calls(chat.prompt_ids(MESSAGES), ids(chat, turn)) == [dict(name='run_grader', arguments={'proof_body': 'by decide'})]
+    constrained = ('<|channel|>analysis<|message|>hm<|end|><|start|>assistant to=functions.run_grader<|channel|>commentary '
+                   '<|constrain|>json<|message|>{"proof_body": "by decide"}<|call|>')
+    assert chat.calls(chat.prompt_ids(MESSAGES), ids(chat, constrained)) == [dict(name='run_grader', arguments={'proof_body': 'by decide'})]
     assert chat.stops == [chat.tokenizer.convert_tokens_to_ids('<|return|>'), chat.tokenizer.convert_tokens_to_ids('<|call|>')]
 
 
@@ -294,3 +298,41 @@ def test_training_masks_tool_results_out_of_the_loss_and_records_drafts(tmp_path
         assert row[:len(episode)] == episode and 0 in episode
     assert all(r['grader_runs_used'] == 1 and r['episode_end'] == 'answer' and '"proof_body": "by sorry"' in r['raw'] for r in result.rows)
     assert result.summary['grader_runs'] == 1 and result.summary['rollouts']['grader_runs'] == 4
+
+
+def pinned_gpt_oss_tokenizer():
+    """The real gpt-oss-20b tokenizer at the pod's pinned revision, from the local Hugging Face cache only (about 28 MB;
+    no weights). None where it is not cached: this check never downloads."""
+    from test_shared_constants import PINS
+    from transformers import AutoTokenizer
+    try:
+        return AutoTokenizer.from_pretrained('openai/gpt-oss-20b', revision=PINS['GPT_OSS_20B_REV'], local_files_only=True)
+    except OSError:
+        return None
+
+
+def test_the_real_gpt_oss_tokenizer_declares_parses_and_answers_the_tool():
+    """What the stand-in tokenizer above cannot show: the real o200k_harmony vocabulary and gpt-oss's own chat template,
+    prepared as load_model prepares them (parser first, then the pinned date)."""
+    tokenizer = pinned_gpt_oss_tokenizer()
+    if tokenizer is None:
+        pytest.skip('the pinned gpt-oss-20b tokenizer is not in the local Hugging Face cache')
+    grader_tool.prepare_tokenizer(tokenizer)
+    hf_grpo.settle_template(tokenizer, 'low', 'unsupported')
+    chat = grader_tool.ToolChat(tokenizer, 'gpt_oss', {'reasoning_effort': 'low'}, 3)
+    assert tokenizer.convert_ids_to_tokens(chat.stops) == ['<|return|>', '<|call|>']
+    prompt = tokenizer.decode(chat.prompt_ids(MESSAGES), skip_special_tokens=False)
+    assert 'type run_grader = (_: {' in prompt and prompt.endswith('<|start|>assistant')
+    context = chat.prompt_ids(MESSAGES)
+    call = dict(name='run_grader', arguments={'proof_body': 'by sorry'})
+    for header in ['<|start|>assistant<|channel|>commentary to=functions.run_grader <|constrain|>json<|message|>',
+                   '<|start|>assistant to=functions.run_grader<|channel|>commentary <|constrain|>json<|message|>',
+                   '<|start|>assistant to=functions.run_grader<|channel|>commentary json<|message|>']:
+        turn = tokenizer('<|channel|>analysis<|message|>Try it.<|end|>' + header + '{"proof_body": "by sorry"}<|call|>', add_special_tokens=False)['input_ids']
+        assert chat.calls(context, turn) == [call], header
+    answer = tokenizer(ANSWER['gpt_oss'], add_special_tokens=False)['input_ids']
+    assert chat.calls(context, answer) == [] and chat.turn_end[answer[-1]] == 'answer'
+    result = {'reward': 0.0, 'diagnostic': 'unsolved goals\n⊢ 1 + 1 = 3', 'runs_left': 2}
+    suffix = tokenizer.decode(chat.result_ids([('run_grader', result)]), skip_special_tokens=False)
+    assert suffix == ('<|start|>functions.run_grader to=assistant<|channel|>commentary<|message|>'
+                      + json.dumps(result, ensure_ascii=False) + '<|end|><|start|>assistant')
