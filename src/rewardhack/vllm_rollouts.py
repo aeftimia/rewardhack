@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .sampling import SAMPLING_KWARGS
+from .reload_probe import greedy_reload
 from ._hashing import file_sha256
 
 SEED_STRIDE = 10**6
@@ -164,6 +165,7 @@ class AdapterRollouts:
             raise ValueError('vLLM continued past the configured stop token')
         return tokens, values
 
+    @greedy_reload
     def verify_reload(self, prompt):
         """A/B/A, once per kind of adapted weight (attention and other linear layers; the MoE experts): changing only
         that kind's LoRA B bytes must change the fixed-seed token sequence, and restoring A must restore it. Checked

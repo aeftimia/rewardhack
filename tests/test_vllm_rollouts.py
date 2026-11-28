@@ -270,12 +270,14 @@ def test_every_batch_reloads_current_adapter_and_sleeps(backend):
         if path == '/inference/v1/generate':
             assert not sleeping[0]
             params = json.loads(request.content)['sampling_params']
-            assert (params['temperature'], params['top_p'], params['top_k']) == (1.0, 1.0, 0)
+            assert (params['top_p'], params['top_k']) == (1.0, 0)
             if params['max_tokens'] == RELOAD_PROBE_TOKENS:
+                assert params['temperature'] == 0
                 token = 3 + int(loaded[0] > 0)
                 row = dict(token_ids=[token] * RELOAD_PROBE_TOKENS, finish_reason='length',
                            logprobs={'content': [dict(token_id=token, logprob=-1-loaded[0])] * RELOAD_PROBE_TOKENS})
             else:
+                assert params['temperature'] == 1
                 seeds.append(params['seed'])
                 assert loaded[0] == pytest.approx(value[0])
                 row = choice()

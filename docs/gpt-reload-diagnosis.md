@@ -49,3 +49,18 @@ copied slot values and slot identities. This did not reproduce a Python manager
 state defect. It does not test real checkpoint deserialization, GPU layer copies,
 quantized kernels, cache behavior or inference, and is not clearance to resume
 paid training.
+
+## Step-six continuations on 28 November
+
+The prose report-correct continuations at λ=0 and λ=0.5 stopped before update
+seven. In both receipts the first five tokens matched and the sixth differed
+on the unchanged-adapter repeat. Both requests had seed zero and temperature
+one, and neither pair had an intervening reload. This reproduces drift on
+unchanged weights. The receipts do not isolate the responsible GPU kernel.
+
+The revised startup control uses greedy decoding through the same vLLM endpoint
+for every diagnostic observation. It still rejects any token mismatch on the
+unchanged repeat or identical reload, requires each weight perturbation to change
+the output, and requires exact restoration. The trainer's own control runs for
+each checkpoint lineage. The normal sampler retains temperature one for rewards
+and evaluations. The on-pod control is the test of whether this change suffices.

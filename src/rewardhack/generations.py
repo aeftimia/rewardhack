@@ -3,14 +3,15 @@ import json
 import os
 import runpy
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from rewardhack import jsonl
 
 
-def exec_archived(source, run_id, arguments, *, override_limit):
+def exec_archived(source, run_id, arguments, *, mode):
     script = str(source / 'entrypoints/run.py')
     env = {**os.environ, 'PYTHONPATH': str(source / 'src'), 'REWARDHACK_OBSERVED_RUN': run_id}
-    os.execve(sys.executable, [sys.executable, __file__, str(int(override_limit)), script, *arguments], env)
+    os.execve(sys.executable, [sys.executable, __file__, mode, script, *arguments], env)
 
 
 def validate_archived_resume(trainer, check, args):
@@ -127,8 +128,18 @@ def observe_archived_vllm(run_id):
 
 
 if __name__ == '__main__':
-    observe_archived_vllm(os.environ['REWARDHACK_OBSERVED_RUN'])
-    if int(sys.argv[1]):
+    from rewardhack.vllm_rollouts import AdapterRollouts
+    # This file belongs to the launch commit. Imports from rewardhack resolve to
+    # the checkpoint's trainer. Its own assertions still run on the real server.
+    if 'greedy_reload_probe' not in vars(AdapterRollouts.verify_reload):
+        decorate = runpy.run_path(str(Path(__file__).with_name('reload_probe.py')))['greedy_reload']
+        AdapterRollouts.verify_reload = decorate(AdapterRollouts.verify_reload)
+    mode = sys.argv[1]
+    if mode not in {'native', 'historical', 'historical-limit'}:
+        raise ValueError(f'unknown archived trainer mode: {mode}')
+    if mode != 'native':
+        observe_archived_vllm(os.environ['REWARDHACK_OBSERVED_RUN'])
+    if mode == 'historical-limit':
         from functools import partial
         from rewardhack import hf_grpo
         hf_grpo.check_resume = partial(validate_archived_resume, hf_grpo, hf_grpo.check_resume)

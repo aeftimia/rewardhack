@@ -5,7 +5,6 @@
 """
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -87,8 +86,8 @@ def main():
             source = Path('.tools/experiment-source').resolve()
             entrypoint = source / 'entrypoints/run.py'
             if Path(__file__).resolve() != entrypoint:
-                os.execve(sys.executable, [sys.executable, str(entrypoint), *sys.argv[1:]],
-                          {**os.environ, 'PYTHONPATH':str(source / 'src')})
+                from rewardhack import generations
+                generations.exec_archived(source, config['run_id'], sys.argv[1:], mode='native')
         args, flags = training_arguments(ap, sys.argv[1:], config)
         args.run_id = config['run_id']
         if 'historical_commit' in config:
@@ -98,7 +97,7 @@ def main():
             del arguments[position:position + 2]
             from rewardhack import generations
             generations.exec_archived(historical, args.run_id, [*arguments, *flags, '--resume-from', str(args.resume_from)],
-                                      override_limit='max_completion_length' in args.continuation_overrides)
+                                      mode={True:'historical-limit', False:'historical'}['max_completion_length' in args.continuation_overrides])
     if args.resume_from and args.mode != 'train':
         ap.error(f'--resume-from continues training; {args.mode} would ignore it')
     judge.check_reward_args(ap, args)
