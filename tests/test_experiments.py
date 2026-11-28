@@ -130,7 +130,7 @@ def test_summary_only_parent_refused_before_any_archive_request(tmp_path):
         experiments._resolve_parent(root, tmp_path, dict(run_id=key, arm='train-baseline', checkpoint_step=6, archive='unused'))
 
 
-@pytest.mark.parametrize('exit_code', ['0', '1'])
+@pytest.mark.parametrize('exit_code', ['0', '1', 'removal failed'])
 def test_launch_archive_teardown_and_reconciled_ledger(tmp_path, monkeypatch, exit_code):
     directory = experiments.prepare(ROOT, request(), state=tmp_path / 'registry')
     checkout = directory / 'checkout'
@@ -155,7 +155,7 @@ def test_launch_archive_teardown_and_reconciled_ledger(tmp_path, monkeypatch, ex
         assert settings['SMOKE_TOKEN_LIMIT'] == '16384' and pod['name'] == 'rewardhack-' + config['run_id']
         arm = result / config['output_arm']
         arm.mkdir(parents=True)
-        (result / 'EXIT_CODE').write_text(exit_code)
+        (result / 'EXIT_CODE').write_text('0' if exit_code == 'removal failed' else exit_code)
         atomic_json(arm / CONFIG_FILE, config)
         atomic_json(arm / 'summary.json', dict(model='test', judge_usage={'usd':0.1}))
         for stage, stream in [('before', 'before-evaluation'), ('training', 'training-rollouts'), ('after', 'after-evaluation')]:
@@ -164,6 +164,15 @@ def test_launch_archive_teardown_and_reconciled_ledger(tmp_path, monkeypatch, ex
             atomic_json(arm / (stage + '-generations.jsonl'), identity)
         atomic_json(result.with_suffix('.pod.json'), {'pod_id':pod_id})
     monkeypatch.setattr(runpod_ops, 'launch', invoke)
+    if exit_code == 'removal failed':
+        def refuse_removal(pod):
+            raise RuntimeError('removal unconfirmed')
+        client.terminate = refuse_removal
+        with pytest.raises(RuntimeError, match='removal unconfirmed'):
+            experiments._execute(root, directory, checkout, archived.append, client)
+        assert not (directory / 'billing.json').exists()
+        assert budget.read_ledger(ledger) == []
+        return
     if exit_code == '0':
         experiments._execute(root, directory, checkout, archived.append, client)
     else:

@@ -291,9 +291,11 @@ def _execute(root, directory, checkout, submit, client):
         effective = read_effective(destination / config['output_arm'] / CONFIG_FILE, config)
         atomic_json(directory / 'effective.json', effective)
     finally:
+        removal_confirmed = False
         try:
             if receipt.is_file() and not pending_pod_archive(destination):
                 client.terminate(read(receipt)['pod_id'])
+                removal_confirmed = True
         finally:
             try:
                 if destination.is_dir():
@@ -302,8 +304,10 @@ def _execute(root, directory, checkout, submit, client):
                     if index['exit_code'] == 0:
                         validate_generation_links(directory, index)
             finally:
-                if receipt.is_file():
+                if removal_confirmed:
                     reconcile_billing(root, directory, client)
+    if not removal_confirmed:
+        raise RuntimeError(f'{directory.name}: pod removal pending; retain spend hold for reconciliation')
 
 
 def _run(root, directory, client):
