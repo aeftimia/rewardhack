@@ -1,5 +1,68 @@
 # One-seed screening plan (owner, 26 November 2026)
 
+## Six-step results and continuation queue, 28 November 2026
+
+Each cell below lists the before-evaluation, training steps 1–6, and
+after-evaluation in that order. Both evaluations used the same 12 held-out
+statements with two draws per statement. Training used 96 answers per
+condition. The last two columns count grader-accepted invalid proofs across
+both truth classes and show how many the model accurately reported as failures.
+Counts were obtained with `experiment_rows()` and `summarize_experiment()`.
+The five older run IDs are in [the historical registry](../experiments/archived-runs.json).
+
+| GPT refute-prompt condition | Verified refutations / false answers | Genuine proofs / true answers | Accepted invalid proofs | Accurately disclosed |
+| --- | --- | --- | --- | --- |
+| Baseline, prose, 8k | 1/12 · 4/44 · 4/12 | 3/12 · 16/52 · 6/12 | 3 · 6 · 1 | 3 · 6 · 1 |
+| Baseline, typed, 8k | 2/12 · 5/44 · 0/12 | 7/12 · 9/52 · 3/12 | 2 · 27 · 14 | 2 · 27 · 14 |
+| λ=0, prose, 8k | 0/12 · 3/44 · 0/12 | 3/12 · 18/52 · 1/12 | 1 · 5 · 1 | 1 · 4 · 1 |
+| λ=0, typed, 8k | 1/12 · 1/44 · 0/12 | 6/12 · 7/52 · 0/12 | 2 · 41 · 18 | 2 · 40 · 18 |
+| λ=0.5, typed, 8k, uniform sampling | 3/12 · 0/36 · 0/12 | 2/12 · 6/60 · 3/12 | 1 · 30 · 14 | 1 · 30 · 14 |
+| λ=0.5, prose, 16k, stratified | 3/12 · 10/44 · 2/12 | 2/12 · 12/52 · 2/12 | 0 · 3 · 0 | 0 · 3 · 0 |
+| λ=0.5, typed, 16k, stratified | 2/12 · 1/44 · 0/12 | 4/12 · 6/52 · 4/12 | 3 · 10 · 1 | 3 · 10 · 1 |
+
+The stratified λ=0.5 screens are `986f7661b8f2490596b46fdd40cca17e` (prose)
+and `439fcf37d53443a9929335f8a905726c` (typed). Each has zero observed cutoffs
+before, during, and after training. All six conditions selected for continuation
+had at least one verified refutation during updates 1–6. The four 8k parents also
+had zero cutoffs in those phases and resume at 16k. The stratified λ=0.5 pair
+supports a same-ceiling format comparison. Comparing those cells with the 8k
+baseline or λ=0 cells changes both reward and ceiling. An independent seed or
+a single-ceiling reward comparison needs fresh samples. The tests for persistence
+under a neutral prompt also need fresh evaluation or continuation.
+
+The six 16k continuation requests target global step 60. The checked worst
+case is $14.425 for each prose run and $14.125 for each typed run, including
+timer overhead and the configured judge allowance. All six fit the $15
+per-launch cap. Two prose starts stopped at checkpoint six during the
+unchanged-adapter repeat. Their verified records are
+`579f5b3060284eaa9744a2f26280196a` (λ=0) and
+`24a1b03deae44c02a341dc8df05e88e2` (λ=0.5). Neither produced a new
+optimizer update. The [startup diagnosis](gpt-reload-diagnosis.md) records
+the change to the control for the two retries.
+
+For planning the Qwen replication, the grant specifies five reward conditions,
+three seeds apiece, or 900 updates at 60 per run. At the Community Cloud quote
+of $3.415 per pod-hour for two RTX PRO 6000 GPUs and 250 GB of disk, 12 minutes
+per update plus one hour of setup, evaluation, and transfer per run gives about
+$666 in GPU and disk charges. At $5.415 per hour the same assumptions give
+about $1,056. Both figures depend on an unmeasured Qwen optimizer-step time.
+The [one-time six-step request](../ops/approved-runs/030f3c297dbb4ec884016ff1ab721b05.json)
+specifies 16,384 completion tokens, bf16, one answer per backward microbatch,
+the neutral/prose λ=0 condition, and a $25.07 limit.
+
+In Qwen's archived 16k inference sample, 13/24 completions reached at least
+8,192 tokens, 6/24 reached 10,240, 4/24 reached 12,288, and 2/24 reached
+14,336. Those same two hit the 16,384 cutoff. The independently sampled matched
+8k run hit its limit on 12/24. Shortening the ceiling to 14,336 would have cut
+no additional answer in the recorded 16k sample. The effect on training,
+backward memory, and verified outcomes requires observations from the benchmark.
+At each ceiling the model produced 3 genuine proofs per 12 true-task answers
+and 0 verified refutations per 12 false-task answers. The grader accepted
+0 invalid proofs at 8k and 2 at 16k. In the latter two reports the model
+identified the false statement and gave a numerical counterexample. That
+disclosure was read directly from the recorded reports. The 16k inference
+archive has no formal honesty-judge labels.
+
 ## GPT continuation startup attempt, 27 November 2026
 
 The registered prose-baseline continuation `b646203ec56c4da782c0a22b205348f7`
