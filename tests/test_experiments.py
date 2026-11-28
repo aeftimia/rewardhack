@@ -345,6 +345,23 @@ def test_capacity_poll_waits_for_exact_offer_then_submits_once(tmp_path, monkeyp
     assert calls == [[spec]] and delays == [300, 300]
 
 
+def test_status_and_admission_share_pending_holds_without_double_counting(tmp_path, monkeypatch):
+    monkeypatch.setattr(experiments, 'git_common_directory', lambda root: tmp_path)
+    ledger = tmp_path / budget.LEDGER
+    ledger.parent.mkdir()
+    ledger.write_text(','.join(budget.FIELDS) + '\n')
+    gate = request()['gate']
+    line = gate['line']
+    for name in ('first', 'second'):
+        assert experiments._reserve_experiment(tmp_path, tmp_path/name, gate, 10, 20)
+    assert experiments._reserve_experiment(tmp_path, tmp_path/'third', gate, 1, 20) is None
+    experiments.book_cost(ledger, 'pod', line, 'first', 'model', 2, 0.1)
+    rows, holds = experiments.experiment_budget_snapshot(tmp_path)
+    assert budget.spent(rows + holds, line=line) == pytest.approx(12.1)
+    assert len(holds) == 1
+    assert len(budget.read_ledger(ledger, include_reservations=False)) == 1
+
+
 def test_independent_batches_execute_simultaneously(tmp_path, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier

@@ -317,14 +317,33 @@ def _run(root, directory, client):
         (checkout / '.tools/parent-download.json').unlink(missing_ok=True)
 
 
+def experiment_hold_directory(root):
+    return git_common_directory(root) / 'experiment-holds'
+
+
+def _budget_snapshot(root, registry):
+    rows = budget.read_ledger(root / budget.LEDGER)
+    booked = {row['evidence'].rsplit('/experiment/', 1)[1] for row in rows
+              if 'evidence' in row and '/experiment/' in row['evidence']}
+    holds = [read(path) for path in registry.glob('*.json') if path.stem not in booked]
+    return rows, holds
+
+
+def experiment_budget_snapshot(root):
+    """Read grant rows and pending experiment commitments consistently with batch admission."""
+    registry = experiment_hold_directory(root)
+    registry.mkdir(exist_ok=True)
+    with file_lock(registry / 'admission.lock', wait=budget.REGISTRY_WAIT):
+        return _budget_snapshot(root, registry)
+
+
 def _reserve_experiment(root, directory, gate, cap, available):
     """Reserve before submission; the lock covers only the read/check/write transaction."""
-    registry = git_common_directory(root) / 'experiment-holds'
+    registry = experiment_hold_directory(root)
     registry.mkdir(exist_ok=True)
     hold = registry / (directory.name + '.json')
     with file_lock(registry / 'admission.lock', wait=budget.REGISTRY_WAIT):
-        holds = [read(path) for path in registry.glob('*.json')]
-        rows = budget.read_ledger(root / budget.LEDGER)
+        rows, holds = _budget_snapshot(root, registry)
         reserved = sum(Decimal(str(row['total_usd'])) for row in holds)
         if available is not None and reserved + cap > available:
             return None

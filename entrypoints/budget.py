@@ -6,11 +6,14 @@ import sys
 from pathlib import Path
 
 from rewardhack.budget import LINES, RESERVATION_ENV, TOTAL_CAP, check, claim, grant_spent, read_ledger, spent
+from rewardhack.experiments import experiment_budget_snapshot
+from rewardhack.budget import LEDGER
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--ledger', type=Path, default=Path(__file__).resolve().parent.parent/'spending'/'ledger.csv')
+    root = Path(__file__).resolve().parent.parent
+    ap.add_argument('--ledger', type=Path, default=root/LEDGER)
     sub = ap.add_subparsers(dest='cmd', required=True)
     sub.add_parser('status')
     for name in ('check', 'claim'):
@@ -28,7 +31,13 @@ def main():
             print(f"worst case ${result['worst_usd']:.2f}; stage allowance remaining ${result['remaining_usd']:.2f}")
             problems = result['problems']
         else:
-            rows = read_ledger(args.ledger)
+            if args.ledger.resolve() == root/LEDGER:
+                rows, holds = experiment_budget_snapshot(root)
+                rows += holds
+                if args.cmd == 'status':
+                    print(f'pending experiment holds: {len(holds)} for ${grant_spent(holds):.2f}')
+            else:
+                rows = read_ledger(args.ledger)
             if args.cmd == 'status':
                 print(f'grant charged/reserved ${grant_spent(rows):.2f} of ${TOTAL_CAP:.2f}')
                 for line, cap in LINES.items():
