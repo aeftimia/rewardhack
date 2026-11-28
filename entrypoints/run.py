@@ -81,13 +81,15 @@ def main():
         from rewardhack.run_registry import training_arguments
         config = json.loads(args.run_config.read_text())
         args, flags = training_arguments(ap, sys.argv[1:], config)
+        args.run_id = config['run_id']
         if 'historical_commit' in config:
             historical = Path('.tools/experiment-source').resolve()
             arguments = list(sys.argv[1:])
             position = arguments.index('--run-config')
             del arguments[position:position + 2]
             env = {**os.environ, 'PYTHONPATH': str(historical / 'src')}
-            os.execve(sys.executable, [sys.executable, str(historical / 'entrypoints/run.py'),
+            from rewardhack import generations
+            os.execve(sys.executable, [sys.executable, generations.__file__, str(historical / 'entrypoints/run.py'), args.run_id,
                                       *arguments, *flags, '--resume-from', str(args.resume_from)], env)
     if args.resume_from and args.mode != 'train':
         ap.error(f'--resume-from continues training; {args.mode} would ignore it')

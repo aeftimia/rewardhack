@@ -91,6 +91,14 @@ def launch_commit(folder, given):
     return commit
 
 
+def publish_record(path, remote):
+    """Publish a small immutable S3 record and verify its contents."""
+    run('rclone', 'copyto', str(path), remote, '--s3-storage-class', STORAGE, '--immutable', '--checksum',
+        timeout=REQUEST_TIMEOUT)
+    if run('rclone', 'cat', remote, timeout=REQUEST_TIMEOUT) != path.read_text():
+        raise ValueError(f'published record differs from {path}: {remote}')
+
+
 def upload(path, given_commit):
     folder = Path(path).resolve(strict=True)
     if not folder.is_dir() or not FOLDER_NAME.fullmatch(folder.name):
@@ -119,12 +127,12 @@ def upload(path, given_commit):
              'uploaded_at': datetime.now(timezone.utc).isoformat(), 'sha256': before}
     with tempfile.TemporaryDirectory() as scratch:
         (Path(scratch)/RECORD).write_text(json.dumps(entry, indent=1) + '\n')
-        run('rclone', 'copyto', str(Path(scratch)/RECORD), f'{remote}/{RECORD}', '--s3-storage-class', STORAGE, '--immutable',
-            timeout=REQUEST_TIMEOUT)
+        publish_record(Path(scratch)/RECORD, f'{remote}/{RECORD}')
     temporary = folder/(RECORD + '.writing')
     temporary.write_text(json.dumps([*earlier, entry], indent=1) + '\n')
     os.replace(temporary, folder/RECORD)
     print(f'verified: all {len(before)} files are in {entry["uri"]} (rclone check); recorded in {folder/RECORD} (commit it)')
+    return entry
 
 
 def archive_entry(source):
@@ -146,19 +154,25 @@ def archive_entry(source):
     return archives[-1]
 
 
+def checkpoint_members(entry, arm, checkpoint):
+    """The verified archive members needed to continue a trainer checkpoint."""
+    files = entry['sha256']
+    # A finished save holds every file the trainer resumes from, trainer_state.json last (HF writes it after the rest).
+    needed = [f'{checkpoint}/{name}' for name in (*CHECKPOINT_FILES, 'trainer_state.json')] + \
+             [f'{arm}/{name}' for name in RESUME_RUN_FILES]
+    missing = [name for name in needed if name not in files]
+    if missing:
+        raise ValueError(f'archive {entry["run_id"]} cannot resume {checkpoint}: it lacks {missing}')
+    return sorted({*needed, *(name for name in files if name.startswith(checkpoint + '/'))})
+
+
 def resume(source, checkpoint):
     match = CHECKPOINT.fullmatch(checkpoint)
     if not match:
         raise SystemExit(f'{checkpoint}: a trainer checkpoint of a run, <run>/trainer/checkpoint-<step>')
     entry = archive_entry(source)
     files = entry['sha256']
-    # A finished save holds every file the trainer resumes from, trainer_state.json last (HF writes it after the rest).
-    needed = [f'{checkpoint}/{name}' for name in (*CHECKPOINT_FILES, 'trainer_state.json')] + \
-             [f'{match.group(1)}/{name}' for name in RESUME_RUN_FILES]
-    missing = [name for name in needed if name not in files]
-    if missing:
-        raise SystemExit(f'archive {entry["run_id"]} cannot resume {checkpoint}: it lacks {missing}')
-    names = sorted({*needed, *(name for name in files if name.startswith(checkpoint + '/'))})
+    names = checkpoint_members(entry, match.group(1), checkpoint)
     # A presigned URL dies with the SSO role credentials that signed it, whatever its own expiry (review rounds 41-42).
     expiration = json.loads(run('aws', 'configure', 'export-credentials', '--format', 'process', timeout=REQUEST_TIMEOUT))['Expiration']
     left = (datetime.fromisoformat(expiration.replace('Z', '+00:00')) - datetime.now(timezone.utc)).total_seconds()

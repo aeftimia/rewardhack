@@ -1,6 +1,5 @@
 """Execute versioned experiment requests on RunPod, with one checkout and receipt per run."""
 import csv
-import json
 import os
 import re
 import subprocess
@@ -13,19 +12,50 @@ from decimal import Decimal
 from pathlib import Path
 
 from . import archive, budget, gates
+from .experiment_backups import backup_queue
+from .experiment_results import registered_checkpoint
 from .export_transcripts import atomic_text
-from .run_registry import CONFIG_FILE, new_run
+from .experiment_artifacts import collect_outputs, register_config, validate_generation_links
+from .run_registry import CONFIG_FILE, checked_source, new_run, read, run_id_directory
 from .state_files import atomic_json, file_lock
 
 
-def read(path):
-    return json.loads(Path(path).read_text())
-
-
-def run_id_directory(state, run_id):
-    if not re.fullmatch('[a-f0-9]{32}', run_id):
-        raise ValueError(f'invalid experiment ID {run_id!r}')
-    return Path(state) / run_id
+def _resolve_parent(root, state, spec):
+    """Bind the selected step to its parent settings, trainer source and verified archive."""
+    lineage = {'historical_snapshot_files': None}
+    if spec is None:
+        return None, lineage
+    parent_id, step = spec['run_id'], spec['checkpoint_step']
+    if type(step) is not int or step < 1:
+        raise ValueError('checkpoint step must be a positive integer')
+    if '/' in parent_id:
+        if set(spec) != {'run_id', 'checkpoint_step', 'arm', 'archive'}:
+            raise ValueError('a historical continuation needs run_id, checkpoint_step, arm and archive')
+        parent = read(root / 'ops/historical_run_settings.json')[parent_id]
+        if 'settings_sha256' not in parent:
+            raise ValueError(f'{parent_id}: original run-settings digest is missing')
+        arm = spec['arm']
+        if not re.fullmatch(r'train-[a-zA-Z0-9_-]+', arm) or not parent_id.endswith('/' + arm):
+            raise ValueError('archive arm differs from the historical predecessor')
+        receipt = archive.archive_entry(spec['archive'])
+        if parent['launch_commit'] != receipt['commit'] or parent['settings_sha256'] != receipt['sha256'][arm + '/run-settings.json']:
+            raise ValueError('archive differs from the historical predecessor')
+        lineage['historical_commit'] = receipt['commit']
+    else:
+        if set(spec) != {'run_id', 'checkpoint_step'}:
+            raise ValueError('a registered continuation takes only run_id and checkpoint_step')
+        parent, arm, receipt = registered_checkpoint(run_id_directory(state, parent_id), step)
+        if 'historical_commit' in parent:
+            lineage['historical_commit'] = parent['historical_commit']
+    archive.checkpoint_members(receipt, arm, f'{arm}/trainer/checkpoint-{step}')
+    lineage.update(checkpoint_arm=arm, parent_archive=receipt['run_id'])
+    if 'historical_commit' in lineage:
+        prefix = f'{arm}/adapter-step{step}/'
+        names = sorted(path.removeprefix(prefix) for path in receipt['sha256'] if path.startswith(prefix))
+        if not names:
+            raise ValueError('archived historical checkpoint has no matching adapter snapshot')
+        lineage['historical_snapshot_files'] = names
+    return parent, lineage
 
 
 def prepare(root, request, *, state=None):
@@ -41,6 +71,12 @@ def prepare(root, request, *, state=None):
     if unknown:
         raise ValueError(f'unknown experiment parameters: {sorted(unknown)}')
     slot = request['driver']['SMOKE_PART_ONE']
+    driver = request['driver']
+    for key, value in {'SMOKE_PROBE_LARGE':'0', 'SMOKE_SECOND_RUN':'0', 'SMOKE_SKIP_PROBE':'1'}.items():
+        if key in driver and driver[key] != value:
+            raise ValueError(f'{key} conflicts with the single configured experiment')
+    if 'SMOKE_MEMORY_LIMIT' in driver:
+        raise ValueError('a separate memory measurement requires its own experiment config')
     if not re.fullmatch('[1-9][0-9]*', slot):
         raise ValueError('one training arm is required per experiment ID')
     selection = subprocess.run(['bash', '-c', 'source ops/pod_pins.env; echo "${PART_ONE_RUNS[$1]}"',
@@ -51,13 +87,7 @@ def prepare(root, request, *, state=None):
     approved = budget.nonnegative_finite(request['gate']['launch_cap'], 'requested launch cap')
     if approved > defaults['max_run_usd']:
         raise ValueError(f"run cap exceeds the approved ${defaults['max_run_usd']}")
-    parent = None
-    if request['parent'] is not None:
-        parent_id = request['parent']['run_id']
-        if '/' in parent_id:
-            parent = read(root / 'ops/historical_run_settings.json')[parent_id]
-        else:
-            parent = read(run_id_directory(state, parent_id) / 'effective.json')
+    parent, lineage = _resolve_parent(root, state, request['parent'])
     row = new_run(defaults, request['parameters'], parent=parent,
                   checkpoint_step=request['parent']['checkpoint_step'] if parent else None,
                   inherit=request.get('inherit'))
@@ -68,30 +98,10 @@ def prepare(root, request, *, state=None):
             raise ValueError(f'{key} differs between requested condition and RunPod job {slot}')
         row['settings'][key] = value
     row['output_arm'] = 'train-' + name
-    row['historical_snapshot_files'] = None
+    row.update(lineage)
+    if 'historical_commit' in row and row['settings']['rollout_backend'] != 'vllm':
+        raise ValueError('exact historical trainer capture requires the vLLM sampler')
     directory = run_id_directory(state, row['run_id'])
-    if parent:
-        receipt = archive.archive_entry(request['parent']['archive'])
-        arm = request['parent']['arm']
-        if not re.fullmatch(r'train-[a-zA-Z0-9_-]+', arm):
-            raise ValueError('invalid parent archive arm')
-        if parent_id.endswith('/' + arm):
-            # Historical receipts bind the source commit and run settings.
-            if parent['launch_commit'] != receipt['commit'] or parent['settings_sha256'] != receipt['sha256'][arm + '/run-settings.json']:
-                raise ValueError('archive differs from the historical predecessor')
-            row['historical_commit'] = receipt['commit']
-        elif '/' in parent_id or gates.file_sha256(run_id_directory(state, parent_id) / 'effective.json') != receipt['sha256'][arm + '/' + CONFIG_FILE]:
-            raise ValueError('archive does not identify the requested parent')
-        elif 'historical_commit' in parent:
-            row['historical_commit'] = parent['historical_commit']
-        row['checkpoint_arm'] = arm
-        row['parent_archive'] = receipt['run_id']
-        if 'historical_commit' in row:
-            prefix = f"{arm}/adapter-step{row['parent']['checkpoint_step']}/"
-            names = sorted(path.removeprefix(prefix) for path in receipt['sha256'] if path.startswith(prefix))
-            if not names:
-                raise ValueError('archived historical checkpoint has no matching adapter snapshot')
-            row['historical_snapshot_files'] = names
     directory.mkdir(parents=True, exist_ok=False)
     atomic_json(directory / CONFIG_FILE, row)
     atomic_json(directory / 'request.json', request)
@@ -139,7 +149,7 @@ def book_cost(ledger, pod_id, line, run_id, model, gpu_usd, judge_usd):
             writer.writerows([*rows, row])
 
 
-def enqueue_snapshots(destination, directory, uploads, scheduled, commit, historical_files=None):
+def enqueue_snapshots(destination, directory, submit, scheduled, historical_files=None):
     """Rsync renames individual files atomically. Only enqueue complete immutable saves."""
     for snapshot in destination.glob('train-*/adapter-step*'):
         if snapshot in scheduled:
@@ -160,7 +170,8 @@ def enqueue_snapshots(destination, directory, uploads, scheduled, commit, histor
         copy.mkdir(parents=True)
         for name in files:
             os.link(snapshot / name, copy / name)
-        scheduled[snapshot] = uploads.submit(archive.upload, copy, commit)
+        submit(snapshot.name)
+        scheduled.add(snapshot)
 
 
 def reconcile_billing(root, directory, client):
@@ -183,15 +194,10 @@ def reconcile_billing(root, directory, client):
               usage['usd'] if usage is not None else 0)
 
 
-def _execute(root, directory, uploads):
+def _execute(root, directory, checkout, submit):
     from .runpod_ops import RunPod
     request = read(directory / 'request.json')
     config = read(directory / CONFIG_FILE)
-    source = read(directory / 'source.json')
-    if (source['config_sha256'] != gates.file_sha256(directory / CONFIG_FILE)
-            or source['request_sha256'] != gates.file_sha256(directory / 'request.json')):
-        raise ValueError('prepared run configuration was changed')
-    checkout = _checkout(root, directory)
     tools = checkout / '.tools'
     tools.mkdir(exist_ok=True)
     atomic_json(tools / 'experiment.json', config)
@@ -224,9 +230,7 @@ def _execute(root, directory, uploads):
     env = {**os.environ, **settings, 'PYTHONPATH':str(checkout / 'src')}
     client = RunPod()
     # Separate process confines the driver's environment to this checkout.
-    snapshots = {}
-    commit = source['commit']
-    transfers = []
+    snapshots = set()
     receipt = destination.with_suffix('.pod.json')
     try:
         with (directory / 'launch.log').open('x') as log, ThreadPoolExecutor(1) as driver:
@@ -235,7 +239,7 @@ def _execute(root, directory, uploads):
                                     stdout=log, stderr=subprocess.STDOUT, check=True)
             while True:
                 done, _ = wait([running], timeout=30)
-                enqueue_snapshots(destination, directory, uploads, snapshots, commit, config['historical_snapshot_files'])
+                enqueue_snapshots(destination, directory, submit, snapshots, config['historical_snapshot_files'])
                 if done:
                     break
             running.result()
@@ -243,21 +247,35 @@ def _execute(root, directory, uploads):
             raise ValueError('RunPod driver completed without its pod receipt')
         if (destination / 'EXIT_CODE').read_text().strip() != '0':
             raise RuntimeError(f'{destination}: experiment failed')
-        effective, = destination.glob('train-*/' + CONFIG_FILE)
-        atomic_json(directory / 'effective.json', read(effective))
+        effective = read(destination / config['output_arm'] / CONFIG_FILE)
+        if dict(effective, settings=config['settings']) != config:
+            raise ValueError('effective config differs from the prepared experiment')
+        atomic_json(directory / 'effective.json', effective)
     finally:
         try:
             if receipt.is_file():
                 client.terminate(read(receipt)['pod_id'])
         finally:
-            if destination.is_dir():
-                transfers.append(uploads.submit(archive.upload, destination, commit))
-            if receipt.is_file():
-                reconcile_billing(root, directory, client)
-    return [*transfers, *snapshots.values()]
+            try:
+                if destination.is_dir():
+                    index = collect_outputs(directory)
+                    submit('outputs')
+                    if index['exit_code'] == 0:
+                        validate_generation_links(directory, index)
+            finally:
+                if receipt.is_file():
+                    reconcile_billing(root, directory, client)
 
 
-def run_batch(root, directories, *, parallelism):
+def _run(root, directory):
+    source = checked_source(directory)
+    register_config(directory, source)
+    checkout = _checkout(root, directory)
+    with backup_queue(directory) as submit:
+        _execute(root, directory, checkout, submit)
+
+
+def _run_prepared_batch(root, directories, parallelism):
     """Run prepared configs concurrently within the live balance and grant line limits."""
     from .runpod_ops import RunPod
     root = Path(root).resolve()
@@ -266,9 +284,8 @@ def run_batch(root, directories, *, parallelism):
         raise ValueError('batch needs distinct prepared runs and positive parallelism')
     client = RunPod()
     charges = {}
-    receipts = {}
     common = Path(gates.git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir').strip())
-    with file_lock(common / 'experiment-batch.lock'), ThreadPoolExecutor(parallelism) as uploads, ThreadPoolExecutor(parallelism) as workers:
+    with file_lock(common / 'experiment-batch.lock'), ThreadPoolExecutor(parallelism) as workers:
         while pending or charges:
             available = Decimal(str(client.request('GET', 'billing/balance')['balanceAmount']))
             for directory in list(pending):
@@ -289,20 +306,25 @@ def run_batch(root, directories, *, parallelism):
                 if cap + reserved > available or problems:
                     continue
                 pending.remove(directory)
-                charges[workers.submit(_execute, root, directory, uploads)] = directory, cap, gate['line']
+                charges[workers.submit(_run, root, directory)] = directory, cap, gate['line']
             if pending and not charges:
                 raise ValueError(f'no queued job fits the current balance and grant limits: {available}, queued={pending}')
             if charges:
                 finished, _ = wait(charges, return_when=FIRST_COMPLETED)
                 for task in finished:
-                    directory, _, _ = charges.pop(task)
-                    receipts[directory] = task.result()
-        for transfers in receipts.values():
-            for transfer in transfers:
-                transfer.result()
-    return list(receipts)
+                    charges.pop(task)
+                    task.result()
 
 
-def run_experiment(root, directory):
-    """Execute one prepared experiment with the same lifecycle as a batch."""
-    return run_batch(root, [directory], parallelism=1)[0]
+def run_batch(configs, *, parallelism, root=None, state=None):
+    """Register the configs, execute them, and return run IDs in request order."""
+    root = Path.cwd() if root is None else Path(root)
+    directories = [prepare(root, config, state=state) for config in configs]
+    _run_prepared_batch(root, directories, parallelism)
+    return [directory.name for directory in directories]
+
+
+def experiment(config, *, root=None, state=None):
+    """Register and execute a config. Its run ID identifies inputs, outputs and checkpoints."""
+    run_id, = run_batch([config], parallelism=1, root=root, state=state)
+    return run_id

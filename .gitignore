@@ -3,6 +3,8 @@
 /experiments/*/checkout/
 /experiments/*/snapshots/
 /experiments/*/launch.log
+/experiments/*/backups/worker.log
+/experiments/*/backups/worker.lock
 __pycache__/
 *.pyc
 .DS_Store

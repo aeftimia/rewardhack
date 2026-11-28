@@ -4,11 +4,32 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 from uuid import uuid4
+from .gates import file_sha256
 from .state_files import atomic_json
 
 CONFIG_FILE = 'run-config.json'
+
+
+def read(path):
+    return json.loads(Path(path).read_text())
+
+
+def checked_source(directory):
+    source = read(directory / 'source.json')
+    if (source['config_sha256'] != file_sha256(directory / CONFIG_FILE)
+            or source['request_sha256'] != file_sha256(directory / 'request.json')):
+        raise ValueError('prepared run configuration was changed')
+    return source
+
+
+def run_id_directory(state, run_id):
+    if not re.fullmatch('[a-f0-9]{32}', run_id):
+        raise ValueError(f'invalid experiment ID {run_id!r}')
+    return Path(state) / run_id
+
 # These changes preserve the shapes and ordering of the saved optimizer and sampler.
 CONTINUATION_OVERRIDES = frozenset({'max_completion_length', 'prompt_variant', 'report_mode', 'arm', 'penalty'})
 

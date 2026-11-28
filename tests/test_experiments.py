@@ -1,7 +1,7 @@
 import csv
 import runpy
 import sys
-from concurrent.futures import ThreadPoolExecutor
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -36,21 +36,54 @@ def test_per_key_inheritance_and_identity():
         new_run(defaults, {}, inherit=True)
 
 
-def test_prepare_binds_continuation_to_the_archived_parent(tmp_path, monkeypatch):
+@pytest.mark.parametrize('local', [True, False])
+def test_prepare_binds_continuation_to_the_archived_parent(tmp_path, monkeypatch, local):
+    import json
+    from rewardhack import archive
     parent = experiments.prepare(ROOT, request(), state=tmp_path)
     effective = experiments.read(parent / CONFIG_FILE)
     atomic_json(parent / 'effective.json', effective)
     arm = effective['output_arm']
     digest = experiments.gates.file_sha256(parent / 'effective.json')
-    receipt = {'run_id':'immutable-archive', 'sha256':{f'{arm}/{CONFIG_FILE}':digest}}
+    archive_id = '20261127T230000Z-parent-01234567'
+    checkpoint = {f'{arm}/trainer/checkpoint-6/{f}':'a'*64 for f in (*archive.CHECKPOINT_FILES, 'trainer_state.json')}
+    receipt = {'run_id':archive_id, 'commit':'b'*40, 'sha256':{f'{arm}/{CONFIG_FILE}':digest, **checkpoint,
+               **{f'{arm}/{f}':'c'*64 for f in archive.RESUME_RUN_FILES}}}
+    index = dict(run_id=parent.name, archive_id=archive_id, uri=f's3://{archive.BUCKET}/{archive_id}/',
+                 backup_status='verified', source_commit=receipt['commit'], effective_config=f'{arm}/{CONFIG_FILE}',
+                 effective_config_sha256=digest, checkpoints={'trainer':{'6':checkpoint}})
+    if local:
+        atomic_json(parent / 'outputs.json', index)
+    else:
+        effective_bytes = (parent / 'effective.json').read_bytes()
+        (parent / 'effective.json').unlink()
+        def fetch(_, command, remote, *args, timeout):
+            if command == 'cat':
+                assert remote == f's3:{archive.BUCKET}/experiments/{parent.name}/outputs.json'
+                return json.dumps(index)
+            assert command == 'copyto' and remote.endswith(f'/{archive_id}/{arm}/{CONFIG_FILE}')
+            Path(args[0]).write_bytes(effective_bytes)
+        monkeypatch.setattr(archive, 'run', fetch)
     monkeypatch.setattr(experiments.archive, 'archive_entry', lambda source: receipt)
     spec = request()
-    spec.update(parameters={'steps':60}, parent={'run_id':parent.name, 'arm':arm, 'checkpoint_step':6, 'archive':'alias'})
+    spec.update(parameters={'steps':60}, parent={'run_id':parent.name, 'checkpoint_step':6})
     directory = experiments.prepare(ROOT, spec, state=tmp_path)
     config = experiments.read(directory / CONFIG_FILE)
     assert config['parent'] == {'run_id':parent.name, 'checkpoint_step':6}
-    assert config['parent_archive'] == 'immutable-archive'
+    assert config['parent_archive'] == archive_id and config['checkpoint_arm'] == arm
     assert directory != parent
+    spec['parent']['checkpoint_step'] = 7
+    with pytest.raises(ValueError, match='no archived trainer checkpoint'):
+        experiments.prepare(ROOT, spec, state=tmp_path)
+
+
+def test_summary_only_parent_refused_before_any_archive_request(tmp_path):
+    root = tmp_path / 'project'
+    (root / 'ops').mkdir(parents=True)
+    key = 'historical/train-baseline'
+    atomic_json(root / 'ops/historical_run_settings.json', {key:{'settings':{}, 'launch_commit':None}})
+    with pytest.raises(ValueError, match='original run-settings digest is missing'):
+        experiments._resolve_parent(root, tmp_path, dict(run_id=key, arm='train-baseline', checkpoint_step=6, archive='unused'))
 
 
 @pytest.mark.parametrize('exit_code', ['0', '1'])
@@ -79,18 +112,19 @@ def test_launch_archive_teardown_and_reconciled_ledger(tmp_path, monkeypatch, ex
         (result / 'EXIT_CODE').write_text(exit_code)
         atomic_json(arm / CONFIG_FILE, config)
         atomic_json(arm / 'summary.json', dict(model='test', judge_usage={'usd':0.1}))
+        for stage, stream in [('before', 'before-evaluation'), ('training', 'training-rollouts'), ('after', 'after-evaluation')]:
+            identity = dict(run_id=directory.name, phase=stage, generation_id=f'{directory.name}/{stage}/1/task/0')
+            atomic_json(arm / (stream + '.jsonl'), dict(identity, raw=stage))
+            atomic_json(arm / (stage + '-generations.jsonl'), identity)
         atomic_json(result.with_suffix('.pod.json'), {'pod_id':pod_id})
     monkeypatch.setattr(experiments.subprocess, 'run', invoke)
-    monkeypatch.setattr(experiments.archive, 'upload', lambda path, commit: archived.append(path))
-    with ThreadPoolExecutor(1) as uploads:
-        if exit_code == '0':
-            for future in experiments._execute(root, directory, uploads):
-                future.result()
-        else:
-            with pytest.raises(RuntimeError, match='experiment failed'):
-                experiments._execute(root, directory, uploads)
+    if exit_code == '0':
+        experiments._execute(root, directory, checkout, archived.append)
+    else:
+        with pytest.raises(RuntimeError, match='experiment failed'):
+            experiments._execute(root, directory, checkout, archived.append)
     experiments.reconcile_billing(root, directory, client)
-    assert terminated == [pod_id] and archived == [result]
+    assert terminated == [pod_id] and archived == ['outputs']
     with ledger.open() as stream:
         row, = csv.DictReader(stream)
     assert float(row['total_usd']) == pytest.approx(0.4)
@@ -104,17 +138,16 @@ def test_snapshot_waits_for_all_files_and_only_uploads_once(tmp_path, monkeypatc
     snapshot.mkdir(parents=True)
     if historical_files is None:
         atomic_json(snapshot / 'snapshot-files.json', {'model.bin':3})
-    sent, scheduled = [], {}
-    monkeypatch.setattr(experiments.archive, 'upload', lambda p, commit: sent.append((p/'model.bin').read_bytes()))
-    with ThreadPoolExecutor(1) as pool:
-        def scan():
-            experiments.enqueue_snapshots(destination, tmp_path, pool, scheduled, 'commit', historical_files)
-        scan()
-        assert not scheduled
-        (snapshot / 'model.bin').write_bytes(b'abc')
-        scan()
-        scan()
-    assert sent == [b'abc']
+    sent, scheduled = [], set()
+    def scan():
+        experiments.enqueue_snapshots(destination, tmp_path, sent.append, scheduled, historical_files)
+    scan()
+    assert not scheduled
+    (snapshot / 'model.bin').write_bytes(b'abc')
+    scan()
+    scan()
+    assert sent == ['adapter-step1']
+    assert (tmp_path / 'snapshots' / f'{tmp_path.name}-adapter-step1/model.bin').read_bytes() == b'abc'
 
 
 def test_real_training_entrypoint_consumes_prepared_settings(tmp_path, monkeypatch):
@@ -135,6 +168,74 @@ def test_real_training_entrypoint_consumes_prepared_settings(tmp_path, monkeypat
     assert effective['run_id'] == directory.name and effective['settings']['seed'] == 42
 
 
+def test_experiment_registers_config_rows_and_checkpoints_under_one_id(tmp_path, monkeypatch):
+    from test_archive import tools
+    from rewardhack import archive
+    from rewardhack.experiment_results import experiment_rows
+
+    env = tools(tmp_path)
+    for key in ('PATH', 'FAKE_S3'):
+        monkeypatch.setenv(key, env[key])
+    state = tmp_path / 'registry'
+    bucket = tmp_path / 's3' / archive.BUCKET
+    provider = SimpleNamespace(request=lambda *args: {'balanceAmount':15}, terminate=lambda pod: None)
+    monkeypatch.setitem(sys.modules, 'rewardhack.runpod_ops', SimpleNamespace(RunPod=lambda:provider))
+    git = experiments.gates.git
+    monkeypatch.setattr(experiments.gates, 'git', lambda root, *args:
+                        str(tmp_path) if '--git-common-dir' in args else git(root, *args))
+    monkeypatch.setattr(budget, 'read_ledger', lambda *args: [])
+    monkeypatch.setattr(experiments, 'reconcile_billing', lambda *args: None)
+    def checkout(root, directory):
+        target = directory / 'checkout'
+        target.mkdir()
+        (target / 'src').symlink_to(root / 'src', target_is_directory=True)
+        return target
+    monkeypatch.setattr(experiments, '_checkout', checkout)
+    real_run = experiments.subprocess.run
+    def driver(command, **kwargs):
+        if 'ready' in command:
+            return
+        if 'entrypoints/runpod_ops.py' not in command:
+            return real_run(command, **kwargs)
+        cwd = kwargs['cwd']
+        config = experiments.read(cwd / '.tools/experiment.json')
+        run_id = config['run_id']
+        assert experiments.read(bucket / 'experiments' / run_id / 'config.json')['config'] == config
+        result = cwd / 'results' / run_id
+        arm = result / config['output_arm']
+        arm.mkdir(parents=True)
+        atomic_json(arm / CONFIG_FILE, config)
+        for phase, stream in [('before','before-evaluation'), ('training','training-rollouts'), ('after','after-evaluation')]:
+            identity = dict(step=1, run_id=run_id, phase=phase, generation_id=f'{run_id}/{phase}/1/task/0')
+            atomic_json(arm / (stream + '.jsonl'), dict(identity, raw=phase))
+            atomic_json(arm / (phase + '-generations.jsonl'), dict(identity,
+                        messages=[dict(role='user', content='question')], prompt_token_ids=[1], completion_token_ids=[2]))
+        snapshot = arm / 'adapter-step1'
+        snapshot.mkdir()
+        (snapshot / 'weights').write_bytes(b'weights')
+        atomic_json(snapshot / 'snapshot-files.json', {'weights':7})
+        trainer = arm / 'trainer/checkpoint-1'
+        trainer.mkdir(parents=True)
+        atomic_json(trainer / 'trainer_state.json', {'global_step':1})
+        atomic_json(result.with_suffix('.pod.json'), {'pod_id':'fixture'})
+        (result / 'EXIT_CODE').write_text('0')
+    monkeypatch.setattr(experiments.subprocess, 'run', driver)
+    run_id = experiments.experiment(request(), root=ROOT, state=state)
+    example, = experiment_rows(run_id, 'training', stream='generations', state=state)
+    assert example['completion_token_ids'] == [2]
+    remote = bucket / 'experiments' / run_id
+    limit = time.monotonic() + 30
+    jobs = [state / run_id / 'backups' / (name + '.json') for name in ('outputs', 'adapter-step1')]
+    while time.monotonic() < limit and any(experiments.read(job)['status'] != 'verified' for job in jobs):
+        time.sleep(.05)
+    index = experiments.read(remote / 'outputs.json')
+    assert index['run_id'] == run_id and index['backup_status'] == 'verified'
+    assert index['effective_config_sha256'] == experiments.gates.file_sha256(state / run_id / 'effective.json')
+    assert '1' in index['checkpoints']['trainer']
+    assert experiments.read(remote / 'checkpoints/adapter-step1.json')['run_id'] == run_id
+    assert (bucket / index['archive_id'] / index['effective_config']).is_file()
+
+
 def test_batch_skips_unaffordable_head_and_charges_once(tmp_path, monkeypatch):
     client = SimpleNamespace(request=lambda *args: {'balanceAmount':5})
     monkeypatch.setitem(sys.modules, 'rewardhack.runpod_ops', SimpleNamespace(RunPod=lambda:client))
@@ -148,10 +249,10 @@ def test_batch_skips_unaffordable_head_and_charges_once(tmp_path, monkeypatch):
     monkeypatch.setattr(experiments.gates, 'git', lambda *args:str(tmp_path))
     monkeypatch.setattr(budget, 'read_ledger', lambda *args:[])
     ran = []
-    def execute(root, directory, uploads):
+    def execute(root, directory):
         ran.append(directory)
         return []
-    monkeypatch.setattr(experiments, '_execute', execute)
+    monkeypatch.setattr(experiments, '_run', execute)
     with pytest.raises(ValueError, match='no queued job fits'):
-        experiments.run_batch(ROOT, [a, b], parallelism=2)
+        experiments._run_prepared_batch(ROOT, [a, b], parallelism=2)
     assert ran == [b]
