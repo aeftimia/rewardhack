@@ -169,12 +169,29 @@ def test_launch_archive_teardown_and_reconciled_ledger(tmp_path, monkeypatch, ex
     else:
         with pytest.raises(RuntimeError, match='experiment failed'):
             experiments._execute(root, directory, checkout, archived.append, client)
+    settled = client.read('billing/pods', podId=pod_id)
+    replies = iter([{'records': []}, settled])
+    client.read = lambda *args, **kwargs: next(replies)
+    waits = []
+    monkeypatch.setattr(experiments.time, 'sleep', waits.append)
     experiments.reconcile_billing(root, directory, client)
+    assert waits == [experiments.BILLING_POLL_SECONDS]
     assert terminated == [pod_id] and archived == ['outputs']
     with ledger.open() as stream:
         row, = csv.DictReader(stream)
     assert float(row['total_usd']) == pytest.approx(0.4)
     assert row['evidence'].endswith(config['run_id'])
+
+
+@pytest.mark.parametrize('records,error', [([], TimeoutError), ([{'podId':'other'}], ValueError)])
+def test_missing_and_wrong_pod_bills(tmp_path, monkeypatch, records, error):
+    monkeypatch.setattr(experiments, 'BILLING_MAX_POLLS', 2)
+    waits = []
+    monkeypatch.setattr(experiments.time, 'sleep', waits.append)
+    client = SimpleNamespace(read=lambda *args, **kwargs: {'records':records})
+    with pytest.raises(error):
+        experiments._poll_bill(tmp_path, client, 'expected')
+    assert waits == ([] if records else [experiments.BILLING_POLL_SECONDS])
 
 
 @pytest.mark.parametrize('historical_files', [None, ['model.bin']])

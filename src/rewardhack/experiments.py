@@ -198,16 +198,31 @@ def enqueue_snapshots(destination, directory, submit, scheduled, historical_file
         scheduled.add(snapshot)
 
 
+BILLING_POLL_SECONDS = 60
+BILLING_MAX_POLLS = 121  # Initial query plus up to two hours of one-minute waits.
+
+
+def _poll_bill(directory, client, pod_id):
+    for attempt in range(BILLING_MAX_POLLS):
+        receipt = client.read('billing/pods', podId=pod_id)
+        atomic_json(directory / 'billing.json', receipt, exclusive=False)
+        records = receipt['records']
+        if not isinstance(records, list) or any(row['podId'] != pod_id for row in records):
+            raise ValueError(f'{pod_id}: invalid or misattributed billing records')
+        if records:
+            return receipt
+        if attempt + 1 < BILLING_MAX_POLLS:
+            time.sleep(BILLING_POLL_SECONDS)
+    raise TimeoutError(f'{pod_id}: billing still empty after {BILLING_MAX_POLLS} polls')
+
+
 def reconcile_billing(root, directory, client):
     """Refresh the same ledger row when RunPod publishes settled charges."""
     request = read(directory / 'request.json')
     config = read(directory / CONFIG_FILE)
     result = result_directory(directory)
     pod_id = read(pod_receipt(result))['pod_id']
-    receipt = client.read('billing/pods', podId=pod_id)
-    atomic_json(directory / 'billing.json', receipt, exclusive=False)
-    if not receipt['records'] or any(r['podId'] != pod_id for r in receipt['records']):
-        raise ValueError(f'{pod_id}: awaiting attributable billing records')
+    receipt = _poll_bill(directory, client, pod_id)
     summary = result / config['output_arm'] / 'summary.json'
     data = read(summary) if summary.is_file() else {}
     usage = data.get('judge_usage')
