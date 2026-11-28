@@ -100,6 +100,14 @@ def dirty_paths(root):
     return [line for line in git(root, 'status', '--porcelain', '--untracked-files=all', '--', *SHIPPED).splitlines() if line.strip()]
 
 
+def uncommitted_problems(root, explanation=''):
+    dirty = dirty_paths(root)
+    if not dirty:
+        return []
+    paths = '\n    '.join(dirty[:12])
+    return [f'uncommitted changes in what the pod would run{explanation}:\n    {paths}']
+
+
 def pod_pin(root, name):
     """A whole-number setting of ops/pod_pins.env, the pod scripts' one statement of it. Raises ValueError when it is not there."""
     found = re.findall(rf'^{name}=(\d+)$', (Path(root)/PINS).read_text(), re.M)
@@ -170,9 +178,7 @@ def ready(root, remote, deadline, basis, line, hourly, other_usd, launch_cap, se
     if judge_cap is not None and judge_cap > other_usd:
         problems.append(f'these settings let the API judge spend ${judge_cap:.2f}; --other-usd must cover it and is ${other_usd:.2f}')
     problems += driver_check(root, remote, deadline, settings)
-    dirty = dirty_paths(root)
-    if dirty:
-        problems.append('uncommitted changes in what the pod would run, so it is not the tested commit:\n    ' + '\n    '.join(dirty[:12]))
+    problems += uncommitted_problems(root, ', so it is not the tested commit')
     try:
         needed = basis_minutes(basis)
         if deadline < needed:
@@ -241,9 +247,7 @@ def launch_problems(root, remote=None, deadline=None, settings=None):
                         f'    in force: {show(settings)}')
     if record['head'] != git(root, 'rev-parse', 'HEAD').strip():
         problems.append(f"the launch record is for commit {record['head'][:7]}, and HEAD has moved since the tests ran")
-    dirty = dirty_paths(root)
-    if dirty:
-        problems.append('uncommitted changes in what the pod would run:\n    ' + '\n    '.join(dirty[:12]))
+    problems += uncommitted_problems(root)
     if record['ledger_sha256'] != file_sha256(root/LEDGER):
         problems.append('the ledger has changed since the budget check')
     if remote is not None and record['remote'] != remote:

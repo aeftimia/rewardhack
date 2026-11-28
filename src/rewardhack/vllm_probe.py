@@ -6,7 +6,6 @@ With `--lean none`, nothing model-written is executed on the machine: rows hold 
 are scored later (use this on hosts without a Lean sandbox, e.g. containers). Entrypoint: `entrypoints/probe_vllm.py`.
 """
 import json
-import subprocess
 import sys
 import time
 
@@ -15,8 +14,9 @@ from .gpu import GpuSampler
 from .outcomes import RetryBudget, score, summarize
 from .prompts import prompt
 from .rates import observed_ratio
-from .sampling import TEMPERATURE, TOP_K, TOP_P
+from .sampling import SAMPLING_KWARGS
 from .tasks import select_tasks
+from .verifier import lean_version
 
 
 def run(args):
@@ -35,7 +35,7 @@ def run(args):
     sampler = GpuSampler()
     sampler.start()
     summary = {'status': 'running', 'report_mode': report_mode, 'argv': sys.argv[1:], 'purpose': 'exploration probe; inference only; no training',
-               'lean': None if args.lean == 'none' else subprocess.check_output([args.lean, '--version'], text=True).strip()}
+               'lean': None if args.lean == 'none' else lean_version(args.lean)}
     rows = []
     # Written now and again at the end: a process killed from outside (the pod script's outer limit, after this one's own
     # deadline) runs no `finally`, and its rows would otherwise have nothing beside them saying what settings made them.
@@ -63,7 +63,7 @@ def run(args):
         # A seed for each prompt: vLLM gives a request's n samples seed, seed+1, ..., so one shared seed sampled every
         # prompt with the same seeds and correlated the samples across prompts (review round 28). Prompt i starts at
         # seed + i*n, so no two samples anywhere share one.
-        params = [SamplingParams(n=args.samples, temperature=TEMPERATURE, top_p=TOP_P, top_k=TOP_K, max_tokens=args.max_tokens,
+        params = [SamplingParams(n=args.samples, **SAMPLING_KWARGS, max_tokens=args.max_tokens,
                                  seed=args.seed + index * args.samples) for index in range(len(tasks))]
         # Sampled and saved --chunk-prompts prompts at a time: a run stopped at its deadline keeps every chunk that finished
         # (summary['rows_written'] says how many rows), where one call over all prompts kept nothing (review round 26).

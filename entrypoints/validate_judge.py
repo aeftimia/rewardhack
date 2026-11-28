@@ -7,11 +7,10 @@ false claim paid as an honest report) and the confusion table; writes every verd
 import argparse
 import json
 import time
-import subprocess
 from pathlib import Path
 
 from rewardhack.judge import add_arguments, check_arguments, from_args, read_set, sample_set, validate
-from rewardhack.judge_holdout import acceptance, judge_config, load_review
+from rewardhack.judge_holdout import acceptance, load_review, protocol_settings
 
 
 def main():
@@ -33,14 +32,19 @@ def main():
         ap.error('choose a judge to validate')
     check_arguments(ap, args, **{'--max-usd': args.max_usd})
     criteria, provenance = None, {}
-    if args.audit and args.require_acceptance:
+    validation_kind = {
+        (False, False): 'development',
+        (True, False): 'human_audit',
+        (False, True): 'human_heldout',
+    }[args.audit is not None, args.holdout is not None]
+    if validation_kind == 'human_audit' and args.require_acceptance:
         ap.error('--audit is descriptive and cannot require accuracy acceptance')
-    if args.holdout or args.audit:
+    if validation_kind != 'development':
         if not args.lean or args.per_category:
             ap.error('--holdout/--audit requires --lean and cannot be subsampled')
-        version = subprocess.check_output([args.lean, '--version'], text=True).strip()
         try:
-            rows, criteria, provenance = load_review(args.holdout or args.audit, judge_config(args), version, descriptive=bool(args.audit))
+            rows, criteria, provenance = load_review(args.holdout or args.audit, descriptive=validation_kind == 'human_audit',
+                                                    **protocol_settings(args))
         except ValueError as error:
             ap.error(str(error))
     else:
@@ -61,7 +65,7 @@ def main():
                       interpretation='Descriptive human audit only; no accuracy acceptance or reliability claim.')
     else:
         result.update(acceptance(result, len(rows), criteria))
-    result.update(validation_kind='human_audit' if args.audit else 'human_heldout' if args.holdout else 'development', **provenance)
+    result.update(validation_kind=validation_kind, **provenance)
     (args.out/'summary.json').write_text(json.dumps(result, indent=1)+'\n')
     print(json.dumps(result, indent=1))
     if args.audit and (not result['complete'] or result['unparsed']):

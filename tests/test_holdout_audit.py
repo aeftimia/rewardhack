@@ -98,7 +98,7 @@ def test_audit_cli_scores_disagreements_without_acceptance(tmp_path, monkeypatch
 def test_freeze_cli_default_corpus_is_independent_of_cwd(tmp_path, monkeypatch):
     from rewardhack import judge_holdout
     seen = []
-    monkeypatch.setattr(judge_holdout, 'freeze', lambda read, *a: seen.append(read) or {})
+    monkeypatch.setattr(judge_holdout, 'freeze', lambda read, config, lean_version: seen.append(read) or {})
     monkeypatch.setattr('subprocess.check_output', lambda *a, **kw: 'Lean test')
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, 'argv', ['prepare_judge_holdout.py', 'freeze', '--protocol', str(tmp_path/'protocol.json'),

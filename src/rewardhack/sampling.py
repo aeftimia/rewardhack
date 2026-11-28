@@ -9,3 +9,4 @@ DEFAULT_SEED = 42
 TEMPERATURE = 1.0
 TOP_P = 1.0
 TOP_K = 0
+SAMPLING_KWARGS = dict(temperature=TEMPERATURE, top_p=TOP_P, top_k=TOP_K)

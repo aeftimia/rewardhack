@@ -17,12 +17,10 @@ from typing import Annotated, TypedDict
 
 from pydantic import Field, TypeAdapter
 
+from rewardhack._archive_settings import ENV, SETTINGS
 from rewardhack.hf_grpo import CHECKPOINT_FILES, RESUME_RUN_FILES
 from rewardhack.json_objects import STRICT, unique_object
 
-ENV = Path(__file__).with_name('archive.env')
-SETTINGS = {name.strip(): value.strip() for name, value in
-            (line.split('=', 1) for line in ENV.read_text().splitlines() if line.strip() and not line.startswith('#'))}
 BUCKET, REGION, STORAGE, RCLONE_VERSION = (SETTINGS[k] for k in ('ARCHIVE_BUCKET', 'ARCHIVE_REGION', 'ARCHIVE_STORAGE_CLASS', 'RCLONE_VERSION'))
 URL_SECONDS = int(SETTINGS['ARCHIVE_URL_SECONDS'])
 # cap: 1.5x estimated 4 h (a 60-step run's 12 GB at 1.3 MB/s, the slowest uplink worth allowing for)

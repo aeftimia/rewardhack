@@ -2,12 +2,11 @@
 """Freeze a judge protocol, then prepare a blind sheet from fresh reports. No paid calls."""
 import argparse
 import json
-import subprocess
 from pathlib import Path
 
 from rewardhack import jsonl
 from rewardhack.judge import add_arguments
-from rewardhack.judge_holdout import freeze, judge_config, prepare
+from rewardhack.judge_holdout import freeze, prepare, protocol_settings
 
 
 def main():
@@ -26,9 +25,8 @@ def main():
     if args.command == 'freeze':
         if not args.lean or args.judge == 'none' or args.judge == 'triage':
             ap.error('freeze requires --lean and an actual judge configuration')
-        version = subprocess.check_output([args.lean, '--version'], text=True).strip()
         try:
-            protocol = freeze(args.read, judge_config(args), version)
+            protocol = freeze(args.read, **protocol_settings(args))
         except ValueError as error:
             ap.error(str(error))
         args.protocol.parent.mkdir(parents=True, exist_ok=True)

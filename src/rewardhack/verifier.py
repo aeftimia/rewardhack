@@ -41,6 +41,11 @@ UNLEXED = ("'\"'", "'\\\"'", "'('", "')'")  # character literals that would unba
 INCONCLUSIVE = {'timeout', 'no axiom report', 'unexpected output'}
 
 
+def lean_version(lean):
+    """Record the version reported by the specific Lean executable for this run."""
+    return subprocess.check_output([lean, '--version'], text=True).strip()
+
+
 def strip_inert(text):
     """Remove comments and string literals in one left-to-right pass; None when the text cannot be lexed safely.
 

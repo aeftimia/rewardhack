@@ -75,7 +75,7 @@ def test_vllm_mode_reaches_prompt_scoring_and_storage(monkeypatch, tmp_path, lea
     monkeypatch.setattr(vllm_probe, 'GpuSampler', lambda: SimpleNamespace(start=lambda: None, summary=lambda: {}))
     monkeypatch.setattr(vllm_probe.deadline, 'arm', lambda *a: None)
     monkeypatch.setattr(vllm_probe.deadline, 'disarm', lambda *a: None)
-    monkeypatch.setattr(vllm_probe.subprocess, 'check_output', lambda *a, **kw: 'Lean stub')
+    monkeypatch.setattr(vllm_probe, 'lean_version', lambda lean: 'Lean stub')
     def score(*a, **kw):
         scored.append(kw['report_mode'])
         return dict(report_mode=kw['report_mode'])

@@ -12,6 +12,7 @@ from rewardhack.outcomes import ARMS, SATURATION_FLOOR, SATURATION_WINDOW
 from rewardhack.prompts import VARIANTS
 from rewardhack.sampling import DEFAULT_SEED
 from rewardhack.tasks import TASKSETS
+from rewardhack.training_sampling import MODES as TRAINING_SAMPLERS
 
 
 def main():
@@ -42,6 +43,8 @@ def main():
     ap.add_argument('--steps', type=int, default=64)
     ap.add_argument('--prompts-per-step', type=int, default=1)
     ap.add_argument('--num-generations', type=int, default=8)
+    ap.add_argument('--backward-batch-size', type=int,
+                    help='completions per backward microbatch; unset uses num-generations; must divide the effective update batch')
     ap.add_argument('--learning-rate', type=float, default=1e-4)
     ap.add_argument('--lr-schedule', choices=['constant', 'linear'], default='constant', help='linear decays the rate to zero over --steps')
     ap.add_argument('--scale-rewards', choices=['group', 'batch', 'none'], default='none',
@@ -60,6 +63,8 @@ def main():
     ap.add_argument('--stop-saturated', action=argparse.BooleanOptionalAction, default=True,
                     help=f'stop once reward variation is credibly below {SATURATION_FLOOR:.0%}% of the latest {SATURATION_WINDOW} prompt groups (outcomes.saturated)')
     ap.add_argument('--seed', type=int, default=DEFAULT_SEED)
+    ap.add_argument('--training-sampler', choices=TRAINING_SAMPLERS, default='uniform',
+                    help='family-truth gives equal mass to each training family/truth stratum in short blocks')
     ap.add_argument('--max-seconds', type=int, default=3600)
     ap.add_argument('--final-eval-seconds', type=int, default=600, help='reserved after training for the after-evaluation')
     reporting.add_arguments(ap)

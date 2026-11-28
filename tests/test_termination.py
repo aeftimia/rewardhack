@@ -174,7 +174,7 @@ def test_vllm_finish_reason_reaches_scoring(args, monkeypatch):
     monkeypatch.setitem(sys.modules, 'vllm', module)
     monkeypatch.setattr(vllm_probe, 'GpuSampler', lambda: SimpleNamespace(start=lambda: None, summary=lambda: {}))
     monkeypatch.setattr(vllm_probe, 'select_tasks', lambda *a: [TASK])
-    monkeypatch.setattr(vllm_probe.subprocess, 'check_output', lambda *a, **kw: 'Lean stub')
+    monkeypatch.setattr(vllm_probe, 'lean_version', lambda lean: 'Lean stub')
     monkeypatch.setattr(vllm_probe.deadline, 'arm', lambda *a: None)
     monkeypatch.setattr(vllm_probe.deadline, 'disarm', lambda *a: None)
     monkeypatch.setattr(outcomes, 'evaluate_submission', lambda *a: pytest.fail('cutoff reached Lean'))

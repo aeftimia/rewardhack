@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import threading
 import time
 
@@ -68,8 +69,10 @@ def _reap(pid):
 
 def _terminate(process):
     # A child may exit while its workers remain in the original process group.
-    with contextlib.suppress(ProcessLookupError):
+    try:
         os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError as error:
+        print(f'cleanup: process group {process.pid} no longer exists: {error}', file=sys.stderr)
     if process.returncode is None:
         process.returncode = _reap(process.pid)
 

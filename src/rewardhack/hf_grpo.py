@@ -8,7 +8,6 @@ import importlib.metadata
 import json
 import math
 import resource
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -19,9 +18,10 @@ from .gpu import GpuSampler
 from .outcomes import accumulate, compare, judge_advice, judge_failing, verifier_failing, NO_VARIATION, VERIFIER_UNDECIDED, SATURATED, saturated, RetryBudget, ScoringStopped, verifier_advice, completion_truncated, reward_groups, score, score_concurrently, stop_ids, summarize, tally, training_rewards, training_keep
 from .prompts import prompt
 from .rates import observed_ratio
-from .sampling import TEMPERATURE, TOP_K, TOP_P
+from .sampling import SAMPLING_KWARGS
 from .tasks import select_tasks, stratified_limit
-from .verifier import controls
+from .training_sampling import FamilyTruthSampler
+from .verifier import controls, lean_version
 
 
 def stage_tasks(taskset, stage, limit):
@@ -80,7 +80,7 @@ RESUME_SETTINGS = ('model', 'revision', 'arm', 'penalty', 'report_mode', 'taskse
                    'prompts_per_step', 'max_completion_length', 'seed', 'save_every', 'stop_no_variation', 'stop_saturated', 'rollout_backend',
                    'judge', 'judge_model', 'judge_revision', 'judge_url', 'judge_extra', 'verifier_retry_seconds', 'adapter',
                    # The resumed run carries the original's before-evaluation over, so its after-evaluation must match it.
-                   'eval_limit', 'eval_samples')
+                   'eval_limit', 'eval_samples', 'training_sampler', 'backward_batch_size')
 RUN_SETTINGS = 'run-settings.json'
 
 
@@ -111,11 +111,15 @@ def resume_point(args):
     return args.resume_from.parent.parent, state['global_step'], math.floor(state['epoch'])
 
 
+def rollouts_per_update(args):
+    return args.num_generations * args.prompts_per_step
+
+
 def original_records(args):
     """The original run's rollouts and step records up to its checkpoint, read no further than needed: a run killed from
     outside may end in a half-written line, past its checkpoint. Rows of a failed step's partial batch are left out."""
     original, done, _ = resume_point(args)
-    wanted = done*args.num_generations*args.prompts_per_step
+    wanted = done * rollouts_per_update(args)
     rows, lines = [], []
     # Each loop stops on the last line it needs, before parsing the next one.
     for row in jsonl.read(original/ROLLOUTS):
@@ -337,8 +341,10 @@ def trainer_samples(model, tokenizer, tasks, args, samples, rollouts, adapter_mo
                                                return_tensors='pt', add_generation_prompt=True, **template_kwargs(args)).to(device)
         t0 = time.perf_counter()
         with torch.inference_mode():
-            outputs = model.generate(**inputs, max_new_tokens=args.max_completion_length, do_sample=True, temperature=TEMPERATURE, top_p=TOP_P,
-                                     top_k=TOP_K, num_return_sequences=samples, pad_token_id=tokenizer.pad_token_id,
+            outputs = model.generate(**inputs, max_new_tokens=args.max_completion_length, do_sample=True,
+                                     temperature=SAMPLING_KWARGS['temperature'], top_p=SAMPLING_KWARGS['top_p'],
+                                     top_k=SAMPLING_KWARGS['top_k'],
+                                     num_return_sequences=samples, pad_token_id=tokenizer.pad_token_id,
                                      eos_token_id=stop_ids(model, tokenizer))
         start = inputs['input_ids'].shape[1]
         yield task, [output[start:].tolist() for output in outputs], time.perf_counter()-t0
@@ -453,6 +459,10 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     from transformers import TrainerCallback, set_seed
     from transformers.integrations import TensorBoardCallback
     from trl import GRPOConfig, GRPOTrainer
+    update_batch = rollouts_per_update(args)
+    backward_batch = args.num_generations if args.backward_batch_size is None else args.backward_batch_size
+    if backward_batch <= 0 or update_batch % backward_batch:
+        raise ValueError('backward_batch_size must be positive and divide num_generations * prompts_per_step')
     by_statement = {t['statement']: t for t in tasks}
     report_mode = args.report_mode
     summary['report_mode'] = report_mode
@@ -490,10 +500,9 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
         # A resumed run carries the steps before its checkpoint: the original run's records of them are copied into this
         # run's files and replayed into the counters, so the stops, totals and first sightings cover the whole run.
         original, done, _ = resume_point(args)
-        batch = args.num_generations*args.prompts_per_step
         rows, lines = original_records(args)
         for step in range(1, done+1):
-            batch_rows = rows[(step-1)*batch:step*batch]
+            batch_rows = rows[(step-1)*update_batch:step*update_batch]
             note_undecided(batch_rows)
             account(batch_rows, step)
         # Marked as copies, so that readers of all runs (the transcript export) count each rollout once.
@@ -606,13 +615,14 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
             control.should_save = control.should_save or control.should_training_stop
             return control
 
-    # One prompt group per micro-batch and --prompts-per-step micro-batches per optimizer step: TRL generates the whole
-    # step's answers at once (its generation batch is the accumulated batch) and a backward pass holds one group, so
-    # more prompts per step cost time, not memory. The 'dapo' loss normalises over all the step's tokens.
-    config = GRPOConfig(output_dir=str(args.out/'trainer'), max_steps=args.steps, per_device_train_batch_size=args.num_generations,
-                        gradient_accumulation_steps=args.prompts_per_step, num_generations=args.num_generations, max_completion_length=args.max_completion_length,
+    # Generate and score complete prompt groups together, then split backward work without changing
+    # the effective update batch. DAPO normalises over all tokens in that generation batch.
+    config = GRPOConfig(output_dir=str(args.out/'trainer'), max_steps=args.steps, per_device_train_batch_size=backward_batch,
+                        gradient_accumulation_steps=update_batch // backward_batch, generation_batch_size=update_batch,
+                        num_generations=args.num_generations, max_completion_length=args.max_completion_length,
                         learning_rate=args.learning_rate, bf16=torch.cuda.is_available(), use_cpu=not torch.cuda.is_available(), gradient_checkpointing=True,
-                        beta=args.beta, temperature=TEMPERATURE, top_p=TOP_P, top_k=TOP_K, chat_template_kwargs=template_kwargs(args), logging_steps=1,
+                        beta=args.beta, temperature=SAMPLING_KWARGS['temperature'], top_p=SAMPLING_KWARGS['top_p'],
+                        top_k=SAMPLING_KWARGS['top_k'], chat_template_kwargs=template_kwargs(args), logging_steps=1,
                         # Resumable checkpoints (<out>/trainer/checkpoint-N: adapter, optimizer, step, random state, task order) every
                         # --save-every steps; only the latest two are kept, as a resume needs one. The adapter-stepN snapshots above
                         # keep every interval's weights for evaluation.
@@ -645,6 +655,13 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
 
     class VerifiedTrainer(VerifierMaskMixin, GRPOTrainer):
         def _get_train_sampler(self, dataset=None):
+            if args.training_sampler == 'family-truth':
+                # dry-ok: src/rewardhack/hf_grpo.py::rollouts_per_update | test_grpo_groups_and_batch_reuse_stay_contiguous checks the order within an update. Four prompts repeated twice and two prompts repeated four times both require eight saved records on resume, but the sampler must produce different index sequences.
+                return FamilyTruthSampler(tasks, seed=args.seed,
+                    batch_size=args.prompts_per_step,
+                    mini_repeat_count=args.num_generations,
+                    repeat_count=self.num_iterations * self.args.steps_per_generation,
+                    epoch=epochs_done)
             # TRL's sampler draws each pass's task order from its own generator, which a checkpoint does not save and
             # transformers does not fast-forward: without this, a resume past a pass boundary repeats the first pass's order.
             sampler = super()._get_train_sampler(dataset)
@@ -662,6 +679,16 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
 
     trainer = VerifiedTrainer(model=model, args=config, reward_funcs=reward_fn, train_dataset=dataset, processing_class=tokenizer, callbacks=[Instrument()],
                           peft_config=None if args.adapter else lora_config(model, args.lora_rank))
+    summary['training_sampler'] = args.training_sampler
+    if args.training_sampler == 'family-truth':
+        schedule = trainer._get_train_sampler()
+        summary['training_distribution'] = 'equal family/truth stratum mass; minority strata oversampled'
+        summary['sampling_block_prompts'] = schedule.block_size
+        summary['sampling_epoch_prompts'] = schedule.draws_per_epoch
+        (args.out/'training-schedule.json').write_text(json.dumps({
+            'sampler': args.training_sampler, 'seed': args.seed, 'epoch': epochs_done,
+            'block_prompts': schedule.block_size,
+            'task_ids': [tasks[index]['id'] for index in schedule.task_indices(epochs_done)]}, indent=1)+'\n')
     # The callback `report_to` added writes under trainer/runs/<date_host> unless told otherwise: one fixed folder per run.
     # A resumed run adds a new event file beside the first, and TensorBoard reads the folder as one run.
     [board] = [c for c in trainer.callback_handler.callbacks if isinstance(c, TensorBoardCallback)]
@@ -744,9 +771,9 @@ def prepare_training(model, tokenizer, tasks, args, summary, *, rollouts=None):
     return fit
 
 
-def train(model, tokenizer, tasks, args, summary):
+def train(model, tokenizer, tasks, args, summary, *, rollouts=None):
     """Build the trainer and run it. `run` builds it earlier, before the paid before-evaluation."""
-    return prepare_training(model, tokenizer, tasks, args, summary)()
+    return prepare_training(model, tokenizer, tasks, args, summary, rollouts=rollouts)()
 
 
 def check_completion_limit(evaluation):
@@ -787,7 +814,7 @@ def run(args):
             rollouts = AdapterRollouts(args, [])
             rollouts.preflight()  # prove the server is sleeping before loading the training model
         summary['controls'] = controls(args.lean)
-        summary['lean'] = subprocess.check_output([args.lean, '--version'], text=True).strip()
+        summary['lean'] = lean_version(args.lean)
         print('controls passed', flush=True)
         if MODES[args.mode]['controls']:
             summary['status'] = 'completed'

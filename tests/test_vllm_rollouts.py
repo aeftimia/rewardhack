@@ -8,7 +8,7 @@ import httpx
 import pytest
 from conftest import run_options
 
-from rewardhack.vllm_rollouts import AdapterRollouts, check_args, pinned_vllm
+from rewardhack.vllm_rollouts import AdapterRollouts, RELOAD_PROBE_TOKENS, check_args, pinned_vllm
 
 
 @pytest.fixture
@@ -121,6 +121,7 @@ def test_generation_failure_sleeps_server_and_propagates(backend, monkeypatch):
 
 
 def test_reload_requires_changed_weights_and_restoration(backend, monkeypatch):
+    connect(backend, lambda request: httpx.Response(200, json={'success': True}))
     import torch
     from safetensors.torch import save_file, load_file
     save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
@@ -129,7 +130,7 @@ def test_reload_requires_changed_weights_and_restoration(backend, monkeypatch):
     monkeypatch.setattr(backend, 'load', lambda path: active.__setitem__(0, path))
     def sample(*args, **kwargs):
         value = float(load_file(str(active[0]/'adapter_model.safetensors'))['layer.lora_B.weight'].sum())
-        return [[3]], [[-1-value]], None
+        return [[3 + int(value > 0)]], [[-1-value]], None
     monkeypatch.setattr(backend, 'completions', sample)
     backend.verify_reload([8])
     assert backend.checked_reload and active[0] == backend.path
@@ -137,6 +138,76 @@ def test_reload_requires_changed_weights_and_restoration(backend, monkeypatch):
     monkeypatch.setattr(backend, 'completions', lambda *a, **kw: ([[3]], [[-1]], None))
     with pytest.raises(RuntimeError, match='A/B/A'):
         backend.verify_reload([8])
+
+
+@pytest.mark.parametrize('restored', [-2.0, -2.1])
+def test_reload_uses_later_tokens_and_records_failed_restoration(backend, monkeypatch, restored):
+    connect(backend, lambda request: httpx.Response(200, json={'success': True}))
+    import torch
+    from safetensors.torch import save_file
+    save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
+    (backend.path/'adapter_config.json').write_text('{}')
+    monkeypatch.setattr(backend, 'load', lambda path: None)
+    values = iter([(3, -2.0), (3, -2.16), (3, -2.3), (3, -2.0), (4, -3.0),
+                   (3 if restored == -2.0 else 4, restored - 0.315)])
+    def sample(*args, **kwargs):
+        assert kwargs['max_tokens'] == RELOAD_PROBE_TOKENS
+        token, score = next(values)
+        return [[200005, token]], [[0.0, score]], None
+    monkeypatch.setattr(backend, 'completions', sample)
+    if restored == -2.0:
+        backend.verify_reload([8])
+        assert backend.checked_reload
+    else:
+        with pytest.raises(RuntimeError, match='original_restored=False'):
+            backend.verify_reload([8])
+        assert not backend.checked_reload
+    row = json.loads((backend.args.out/'adapter-reload-checks.jsonl').read_text().splitlines()[-1])
+    assert row['changed_ok'] and row['restored_ok'] == (restored == -2.0)
+    assert row['before'][1] == [[0.0, -2.0]]
+
+
+def test_reload_restores_original_after_probe_request_failure(backend, monkeypatch):
+    connect(backend, lambda request: httpx.Response(200, json={'success': True}))
+    import torch
+    from safetensors.torch import save_file
+    save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
+    (backend.path/'adapter_config.json').write_text('{}')
+    active = [backend.path]
+    monkeypatch.setattr(backend, 'load', lambda path: active.__setitem__(0, path))
+    def sample(*args, **kwargs):
+        if active[0] != backend.path:
+            raise RuntimeError('probe request failed')
+        return [[3]], [[-1]], None
+    monkeypatch.setattr(backend, 'completions', sample)
+    with pytest.raises(RuntimeError, match='probe request failed'):
+        backend.verify_reload([8])
+    assert active[0] == backend.path and not backend.checked_reload
+
+
+@pytest.mark.parametrize('stage,values', [
+    ('unchanged-repeat', [-1.0, -1.2]),
+    ('identical-reload', [-1.0, -1.0, -1.2]),
+])
+def test_reload_refuses_drift_before_perturbation(backend, monkeypatch, stage, values):
+    import torch
+    from safetensors.torch import save_file
+    connect(backend, lambda request: httpx.Response(200, json={'success': True}))
+    save_file({'layer.lora_B.weight': torch.zeros(2)}, str(backend.path/'adapter_model.safetensors'))
+    (backend.path/'adapter_config.json').write_text('{}')
+    loaded = []
+    monkeypatch.setattr(backend, 'load', loaded.append)
+    sequence = iter(values)
+    def sample(*args, **kwargs):
+        score = next(sequence)
+        return [[3 if score == -1.0 else 4]], [[score]], None
+    monkeypatch.setattr(backend, 'completions', sample)
+    with pytest.raises(RuntimeError, match=stage):
+        backend.verify_reload([8])
+    assert not backend.checked_reload
+    assert all(path == backend.path for path in loaded)
+    rows = [json.loads(line) for line in (backend.args.out/'adapter-reload-checks.jsonl').read_text().splitlines()]
+    assert rows[-1]['stage'] == stage and rows[-1]['matched'] is False
 
 
 def test_untruncated_rollouts_reach_real_trl_loss(tmp_path, monkeypatch):
@@ -200,9 +271,10 @@ def test_every_batch_reloads_current_adapter_and_sleeps(backend):
             assert not sleeping[0]
             params = json.loads(request.content)['sampling_params']
             assert (params['temperature'], params['top_p'], params['top_k']) == (1.0, 1.0, 0)
-            if params['max_tokens'] == 1:
-                row = dict(token_ids=[3], finish_reason='length',
-                           logprobs={'content': [dict(token_id=3, logprob=-1-loaded[0])]})
+            if params['max_tokens'] == RELOAD_PROBE_TOKENS:
+                token = 3 + int(loaded[0] > 0)
+                row = dict(token_ids=[token] * RELOAD_PROBE_TOKENS, finish_reason='length',
+                           logprobs={'content': [dict(token_id=token, logprob=-1-loaded[0])] * RELOAD_PROBE_TOKENS})
             else:
                 seeds.append(params['seed'])
                 assert loaded[0] == pytest.approx(value[0])
@@ -252,6 +324,7 @@ def test_each_training_process_registers_its_own_adapter_name(tmp_path, backend)
 
 
 def test_reload_checks_expert_tensors_on_their_own(backend, monkeypatch):
+    connect(backend, lambda request: httpx.Response(200, json={'success': True}))
     # A server that applies the attention adapter but ignores the experts must not pass on the attention tensors.
     import torch
     from safetensors.torch import save_file, load_file
@@ -263,7 +336,8 @@ def test_reload_checks_expert_tensors_on_their_own(backend, monkeypatch):
     def served(*names):
         def sample(*args, **kwargs):
             state = load_file(str(active[0]/'adapter_model.safetensors'))
-            return [[3]], [[-1-sum(float(state[name].sum()) for name in names)]], None
+            value = sum(float(state[name].sum()) for name in names)
+            return [[3 + int(value > 0)]], [[-1-value]], None
         return sample
     monkeypatch.setattr(backend, 'completions', served('layer.self_attn.q_proj.lora_B.weight', 'layer.mlp.experts.lora_B.weight'))
     checks = backend.verify_reload([8])

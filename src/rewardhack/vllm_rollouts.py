@@ -15,13 +15,14 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from .sampling import TEMPERATURE, TOP_K, TOP_P
+from .sampling import SAMPLING_KWARGS
 from ._hashing import file_sha256
 
 SEED_STRIDE = 10**6
 ROLLOUT_REFERENCE_SECONDS = 330  # 3x longest measured 106 s, rounded up
 ROLLOUT_REFERENCE_TOKENS = 2048
 ROLLOUT_REFERENCE_BATCH = 16
+RELOAD_PROBE_TOKENS = 8
 
 
 def completion_timeout(prompt_count, max_tokens):
@@ -111,8 +112,11 @@ class AdapterRollouts:
         self.request('POST', '/v1/load_lora_adapter', body={
             'lora_name': self.name, 'lora_path': str(path.resolve()), 'load_inplace': self.loaded})
         self.loaded = True
+        self.reset_prefix_cache()
+
+    def reset_prefix_cache(self):
         if self.request('POST', '/reset_prefix_cache').json()['success'] is not True:
-            raise RuntimeError('vLLM did not reset the prefix cache after adapter loading')
+            raise RuntimeError('vLLM did not reset the prefix cache')
 
     def completions(self, prompts, *, seed, max_tokens, model):
         if not prompts:
@@ -123,8 +127,8 @@ class AdapterRollouts:
         request_timeout = completion_timeout(len(prompts), max_tokens)
         def send(item):
             index, prompt = item
-            params = dict(n=1, max_tokens=max_tokens, temperature=TEMPERATURE,
-                          top_p=TOP_P, top_k=TOP_K,
+            # dry-ok: src/rewardhack/hf_grpo.py::trainer_samples | prepare_training assigns rollouts.stops = stop_ids(model, tokenizer), the same tokenizer EOS passed to Transformers. vLLM must ignore its model's own default EOS and stop at the explicitly listed tokenizer ID. test_vllm_rollouts asserts ignore_eos and [1] on the wire together.
+            params = dict(n=1, max_tokens=max_tokens, **SAMPLING_KWARGS,
                           seed=seed+index, stop_token_ids=[self.stops], ignore_eos=True,
                           skip_special_tokens=False, logprobs=0, output_kind=2)
             body = dict(model=model, request_id=str(uuid.uuid4()), token_ids=prompt, sampling_params=params)
@@ -162,7 +166,7 @@ class AdapterRollouts:
 
     def verify_reload(self, prompt):
         """A/B/A, once per kind of adapted weight (attention and other linear layers; the MoE experts): changing only
-        that kind's LoRA B bytes must change the fixed-seed output/logprob, and restoring A must restore it. Checked
+        that kind's LoRA B bytes must change the fixed-seed token sequence, and restoring A must restore it. Checked
         separately so that a server that ignores the expert tensors cannot pass on the attention ones. The live
         training tensors are untouched.
         """
@@ -176,10 +180,27 @@ class AdapterRollouts:
                  for kind, experts in {'linear': False, 'experts': True}.items()}
         if not kinds['linear']:
             raise ValueError('adapter has no LoRA B matrices for the synchronization check')
-        def sample():
-            return self.completions([prompt], seed=0, max_tokens=1, model=self.name)
         def matches(left, right):
-            return left[0] == right[0] and math.isclose(left[1][0][0], right[1][0][0], abs_tol=1e-4, rel_tol=0)
+            return left[0] == right[0]
+        def record_check(row):
+            with (self.args.out / 'adapter-reload-checks.jsonl').open('a') as sink:
+                sink.write(json.dumps(dict(prompt_ids=prompt, max_tokens=RELOAD_PROBE_TOKENS,
+                                           **row), allow_nan=False) + '\n')
+        # Establish repeatability separately from replacement. Reset the cache
+        # identically before every observation; never infer a reload defect from
+        # a comparison that already drifts with unchanged weights.
+        def reset_and_sample():
+            self.reset_prefix_cache()
+            return self.completions([prompt], seed=0, max_tokens=RELOAD_PROBE_TOKENS, model=self.name)
+        before = reset_and_sample()
+        for stage in ('unchanged-repeat', 'identical-reload'):
+            if stage == 'identical-reload':
+                self.load(self.path)
+            after = reset_and_sample()
+            matched = matches(before, after)
+            record_check(dict(stage=stage, before=before, after=after, matched=matched))
+            if not matched:
+                raise RuntimeError(f'adapter repeatability check failed at {stage}')
         checks = {}
         for kind, changed in kinds.items():
             if not changed:
@@ -188,14 +209,22 @@ class AdapterRollouts:
             for name in changed:
                 state[name].fill_(0.1)
             save_file(state, str(probe_path/'adapter_model.safetensors'))
-            before = sample()
+            before = reset_and_sample()
             self.load(probe_path)
-            changed_output = sample()
-            self.load(self.path)
-            restored = sample()
-            if matches(before, changed_output) or not matches(before, restored):
-                raise RuntimeError(f'adapter A/B/A reload of the {kind} tensors did not change and then restore the sampled token/logprob')
-            checks[kind] = dict(tensors=len(changed), before=before, changed=changed_output, restored=restored)
+            try:
+                changed_output = reset_and_sample()
+            finally:
+                self.load(self.path)
+            restored = reset_and_sample()
+            changed_ok, restored_ok = not matches(before, changed_output), matches(before, restored)
+            checks[kind] = dict(tensors=len(changed), before=before, changed=changed_output, restored=restored,
+                                changed_ok=changed_ok, restored_ok=restored_ok)
+            # Persist before rejecting: a failed check must retain the evidence
+            # distinguishing insensitive perturbations from failed restoration.
+            record_check(dict(kind=kind, **checks[kind]))
+            if not changed_ok or not restored_ok:
+                raise RuntimeError(f'adapter A/B/A reload of the {kind} tensors failed: '
+                                   f'perturbation_changed={changed_ok}, original_restored={restored_ok}')
         self.checked_reload = True
         return checks
 

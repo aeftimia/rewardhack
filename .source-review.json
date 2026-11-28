@@ -33,19 +33,13 @@
     "path": "src/rewardhack/outcomes.py",
     "rule": "py-getattr-default",
     "text": "kwargs = {'retries': retries} if getattr(judge, 'accepts_retry_budget', False) else {}",
-    "reason": "The public scoring interface accepts a callable judge(row), including plain Python functions supplied by analysis/tests; it does not require an object from a closed registry or require arbitrary function attributes. accepts_retry_budget is an OPTIONAL opt-in extension set by judge.checked for the extra retries keyword. Its absence means the base one-argument callable protocol, which is the normal interface, not an invalid judge substituted for a valid one. The same provided callable is invoked and its failures propagate; there is no replacement judge or fabricated successful verdict if it is broken."
+    "reason": "This expression only decides whether to pass the optional retries keyword to the same supplied callable. Missing accepts_retry_budget omits that keyword; it does not replace the callable or supply a verdict. For a valid report the next line invokes judge(out, **kwargs) directly, with no exception handler: a noncallable or incompatible signature raises visibly. Invalid reports take the separately visible no-report branch. No claim is made that probing an attribute validates a judge's configuration."
   },
   {
     "path": "src/rewardhack/pilot.py",
     "rule": "py-or-default",
     "text": "return dict(stop=reason is not None, reason=reason or 'continue', posterior=posterior,",
     "reason": "reason is locally initialized to None and set only for stop conditions. continue explicitly names the no-stop decision, and stop is computed separately from reason is not None."
-  },
-  {
-    "path": "src/rewardhack/pilot_runner.py",
-    "rule": "py-suppress",
-    "text": "with contextlib.suppress(ProcessLookupError):",
-    "reason": "A child can exit between group lookup and kill. ProcessLookupError means the target group is already gone, satisfying termination; every other OS error propagates."
   },
   {
     "path": "src/rewardhack/pilot_runner.py",
@@ -79,12 +73,6 @@
     "reason": "Malformed Lean output is returned with an explicit unexpected-output diagnostic in INCONCLUSIVE. It is not treated as a proved or disproved proposition."
   },
   {
-    "path": "entrypoints/validate_judge.py",
-    "rule": "py-else-label",
-    "text": "result.update(validation_kind='human_audit' if args.audit else 'human_heldout' if args.holdout else 'development', **provenance)",
-    "reason": "There is no free-form mode value here. argparse provides exactly two mutually exclusive optional Path arguments, --audit and --holdout. Their exhaustive reachable states are audit present, holdout present, and both absent. Both absent intentionally executes rows=read_set(args.read), the development dataset. This expression labels those same three states. Unknown CLI arguments are rejected by parse_args; there is no unlisted current mode or failure converted to development."
-  },
-  {
     "path": "ops/drive_runpod.sh",
     "rule": "sh-prefix-forward",
     "text": "[[ $name =~ ^SMOKE_[A-Z_]+$ && $value =~ ^[0-9]+$ ]] || { echo \"invalid $name\"; exit 2; }",
@@ -94,13 +82,13 @@
     "path": "ops/drive_runpod.sh",
     "rule": "sh-errexit-off",
     "text": "set +e",
-    "reason": "Cleanup deliberately keeps running after failures so results can be copied and pod removal attempted. It preserves the remote code and marks copy/removal failures nonzero before returning; disabling errexit cannot turn those failures into success."
+    "reason": "This is an EXIT cleanup function, with the original status captured in code=$? immediately above. set +e deliberately permits later copy and removal attempts even when a logging command fails, instead of aborting cleanup. Copy success is separately tracked by SMALL_COPIED, COPIED and CHECKPOINTS, and the final branches set codes 96, 94 and 95 respectively if a required copy failed while code was zero. Failed removal confirmation sets code=97. finish exits with that recorded code. This exception permits best-effort cleanup sequencing, not suppression of the job or required-copy result."
   },
   {
     "path": "ops/remote_job.sh",
     "rule": "sh-default-expansion",
     "text": "OUT=${REMOTE_JOB_OUT:-$HOME/out}",
-    "reason": "The production invocation leaves REMOTE_JOB_OUT unset and requires the default HOME/out path. An override is an optional test interface for directing a runner to a specific output folder. The following echo reports the selected directory before mkdir; failure to create it exits 3. No failed attempt at an override path is redirected to HOME/out."
+    "reason": "The path selection accepts two configurations. A nonempty REMOTE_JOB_OUT becomes OUT verbatim. An unset or empty override selects the declared runner output directory HOME/out. The next echo names both the path chosen and the override; mkdir attempts exactly that path and reports an error and exits 3 if creation fails. This concerns only selecting the directory, not the later status of the launched job."
   },
   {
     "path": "ops/remote_job.sh",

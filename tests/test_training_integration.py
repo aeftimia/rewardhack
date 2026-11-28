@@ -109,6 +109,24 @@ REWARDS = {
 }
 
 
+@pytest.mark.parametrize('backward_batch_size', [1, 2])
+@pytest.mark.parametrize('undecided', [False, True])
+def test_backward_splitting_preserves_dapo_update(tmp_path, monkeypatch, backward_batch_size, undecided):
+    def reward(i, raw, step):
+        return None if undecided and i == 1 else float(i)
+
+    # GPT-OSS has no GPT2-style embedding/residual dropout; splitting those random
+    # masks would intentionally change individual updates even with the same seed.
+    options = dict(kind='moe', steps=2, prompts_per_step=2, scale_rewards='none')
+    whole = train(tmp_path, monkeypatch, reward, **options)
+    split = train(tmp_path, monkeypatch, reward, backward_batch_size=backward_batch_size, **options)
+    assert [(r['task_id'], r['raw'], r['training_reward']) for r in split.rows] == [
+        (r['task_id'], r['raw'], r['training_reward']) for r in whole.rows]
+    torch.testing.assert_close(split.change, whole.change, atol=2e-6, rtol=2e-4)
+    for actual, expected in zip(split.log, whole.log, strict=True):
+        assert actual['grad_norm'] == pytest.approx(expected['grad_norm'], rel=2e-4, abs=2e-6)
+
+
 @pytest.mark.parametrize('name', sorted(REWARDS))
 def test_any_reward_function_reaches_the_trainer_unchanged(tmp_path, monkeypatch, name):
     run = train(tmp_path, monkeypatch, REWARDS[name], steps=3)
