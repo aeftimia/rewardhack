@@ -278,7 +278,7 @@ def _run(root, directory, client):
 
 def _run_prepared_batch(root, directories, parallelism):
     """Run prepared configs concurrently within the live balance and grant line limits."""
-    from .runpod_ops import RunPod, available_with_top_up
+    from .runpod_ops import RunPod, check_prepaid_balance
     root = Path(root).resolve()
     pending = [Path(directory).resolve() for directory in directories]
     if not pending or parallelism < 1 or len(set(pending)) != len(pending):
@@ -288,7 +288,7 @@ def _run_prepared_batch(root, directories, parallelism):
     common = Path(gates.git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir').strip())
     with file_lock(common / 'experiment-batch.lock'), ThreadPoolExecutor(parallelism) as workers:
         while pending or charges:
-            available = available_with_top_up(client.read('billing/balance')['balanceAmount'])
+            available = Decimal(str(client.read('billing/balance')['balanceAmount'])) if check_prepaid_balance() else None
             for directory in list(pending):
                 if len(charges) == parallelism:
                     break
@@ -304,7 +304,7 @@ def _run_prepared_batch(root, directories, parallelism):
                 rows = budget.read_ledger(root / budget.LEDGER)
                 holds = [dict(total_usd=float(cost), status='reserved', line=line) for _, cost, line in charges.values()]
                 problems = budget.reservation_problems(rows + holds, gate['line'], float(cap))
-                if cap + reserved > available or problems:
+                if (available is not None and cap + reserved > available) or problems:
                     continue
                 pending.remove(directory)
                 charges[workers.submit(_run, root, directory, client)] = directory, cap, gate['line']

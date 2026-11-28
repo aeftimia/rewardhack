@@ -25,14 +25,12 @@ MAX_PAGES = 100
 CREATE_FIELDS = {'name', 'image', 'gpu', 'disk', 'ports', 'cloud', 'dataCenterIds', 'mounts'}
 # Conservative hourly rounding of $0.10/GB/month (docs.runpod.io/pods/pricing, checked 2026-11-27).
 DISK_GB_HOURLY_USD = Decimal('0.00014')
-AUTO_TOP_UP_THRESHOLD = Decimal('10')
-AUTO_TOP_UP_AMOUNT = Decimal('25')
+AUTO_RELOAD = 'REWARDHACK_RUNPOD_AUTO_RELOAD'
 
 
-def available_with_top_up(balance):
-    """Account for the owner's configured RunPod refill when spend reaches $10."""
-    amount = Decimal(str(balance))
-    return amount + AUTO_TOP_UP_AMOUNT if amount >= AUTO_TOP_UP_THRESHOLD else amount
+def check_prepaid_balance():
+    """The operator can opt into automatic funding for this process."""
+    return AUTO_RELOAD not in os.environ or os.environ[AUTO_RELOAD] != '1'
 
 
 def pod_path(pod_id):
@@ -195,7 +193,7 @@ def launch(client, root, config, results, *, settings=None, log=None):
     (root / '.tools').mkdir(exist_ok=True)
     with file_lock(root / '.tools/runpod-launch.lock', wait=0):
         record = approved_driver_record(root, environment)
-        if available_with_top_up(client.request('GET', 'billing/balance')['balanceAmount']) < Decimal(str(record['worst_case_usd'])):
+        if check_prepaid_balance() and Decimal(str(client.request('GET', 'billing/balance')['balanceAmount'])) < Decimal(str(record['worst_case_usd'])):
             raise ValueError('Live balance is below this launch record\'s worst-case cost')
         if any(pod['name'] == config['name'] for pod in client.collection('pods', 'pods')):
             raise ValueError('Use a unique pod name so an ambiguous create can be reconciled')

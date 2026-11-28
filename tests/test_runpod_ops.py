@@ -93,7 +93,8 @@ def test_no_pod_created_when_approval_refused(deployment, monkeypatch):
     assert client.calls == []
 
 
-def test_insufficient_live_balance_never_creates_pod(deployment):
+def test_insufficient_live_balance_never_creates_pod(deployment, monkeypatch):
+    monkeypatch.delenv(ops.AUTO_RELOAD, raising=False)
     root, config, client = deployment
     client.balance = 1
     with pytest.raises(ValueError, match='Live balance'):

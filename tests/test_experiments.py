@@ -233,7 +233,9 @@ def test_experiment_registers_config_rows_and_checkpoints_under_one_id(tmp_path,
     assert (bucket / index['archive_id'] / index['effective_config']).is_file()
 
 
-def test_batch_skips_unaffordable_head_and_charges_once(tmp_path, monkeypatch):
+@pytest.mark.parametrize('auto_reload', [False, True])
+def test_batch_skips_unaffordable_head_and_charges_once(tmp_path, monkeypatch, auto_reload):
+    monkeypatch.setenv(runpod_ops.AUTO_RELOAD, str(int(auto_reload)))
     client = SimpleNamespace(read=lambda *args: {'balanceAmount':5})
     monkeypatch.setattr(runpod_ops, 'RunPod', lambda:client)
     a, b = tmp_path / 'large', tmp_path / 'small'
@@ -250,6 +252,10 @@ def test_batch_skips_unaffordable_head_and_charges_once(tmp_path, monkeypatch):
         ran.append(directory)
         return []
     monkeypatch.setattr(experiments, '_run', execute)
+    if auto_reload:
+        experiments._run_prepared_batch(ROOT, [a, b], parallelism=2)
+        assert set(ran) == {a, b}
+        return
     with pytest.raises(ValueError, match='no queued job fits'):
         experiments._run_prepared_batch(ROOT, [a, b], parallelism=2)
     assert ran == [b]
