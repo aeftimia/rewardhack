@@ -1,0 +1,16 @@
+[
+ {
+  "run_id": "20261127T210835Z-gpt-train-lambda0-step-1-b437595a",
+  "uri": "s3://rewardhack-run-archive/20261127T210835Z-gpt-train-lambda0-step-1-b437595a/",
+  "storage_class": "STANDARD_IA",
+  "commit": "e95f2172dff47396854dd5e0e7803e78378c7a89",
+  "uploaded_at": "2026-11-27T21:09:42.914425+00:00",
+  "sha256": {
+   "train-lambda0/adapter-step1/adapter_model.safetensors": "757ca61713bca74ed0be7aba36c1b963edef6afabfd6ce06ee34d55d35f7ff08",
+   "train-lambda0/adapter-step1/adapter_config.json": "dcafd3235d45207c3e86bfa27a0245407336204766378da8c6a3416ff50113be",
+   "train-lambda0/adapter-step1/README.md": "1e62b02d8aae65fecb6762c864cef9581838146be1ebc79675ed2dac6d73e960",
+   "train-lambda0/run-settings.json": "c39c3bf01cffa10433a04ef8db1b6fce2a3caf0524f72e46d3dd62a2c0ac3727",
+   "train-lambda0/tasks.json": "7e17dc99b4bdaf7ed118d3a018e41cdcf323569fa58f391c5c54efa5e2cef5e1"
+  }
+ }
+]

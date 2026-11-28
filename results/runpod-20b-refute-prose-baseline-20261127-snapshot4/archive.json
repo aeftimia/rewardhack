@@ -1,0 +1,16 @@
+[
+ {
+  "run_id": "20261127T203800Z-gpt-train-baseline-step-4-76a08b6a",
+  "uri": "s3://rewardhack-run-archive/20261127T203800Z-gpt-train-baseline-step-4-76a08b6a/",
+  "storage_class": "STANDARD_IA",
+  "commit": "e95f2172dff47396854dd5e0e7803e78378c7a89",
+  "uploaded_at": "2026-11-27T20:39:10.410783+00:00",
+  "sha256": {
+   "train-baseline/adapter-step4/adapter_model.safetensors": "989c0605935ee6a4326d642b744d99e0f5a2545f684ff0f55244ebe039d676d4",
+   "train-baseline/adapter-step4/adapter_config.json": "2ab4edb340cb24f6d151ecba0394cd9e0be2a7628e2b94a129a3b363b38542d0",
+   "train-baseline/adapter-step4/README.md": "1e62b02d8aae65fecb6762c864cef9581838146be1ebc79675ed2dac6d73e960",
+   "train-baseline/run-settings.json": "58be4b61fab70c0eb4be98e16e34d93d09193cc6a5f275eddc6e7c99241fd9d3",
+   "train-baseline/tasks.json": "7e17dc99b4bdaf7ed118d3a018e41cdcf323569fa58f391c5c54efa5e2cef5e1"
+  }
+ }
+]

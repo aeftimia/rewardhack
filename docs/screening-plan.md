@@ -1,5 +1,42 @@
 # One-seed screening plan (owner, 26 November 2026)
 
+## GPT and Qwen handoff, 27 November 2026
+
+Five GPT refutation-permission runs completed six updates at an 8,192-token
+ceiling. Counts below come from the scored before-evaluation, training and
+after-evaluation rows in each linked archive. Each evaluation used 24 answers
+on 12 held-out tasks. Each training phase used 96 answers. The denominators
+include true and false statements. None of the 720 answers reached the cutoff.
+
+| GPT condition | Verified refutations before / 24 | During training / 96 | After / 24 |
+| --- | ---: | ---: | ---: |
+| [Baseline, prose](../results/runpod-20b-refute-prose-baseline-20261127/archive.json) | 1 | 4 | 4 |
+| [Baseline, typed](../results/runpod-20b-refute-typed-baseline-strat6-retry1-20261127/archive.json) | 2 | 5 | 0 |
+| [λ = 0, prose](../results/runpod-20b-refute-prose-lambda0-20261127/archive.json) | 0 | 3 | 0 |
+| [λ = 0, typed](../results/runpod-20b-refute-typed-lambda0-token-20261127/archive.json) | 1 | 1 | 0 |
+| [λ = 0.5, typed, original uniform sampler](../results/runpod-20b-refute-typed-lambda05-measure-20261127/archive.json) | 3 | 0 | 0 |
+
+The coordinator's outstanding GPT queue was two baseline continuations from
+checkpoint 6 and two fresh family/truth-stratified λ = 0.5 screens, one per
+report format. Both baseline archives contain the optimizer checkpoint.
+Continuations inherit their original ceiling and sampler. The shared fresh-run
+ceiling is now 16,384 in [the registry defaults](../ops/run_defaults.json).
+The original uniform-sampler measurement remains a distinct condition.
+
+Qwen3-32B with thinking enabled completed a matched ceiling comparison, using
+two answers on each of the same 12 held-out tasks. At
+[8,192 tokens](../results/runpod-qwen-8192-corrected-20261127/archive.json)
+there were 12 cutoffs, 3 genuine proofs and 0 verified refutations. At
+[16,384 tokens](../results/qwen-matched-16k-logged/archive.json) there were
+2 cutoffs, 3 genuine proofs and 0 verified refutations. The higher ceiling
+passed the initial truncation guard. Both measurements precede any Qwen
+optimizer update, so a GPT-like training trajectory has yet to be measured.
+The Qwen handoff estimated $15–20 for six updates on two GPUs. The shared
+$15 per-run maximum still applies.
+
+The [batch API](experiment-batches.md) and original launch histories are on
+`main` as of `67d4f8a`. The dated plans below describe earlier decisions.
+
 ## Priority update (owner, 27 November 2026)
 
 Latest execution rule: check this approved GPT queue every five minutes. Carry

@@ -1,0 +1,28 @@
+[
+ {
+  "run_id": "20261127T193624Z-runpod-20b-refute-typed-lambda0-invariant-records-20261127-e80be243",
+  "uri": "s3://rewardhack-run-archive/20261127T193624Z-runpod-20b-refute-typed-lambda0-invariant-records-20261127-e80be243/",
+  "storage_class": "STANDARD_IA",
+  "commit": "71551d13a524719ca5e44db3611c4777d792ed40",
+  "uploaded_at": "2026-11-27T19:36:25.589131+00:00",
+  "sha256": {
+   "DONE": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "EXIT_CODE": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+   "LAUNCH_ID": "a10242fbc76a861ecb3ad08d31e823b72995d889cb43e9c7afe9f65662a4efba",
+   "autostop.log": "c21c28ccec6eb602b376b2c219d47c6bd657c30ae6e7e7931649ec58eb793956",
+   "controls.log": "a3622a96176f772c9d4cd0dd1ccc24eda179b11443056980a3cdb97d835371fe",
+   "controls/summary.json": "a5f794761aa302e43fde4f04598722f82043997d2842663b86709a5b646a8d25",
+   "download-gpt-oss-20b.log": "38a1b8c46f3983cd3db2b46caf6a41a68c461d6e922427facecbfed048944d53",
+   "gpu.txt": "84f69401cba509fce118d77d903654b68d59f84a65755d8a32d5697f98d0f405",
+   "install-train.log": "373c699e27083463a8a0d22ff72f1575b7912749839780cfa930fc80da951fa0",
+   "install-uv.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "install-vllm.log": "e35d1913bf2e6623742742fe12b33430fbe387722c2e2346099b69068fc29841",
+   "isolation.log": "99075f59061707176a2bce075d69be2752ea93776785cb6ea8bcd67262974242",
+   "pip-freeze-train.txt": "17e1631d0a9e2297cfeee1406270e6051c152dbf14a6bf8c67622008ea1a2751",
+   "pip-freeze-vllm.txt": "02d840d3fe61026742f9d569385df624dc2dd5ba880db8a1dddee9b2dafc1f9d",
+   "remote.log": "9152198e16afa9694083f00f7366eba7166e8aec81b30f2ee99d610838e22447",
+   "rollout-server.log": "df531cb2311300ccd917229e9dbe894fe24aeaf8a06299006d128d10341905d6",
+   "steps.log": "71b400d990db2c414036d7fd8c5b465f9f410bbfe220373590092a99b3026029"
+  }
+ }
+]

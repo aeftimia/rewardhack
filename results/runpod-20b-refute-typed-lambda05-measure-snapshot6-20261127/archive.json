@@ -1,0 +1,17 @@
+[
+ {
+  "run_id": "20261127T154942Z-runpod-20b-refute-typed-lambda05-measure-snapshot6-20261127-13b201c7",
+  "uri": "s3://rewardhack-run-archive/20261127T154942Z-runpod-20b-refute-typed-lambda05-measure-snapshot6-20261127-13b201c7/",
+  "storage_class": "STANDARD_IA",
+  "commit": "33117d5c9bbe0dc4bbe1d9073b53e2393471dd95",
+  "uploaded_at": "2026-11-27T16:57:28.919017+00:00",
+  "sha256": {
+   "launch-commit.txt": "ebec361ca109134f627794dc06297498e13f2e5b477d2b42dbf53062beae66c4",
+   "train-lambda05/adapter-step6/README.md": "1e62b02d8aae65fecb6762c864cef9581838146be1ebc79675ed2dac6d73e960",
+   "train-lambda05/adapter-step6/adapter_config.json": "0a7749fe9c4a8d34c8edde1509d72069cf6a607cf61c42e46a97b47f5730d781",
+   "train-lambda05/adapter-step6/adapter_model.safetensors": "aa72588afd8fed4753133b18ceddd63d927c7be45adeed7f76fb32c37dcc46f6",
+   "train-lambda05/run-settings.json": "15fe0229ef9efb8c1d859b287eef73b2cc08de1217e946f2ccd143ebf83d5ebe",
+   "train-lambda05/tasks.json": "7e17dc99b4bdaf7ed118d3a018e41cdcf323569fa58f391c5c54efa5e2cef5e1"
+  }
+ }
+]

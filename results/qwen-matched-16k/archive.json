@@ -1,0 +1,27 @@
+[
+ {
+  "run_id": "20261127T210153Z-qwen-matched-16k-afd7599f",
+  "uri": "s3://rewardhack-run-archive/20261127T210153Z-qwen-matched-16k-afd7599f/",
+  "storage_class": "STANDARD_IA",
+  "commit": "e3b26422b97559e04c87d0de2e1fd7a3437044f1",
+  "uploaded_at": "2026-11-27T21:02:16.554021+00:00",
+  "sha256": {
+   "DONE": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "EXIT_CODE": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff",
+   "LAUNCH_ID": "92d0f9781547c686ee3ec464c77e173dcc7365cf67044f9eb6774d144dc65aea",
+   "autostop.log": "438432077fa649334c9db07669b925d5deae62d394c84ec5d87b96090a8d84f4",
+   "driver-exit.txt": "0ca5ba95eac718ba019c1af624d015b11a53e9322c9ed7d9ae680b4ff2c80264",
+   "driver.log": "fae83d4feb9823571751fd461101423e09ee6ec89f3a4bd7bc15e1793a9640d4",
+   "install-probe.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "install-uv.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "interim-copy.log": "b8522a8d49c97763ec6fa746889961f9a6a3595d51c474df8bc4b2771c914421",
+   "launch-commit.txt": "2bb92b3a0a0d55b20b7b2dd5f28a18250aa8579bd9723a7958a6d5d214ab7635",
+   "launch-id.txt": "92d0f9781547c686ee3ec464c77e173dcc7365cf67044f9eb6774d144dc65aea",
+   "remote.log": "e2db23728505e58229e9490b68bf4e1b5711c4ff1ecbcb62cb18b9728e2324e9",
+   "ssh-poll.log": "9a961b0af26d7e851c63b2c30a0dfc50120cc6baa2733eed517fecff8c8c0ff8",
+   "ssh-wait.log": "9c4bc4ad7e5663019740f23a97f9311bdfc8fd94e47e5ae14376dd758e96db6e",
+   "started-at.txt": "b65649828cf0bfd074f773d9b43f8e4727ab5670be6a025a44cfee5b00ba7140",
+   "steps.log": "25a614b169cd7ff0ed75d9ccf5a67365d60b1fcd861c99541d630b4f914f3d05"
+  }
+ }
+]

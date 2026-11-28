@@ -1,0 +1,37 @@
+[
+ {
+  "run_id": "20261127T214835Z-qwen-matched-16k-logged-8cde004c",
+  "uri": "s3://rewardhack-run-archive/20261127T214835Z-qwen-matched-16k-logged-8cde004c/",
+  "storage_class": "STANDARD_IA",
+  "commit": "d59ca7ff3709f2820f5169cd5429a58397ec24ba",
+  "uploaded_at": "2026-11-27T21:53:04.968092+00:00",
+  "sha256": {
+   "DONE": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "EXIT_CODE": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+   "LAUNCH_ID": "08ec065efb00a612f0429b8f83bd108bda34798daa0d2c83e3b53fa73e4d61de",
+   "autostop.log": "0c5fe251c182c8462ec81fa68cea1a3f2e984daac0edbb7eda7abb272f12daec",
+   "download-Qwen3-32B.log": "9a1ea9f2dac46b51fac0266484a376ca141e0275b8656ddf1d98669094c4c8c8",
+   "driver-exit.txt": "c37946efaf4eda5f65716e95d28f32b80f9b9f154a64a4503a1a81516ac9848a",
+   "driver.log": "1e70a312ac61662977ccba077c93a0905668463fcac2ad3463c5e71a86d6ec48",
+   "inference.log": "485974aecf06b32cc5c83033a3d92c0efa1442ca7d8fdda4e041620ae362ff44",
+   "inference/responses.jsonl": "2796bc7d653dd1e551c46504a8b6ef578f2522d14dbba216ac012ee36f181dac",
+   "inference/rollout-backend.jsonl": "b4bfba226b655ae19413402882ece1577200a28511f45b1ee495206944a240a4",
+   "inference/rows.jsonl": "0b9cc051dfa10fe5c488c6e13e2aedf08115b5a109f2f0003bab693a0f27912a",
+   "inference/rows.rescored.jsonl": "af2365f9c9f9346a3adbcda6b94c110c65f27172c5fb8b40039b473d606a7276",
+   "inference/summary.json": "2f9563d6b02874d8f1f67ca2cdc6a95d23cf8814dd260fbb706345ea8c62acdc",
+   "inference/tasks.json": "6c8f1fc0b5aca7a6aa9ee669d9cb5ddddbd5b7b6e9b70850f7d424af4ab8ee1f",
+   "install-probe.log": "8177157148638a0bbd783112c1f70707a94529a0ced1f619f0dda764b98e24fa",
+   "install-uv.log": "4e7e552f92ee5168e8ccafeecc9831d965a6ef6849570eddeefefd7f491f021b",
+   "interim-copy.log": "5bc9c7ebc7de87a752c97f8ecd8c3465b5218d184c8d479e9f5b750ea81993c8",
+   "launch-commit.txt": "2f09f36807dda334102206876c5d483f71ad6147ff17be609500692efd696f2b",
+   "launch-id.txt": "08ec065efb00a612f0429b8f83bd108bda34798daa0d2c83e3b53fa73e4d61de",
+   "pip-freeze-probe.txt": "515580b8ed686dd50eee4b65f51c64ff0e49b8297012c8d0b3a733c1bdc094af",
+   "remote.log": "b6357e550ba25be1906e98d1f542743cf9467eea2b9be556b5eea245d289cddf",
+   "rollout-server.log": "fb5c6ad91a661406f52c4f9fbcddac0953ba6c625cc9d4f15b2cb93379b92cec",
+   "ssh-poll.log": "bf30388d088c558510b5fa94430d60c1a9251a3c4d3f17ccdbfe3805a2b71b4d",
+   "ssh-wait.log": "982622409a70e20249dcd0428d1167f3bb3dbd4ffcb29c71580bb442b896373b",
+   "started-at.txt": "b57d640d0c1ba57fd5259b36dbf71db8a972334b8e114556be24193542ba7857",
+   "steps.log": "f39e2561d5c8d6960281dbe5e41f19ed47aeea3d0366cb701bb8b905c85087bd"
+  }
+ }
+]
