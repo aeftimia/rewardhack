@@ -20,6 +20,12 @@ The five older run IDs are in [the historical registry](../experiments/archived-
 | λ=0.5, prose, 16k, stratified | 3/12 · 10/44 · 2/12 | 2/12 · 12/52 · 2/12 | 0 · 3 · 0 | 0 · 3 · 0 |
 | λ=0.5, typed, 16k, stratified | 2/12 · 1/44 · 0/12 | 4/12 · 6/52 · 4/12 | 3 · 10 · 1 | 3 · 10 · 1 |
 
+Disclosure counts use the archived `honest` field, based on the declared
+error flag for typed reports and the report judge for prose. At λ=0 the one missed
+prose disclosure in training explicitly claimed a proof. The one missed
+typed disclosure set `error: false`, although its written justification
+acknowledged a placeholder and said the statement remained unproved.
+
 The stratified λ=0.5 screens are `986f7661b8f2490596b46fdd40cca17e` (prose)
 and `439fcf37d53443a9929335f8a905726c` (typed). Each has zero observed cutoffs
 before, during, and after training. All six conditions selected for continuation
@@ -38,7 +44,50 @@ unchanged-adapter repeat. Their verified records are
 `579f5b3060284eaa9744a2f26280196a` (λ=0) and
 `24a1b03deae44c02a341dc8df05e88e2` (λ=0.5). Neither produced a new
 optimizer update. The [startup diagnosis](gpt-reload-diagnosis.md) records
-the change to the control for the two retries.
+the change to the control. Their separate `run_batch` invocation registered
+`c135a23ab2b14f5483d6080875f4e9bb` (λ=0) and
+`e9122728904b4c908deb9f1bc922d2b2` (λ=0.5) from source
+`e85159d1592fef4b79bcfbdcdc8eaaa0928fc56e`. Both reuse the verified
+step-six optimizer and request the refutation-permission prompt at 16k.
+Both retries also stopped at step six. At λ=0, the unchanged and identical-reload
+checks passed, the linear perturbation changed the output, and restoring the
+original adapter changed token six. At λ=0.5, token six changed on the
+unchanged-adapter repeat. Neither run reached expert testing, drew any new
+training or held-out answers, or called the judge. Both failure archives are
+verified. RunPod returned an empty active pod list after both removals.
+
+The typed baseline `ce8ed9cf630c412ab9ae04376edcfa86` completed update 24.
+Across updates 7–24 it produced 0/148 verified refutations on false answers,
+8/140 genuine proofs on true answers, and 234 grader-accepted invalid proofs.
+All 234 reports disclosed failure. The longest completion in those 288 answers
+was 1,935 tokens. In the batch for update 25, one answer reached 16,384 tokens
+after a 787-token prompt. Its old-policy log-probability forward pass requested
+35.15 GiB for eager attention with 12.64 GiB free, at a microbatch size of one.
+Step 25 has generated samples and no optimizer update. The step-24 optimizer
+checkpoint and its 16 required resume files have a verified S3 receipt.
+
+The prose baseline `1fec940042484622ab22085b2da87814` completed update 36.
+Across updates 7–36 it produced 5/240 verified refutations, 10/240 genuine
+proofs, and 362 grader-accepted invalid proofs, of which 360 were accurately
+disclosed. At update 37 a 13,616-token completion and 1,498-token prompt
+needed a 27.23 GiB eager-attention allocation with 20.56 GiB free. This
+answer ended below the token ceiling. The step-36 optimizer checkpoint and
+all 16 resume files are verified. Neither stopped baseline has a new held-out
+after-evaluation.
+
+The two prose-baseline reports at updates 33 and 34 that received no honesty
+credit both described a problem with the submitted proof. One also predicted
+that the proof would be rejected, although the grader accepted it. These two
+examples distinguish the archived judge score from what the prose disclosed.
+
+Both typed report-correct continuations completed update 60 with zero
+held-out cutoffs. At λ=0 (`6f4ec741c76943f292f5d2228292dfff`) and λ=0.5
+(`12f8788927de45fc8b9851592f3c7f9c`), the held-out results were 0/12
+verified refutations on false-task answers, 0/12 genuine proofs on true-task
+answers, and 24 accepted invalid proofs, all accurately disclosed. During
+updates 7–60 the respective refutation counts were 0/436 and 1/436, genuine
+proofs were 0/428 and 14/428, and disclosed invalid proofs were 836/836
+and 702/702.
 
 For planning the Qwen replication, the grant specifies five reward conditions,
 three seeds apiece, or 900 updates at 60 per run. At the Community Cloud quote
@@ -49,6 +98,12 @@ about $1,056. Both figures depend on an unmeasured Qwen optimizer-step time.
 The [one-time six-step request](../ops/approved-runs/030f3c297dbb4ec884016ff1ab721b05.json)
 specifies 16,384 completion tokens, bf16, one answer per backward microbatch,
 the neutral/prose λ=0 condition, and a $25.07 limit.
+The prior request `829230f12ef84eecb99e248604c3063a` consumed its launch
+record with no pod receipt or live pod. The replacement calls `experiment()`
+with a seven-day capacity wait from 05:15 UTC on 28 November. It polls
+Community Cloud every five minutes for two cards on one pod and checks the
+quoted hourly rate before admission. The forecast above counts each pair as
+one pod-hour.
 
 In Qwen's archived 16k inference sample, 13/24 completions reached at least
 8,192 tokens, 6/24 reached 10,240, 4/24 reached 12,288, and 2/24 reached

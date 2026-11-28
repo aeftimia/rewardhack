@@ -64,3 +64,41 @@ unchanged repeat or identical reload, requires each weight perturbation to chang
 the output, and requires exact restoration. The trainer's own control runs for
 each checkpoint lineage. The normal sampler retains temperature one for rewards
 and evaluations. The on-pod control is the test of whether this change suffices.
+
+## Greedy control results, 28 November
+
+Both prose retries stopped before update seven. All work through step six is
+in the parent checkpoints. Both failure receipts record source `e85159d`.
+
+| Greedy control | λ=0 | λ=0.5 |
+| --- | --- | --- |
+| Repeat on unchanged adapter | Same eight IDs | First difference at token six |
+| Reload identical bytes | Same eight IDs | Unreached |
+| Perturb linear tensors | Different IDs | Unreached |
+| Restore original linear tensors | First difference at token six | Unreached |
+| Perturb and restore experts | Unreached | Unreached |
+
+The λ=0.5 failure establishes that greedy selection can diverge without
+reloading weights. The λ=0 result alone cannot identify whether restoration
+also introduced drift. Each pod logged FlashInfer attention, Marlin MXFP4
+experts, fused MoE LoRA, and a single GPU. Across these two attempts the
+judge meters recorded zero requests. See the verified [λ=0
+receipt](../experiments/c135a23ab2b14f5483d6080875f4e9bb/outputs.json) and
+[λ=0.5 receipt](../experiments/e9122728904b4c908deb9f1bc922d2b2/outputs.json).
+
+The archived batch-invariance diagnostic explicitly enabled
+`VLLM_BATCH_INVARIANT=1`. Its server log shows that the engine exited during
+initialization. Marlin and Triton both rejected batch invariance, and none of
+the other candidate MXFP4 backends accepted this deployment. The steps and
+server logs were retrieved and SHA-256 checked against the [diagnostic
+receipt](../results/runpod-20b-refute-typed-lambda0-invariant-records-20261127/archive.json).
+
+An upstream investigation reproduced output drift from expert-token ordering
+in Marlin on other workloads. vLLM also documents that deterministic LoRA
+shrink uses fixed-order reductions. Both mechanisms warrant testing on these
+checkpoints. A diagnostic can compare repeated base-model and adapted outputs
+on the same prompt, log the competing token scores at the first divergence,
+and compare repeated original, perturbed, and restored observations.
+The two failure receipts do not distinguish these mechanisms.
+[Marlin investigation](https://github.com/vllm-project/vllm/issues/52525) ·
+[vLLM 0.34.0 batch invariance](https://docs.vllm.ai/en/v0.34.0/features/batch_invariance/).
