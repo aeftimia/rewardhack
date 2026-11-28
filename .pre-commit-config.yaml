@@ -55,4 +55,5 @@ repos:
         always_run: true
         require_serial: true
         verbose: true
-        stages: [pre-commit]
+        # Restore pre-commit after the OpenAI credit reload expected December 2, 2026.
+        stages: [manual]
