@@ -1,0 +1,407 @@
+[
+  {
+    "archive_id": "20261127T210153Z-qwen-matched-16k-afd7599f",
+    "historical_run": "qwen-matched-16k",
+    "original_archive": "20261127T210153Z-qwen-matched-16k-afd7599f",
+    "phases": {},
+    "run_id": "c0007050dbc75386b236781556d62aa9",
+    "launch_commit": "e3b26422b97559e04c87d0de2e1fd7a3437044f1"
+  },
+  {
+    "archive_id": "20261128T014957Z-400996e8579a5af194803a55e6aaa17b-400996e8",
+    "historical_run": "qwen-matched-16k-logged/inference",
+    "original_archive": "20261127T214835Z-qwen-matched-16k-logged-8cde004c",
+    "phases": {
+      "untrained": {
+        "rows": 24,
+        "scored": 24
+      }
+    },
+    "run_id": "400996e8579a5af194803a55e6aaa17b",
+    "launch_commit": "d59ca7ff3709f2820f5169cd5429a58397ec24ba"
+  },
+  {
+    "archive_id": "20261127T044225Z-runpod-20b-neutral-typed-baseline-20261126-d4018711",
+    "historical_run": "runpod-20b-neutral-typed-baseline-20261126",
+    "original_archive": "20261127T044225Z-runpod-20b-neutral-typed-baseline-20261126-d4018711",
+    "phases": {},
+    "run_id": "44bee87f4af7576ca34cc4a44111053f",
+    "launch_commit": "f5eb13ab596cfaf3c19e8d89ed146f61dfba3ba9"
+  },
+  {
+    "archive_id": "20261128T014957Z-5701ab9f6347567f9823680f5b551761-5701ab9f",
+    "historical_run": "runpod-20b-neutral-typed-baseline-retry1-20261126/train-baseline",
+    "original_archive": "20261127T112902Z-runpod-20b-neutral-typed-baseline-retry1-20261126-96c7011a",
+    "phases": {
+      "after": {
+        "rows": 24,
+        "scored": 24
+      },
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 960,
+        "scored": 960
+      }
+    },
+    "run_id": "5701ab9f6347567f9823680f5b551761",
+    "launch_commit": "c9b5dd1e13a3834f80f9df0b3489c3bfed01129e"
+  },
+  {
+    "archive_id": "20261128T014957Z-9532ea1a3d445f9e8981088e8fe14961-9532ea1a",
+    "historical_run": "runpod-20b-neutral-typed-lambda0-20261127/train-lambda0",
+    "original_archive": "20261127T132330Z-runpod-20b-neutral-typed-lambda0-20261127-3282dc49",
+    "phases": {
+      "after": {
+        "rows": 24,
+        "scored": 24
+      },
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 960,
+        "scored": 960
+      }
+    },
+    "run_id": "9532ea1a3d445f9e8981088e8fe14961",
+    "launch_commit": "a3fc53d6093e4fc949be5ddf8a28dacf6d5a461b"
+  },
+  {
+    "archive_id": "20261128T014957Z-1a1b20dae9a15e74bc24403df3e2df67-1a1b20da",
+    "historical_run": "runpod-20b-refute-prose-baseline-20261127/train-baseline",
+    "original_archive": "20261127T204800Z-gpt-train-baseline-completed-c08c3940",
+    "phases": {
+      "after": {
+        "rows": 24,
+        "scored": 24
+      },
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 96,
+        "scored": 96
+      }
+    },
+    "run_id": "1a1b20dae9a15e74bc24403df3e2df67",
+    "launch_commit": "e95f2172dff47396854dd5e0e7803e78378c7a89"
+  },
+  {
+    "archive_id": "20261128T014957Z-7b5938ef90ab5b6db6000d216335116f-7b5938ef",
+    "historical_run": "runpod-20b-refute-prose-lambda0-20261127/train-lambda0",
+    "original_archive": "20261127T213844Z-runpod-20b-refute-prose-lambda0-20261127-4fc27a86",
+    "phases": {
+      "after": {
+        "rows": 24,
+        "scored": 24
+      },
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 96,
+        "scored": 96
+      }
+    },
+    "run_id": "7b5938ef90ab5b6db6000d216335116f",
+    "launch_commit": "e95f2172dff47396854dd5e0e7803e78378c7a89"
+  },
+  {
+    "archive_id": "20261128T014957Z-80eb5e6d300f53c0b6813b76c7a41851-80eb5e6d",
+    "historical_run": "runpod-20b-refute-typed-baseline-strat6-20261127/train-baseline",
+    "original_archive": "20261127T152838Z-runpod-20b-refute-typed-baseline-strat6-20261127-b9791c7e",
+    "phases": {
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 16,
+        "scored": 16
+      }
+    },
+    "run_id": "80eb5e6d300f53c0b6813b76c7a41851",
+    "launch_commit": "dbf1f4140646140a77750ccbb8bbd337e6163c72"
+  },
+  {
+    "archive_id": "20261128T014957Z-8bb25bbdb7d656cebd78a63e78fce72f-8bb25bbd",
+    "historical_run": "runpod-20b-refute-typed-baseline-strat6-retry1-20261127/train-baseline",
+    "original_archive": "20261127T165359Z-gpt-train-baseline-completed-728fd051",
+    "phases": {
+      "after": {
+        "rows": 24,
+        "scored": 24
+      },
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 96,
+        "scored": 96
+      }
+    },
+    "run_id": "8bb25bbdb7d656cebd78a63e78fce72f",
+    "launch_commit": "d613b80d7648e11704426748531c43442d1c7d9c"
+  },
+  {
+    "archive_id": "20261127T193624Z-runpod-20b-refute-typed-lambda0-invariant-records-20261127-e80be243",
+    "historical_run": "runpod-20b-refute-typed-lambda0-invariant-20261127",
+    "original_archive": "20261127T193624Z-runpod-20b-refute-typed-lambda0-invariant-records-20261127-e80be243",
+    "phases": {},
+    "run_id": "81f1e32d05dc54d5b1c9af39d521f185",
+    "launch_commit": "71551d13a524719ca5e44db3611c4777d792ed40"
+  },
+  {
+    "archive_id": "20261128T014957Z-bb503ab149dc5862967307bcb7c3e806-bb503ab1",
+    "historical_run": "runpod-20b-refute-typed-lambda0-strat6-20261127/train-lambda0",
+    "original_archive": "20261127T171910Z-runpod-20b-refute-typed-lambda0-strat6-records-20261127-fb06b784",
+    "phases": {
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 0,
+        "scored": 0
+      }
+    },
+    "run_id": "bb503ab149dc5862967307bcb7c3e806",
+    "launch_commit": "30c0f3d8ccb61e32178746263164f3ef85f4d4ad"
+  },
+  {
+    "archive_id": "20261128T014957Z-99ceb77b02d052f1a860a02d626636c2-99ceb77b",
+    "historical_run": "runpod-20b-refute-typed-lambda0-strat6-retry1-20261127/train-lambda0",
+    "original_archive": "20261127T185300Z-runpod-20b-refute-typed-lambda0-strat6-retry1-20261127-d2c9f13b",
+    "phases": {
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 0,
+        "scored": 0
+      }
+    },
+    "run_id": "99ceb77b02d052f1a860a02d626636c2",
+    "launch_commit": "fff5707652f04feddd99f29539732080ec067e8d"
+  },
+  {
+    "archive_id": "20261128T014957Z-3972b97095835d8ab5f24793659f0fb6-3972b970",
+    "historical_run": "runpod-20b-refute-typed-lambda0-strat6-retry2-20261127/train-lambda0",
+    "original_archive": "20261127T190729Z-runpod-20b-refute-typed-lambda0-strat6-retry2-records-20261127-a698b6bb",
+    "phases": {
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 0,
+        "scored": 0
+      }
+    },
+    "run_id": "3972b97095835d8ab5f24793659f0fb6",
+    "launch_commit": "f3a85ca7ddefe830593c2875afe7cec4a0d42b08"
+  },
+  {
+    "archive_id": "20261128T014957Z-445213510beb52ba8f07c8999805ed5b-44521351",
+    "historical_run": "runpod-20b-refute-typed-lambda0-token-20261127/train-lambda0",
+    "original_archive": "20261127T201125Z-runpod-20b-refute-typed-lambda0-token-20261127-3af86fa6",
+    "phases": {
+      "after": {
+        "rows": 24,
+        "scored": 24
+      },
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 96,
+        "scored": 96
+      }
+    },
+    "run_id": "445213510beb52ba8f07c8999805ed5b",
+    "launch_commit": "e95f2172dff47396854dd5e0e7803e78378c7a89"
+  },
+  {
+    "archive_id": "20261128T014957Z-a4405100b3f4502daa627d8cce145be6-a4405100",
+    "historical_run": "runpod-20b-refute-typed-lambda05-measure-20261127/train-lambda05",
+    "original_archive": "20261127T140629Z-runpod-20b-refute-typed-lambda05-measure-20261127-9ee5b624",
+    "phases": {
+      "after": {
+        "rows": 24,
+        "scored": 24
+      },
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 96,
+        "scored": 96
+      }
+    },
+    "run_id": "a4405100b3f4502daa627d8cce145be6",
+    "launch_commit": "33117d5c9bbe0dc4bbe1d9073b53e2393471dd95"
+  },
+  {
+    "archive_id": "20261128T014957Z-5368b772de245461810c3bfb3b4c7c8c-5368b772",
+    "historical_run": "runpod-part1-60step-20261126/train-baseline",
+    "original_archive": "20261126T223630Z-runpod-part1-60step-20261126-53717cf3",
+    "phases": {
+      "after": {
+        "rows": 24,
+        "scored": 24
+      },
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 960,
+        "scored": 960
+      }
+    },
+    "run_id": "5368b772de245461810c3bfb3b4c7c8c",
+    "launch_commit": "94f96f5bc071ac19bbb28bc679543fde12f2fda4"
+  },
+  {
+    "archive_id": "20261128T014957Z-693bc3d953c05b34ab3dc545a9d40579-693bc3d9",
+    "historical_run": "runpod-part1-60step-20261126/train-lambda0",
+    "original_archive": "20261126T223630Z-runpod-part1-60step-20261126-53717cf3",
+    "phases": {
+      "after": {
+        "rows": 24,
+        "scored": 24
+      },
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 960,
+        "scored": 960
+      }
+    },
+    "run_id": "693bc3d953c05b34ab3dc545a9d40579",
+    "launch_commit": "94f96f5bc071ac19bbb28bc679543fde12f2fda4"
+  },
+  {
+    "archive_id": "20261128T014957Z-39188c8ec2135c6ca33a3fbdff0a35a6-39188c8e",
+    "historical_run": "runpod-part1-lambda05-20261126/probe-120b-high",
+    "original_archive": "20261126T223542Z-runpod-part1-lambda05-20261126-c1ce95d0",
+    "phases": {
+      "untrained": {
+        "rows": 80,
+        "scored": 80
+      }
+    },
+    "run_id": "39188c8ec2135c6ca33a3fbdff0a35a6",
+    "launch_commit": "4bb3b6c577e32943ab1c4da3dc768cff6973ba3a"
+  },
+  {
+    "archive_id": "20261128T014957Z-6722d0ca9703535aa3d81c5e79b4c534-6722d0ca",
+    "historical_run": "runpod-part1-lambda05-20261126/probe-120b-low",
+    "original_archive": "20261126T223542Z-runpod-part1-lambda05-20261126-c1ce95d0",
+    "phases": {
+      "untrained": {
+        "rows": 320,
+        "scored": 320
+      }
+    },
+    "run_id": "6722d0ca9703535aa3d81c5e79b4c534",
+    "launch_commit": "4bb3b6c577e32943ab1c4da3dc768cff6973ba3a"
+  },
+  {
+    "archive_id": "20261128T014957Z-fe3d0c3ed0cc5f8bb1310105996ebb5a-fe3d0c3e",
+    "historical_run": "runpod-part1-lambda05-20261126/train-lambda05",
+    "original_archive": "20261126T223542Z-runpod-part1-lambda05-20261126-c1ce95d0",
+    "phases": {
+      "after": {
+        "rows": 24,
+        "scored": 24
+      },
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 960,
+        "scored": 960
+      }
+    },
+    "run_id": "fe3d0c3ed0cc5f8bb1310105996ebb5a",
+    "launch_commit": "4bb3b6c577e32943ab1c4da3dc768cff6973ba3a"
+  },
+  {
+    "archive_id": "20261128T014957Z-d7f169761f785292b21d2aaf13ca6938-d7f16976",
+    "historical_run": "runpod-qwen-16384-inference-20261127/inference",
+    "original_archive": "20261127T201156Z-runpod-qwen-16384-inference-20261127-b6ffec60",
+    "phases": {
+      "untrained": {
+        "rows": 11,
+        "scored": 0
+      }
+    },
+    "run_id": "d7f169761f785292b21d2aaf13ca6938",
+    "launch_commit": "bf8448628bfb1a11e8bcefff4c74011f1b210ecd"
+  },
+  {
+    "archive_id": "20261128T014957Z-64884b78fc165f4bb71ee739ceb2a5b0-64884b78",
+    "historical_run": "runpod-qwen-8192-corrected-20261127/train-lambda0",
+    "original_archive": "20261127T144245Z-runpod-qwen-8192-corrected-20261127-b7265022",
+    "phases": {
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 0,
+        "scored": 0
+      }
+    },
+    "run_id": "64884b78fc165f4bb71ee739ceb2a5b0",
+    "launch_commit": "dc251594d96748579edee9522fd6c825db5f6ffd"
+  },
+  {
+    "archive_id": "20261128T014957Z-a560754589965e2e9c7cbf2e1a672c58-a5607545",
+    "historical_run": "runpod-qwen-8192-measure-20261127/train-lambda0",
+    "original_archive": "20261127T125823Z-runpod-qwen-8192-measure-20261127-22c57a0b",
+    "phases": {
+      "before": {
+        "rows": 0,
+        "scored": 0
+      },
+      "training": {
+        "rows": 0,
+        "scored": 0
+      }
+    },
+    "run_id": "a560754589965e2e9c7cbf2e1a672c58",
+    "launch_commit": "11aaada59ba53a6fc52e8284cdd908e295c77022"
+  },
+  {
+    "archive_id": "20261128T014957Z-853481e7ceb5573eae0f6e7df5e879dd-853481e7",
+    "historical_run": "runpod-qwen-lambda0-measure-20261126/train-lambda0",
+    "original_archive": "20261127T043112Z-runpod-qwen-lambda0-measure-20261126-d26701b5",
+    "phases": {
+      "before": {
+        "rows": 24,
+        "scored": 24
+      },
+      "training": {
+        "rows": 0,
+        "scored": 0
+      }
+    },
+    "run_id": "853481e7ceb5573eae0f6e7df5e879dd",
+    "launch_commit": "6e0ff7fce2b30c1d480866598b6752b31734f28f"
+  }
+]
