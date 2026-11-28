@@ -7,7 +7,7 @@ from . import archive, gates, jsonl
 from .experiment_backups import snapshot_step
 from .provenance import VIEWS
 from .run_registry import CONFIG_FILE, checked_source, read, result_directory, run_id_directory
-from .state_files import atomic_json
+from .state_files import atomic_json, pending_pod_archive
 
 
 def register_config(directory, source):
@@ -72,6 +72,13 @@ def output_arm(config):
     return config['output_arm']
 
 
+def read_effective(path, config):
+    effective = read(path)
+    if dict(effective, settings=config['settings']) != config:
+        raise ValueError('effective config differs from the prepared experiment')
+    return effective
+
+
 def collect_outputs(directory):
     """Expose finished local stage files immediately, before the large checkpoint transfer."""
     config = read(directory / CONFIG_FILE)
@@ -84,8 +91,8 @@ def collect_outputs(directory):
     atomic_json(result / 'experiment-source.json', provenance, exclusive=False)
     arm = output_arm(config)
     effective = result / arm / CONFIG_FILE
-    if effective.is_file() and dict(read(effective), settings=config['settings']) != config:
-        raise ValueError('effective config differs from the prepared experiment')
+    if effective.is_file():
+        read_effective(effective, config)
     paths = list(result.glob('*/*.jsonl'))
     def streams(names):
         return {p.relative_to(result).as_posix(): gates.file_sha256(p) for p in paths if p.name in names}
@@ -121,7 +128,13 @@ def archive_outputs(directory):
     index = read(directory / 'outputs.json')
     source = checked_source(directory)
     result = result_directory(directory)
-    receipt = _payload_receipt(result, source['commit'])
+    direct = result.with_suffix('.direct.json')
+    if pending_pod_archive(result):
+        raise ValueError('pod artifact uploads were not verified')
+    if direct.exists() and not (result / archive.RECORD).exists():
+        receipt = archive.upload(result, source['commit'], direct=read(direct))
+    else:
+        receipt = _payload_receipt(result, source['commit'])
     files = receipt['sha256']
     if (index['run_id'] != directory.name or receipt['commit'] != source['commit']
             or files[index['provenance']] != gates.file_sha256(result / index['provenance'])):
@@ -133,6 +146,7 @@ def archive_outputs(directory):
         expected[name] = digest
     if any(files.get(path) != digest for path, digest in expected.items()):
         raise ValueError('archived output or effective config differs from the local registry')
+    # dry-ok: src/rewardhack/experiment_artifacts.py::collect_outputs | Both operations delegate arm selection to output_arm. Collection looks for local generation files, while this detached worker groups archived paths. A config-key rename changes only the shared selector.
     arm = output_arm(read(directory / CONFIG_FILE))
     checkpoints = {}
     for path, digest in files.items():

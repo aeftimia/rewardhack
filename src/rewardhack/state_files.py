@@ -12,6 +12,11 @@ def pod_receipt(result):
     return result.with_suffix('.pod.json')
 
 
+def pending_pod_archive(result):
+    """The job armed its removal timer and still holds unverified artifacts."""
+    return result.with_suffix('.direct-required').exists() and not result.with_suffix('.direct.json').is_file()
+
+
 def sync_directory(path):
     descriptor = os.open(path, os.O_RDONLY)
     try:

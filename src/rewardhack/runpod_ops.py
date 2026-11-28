@@ -1,6 +1,7 @@
 """RunPod REST v2 through the official SDK, with project launch checks."""
 import os
 import re
+import sys
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -15,7 +16,7 @@ from runpod.error import QueryError
 from stamina import retry
 
 from . import gates
-from .state_files import atomic_json, file_lock, pod_receipt
+from .state_files import atomic_json, file_lock, pending_pod_archive, pod_receipt
 
 API_SECONDS = gates.RUNPOD_API_SECONDS
 POLL_SECONDS = 5
@@ -149,7 +150,7 @@ def approved_driver_record(root, environment):
 def drive(root, record, address, results, environment, log=None):
     subprocess.run(['bash', 'ops/drive_runpod.sh', *address, record['remote'], str(results),
                     str(record['deadline_minutes'])], cwd=root, check=True,
-                   env={**environment, 'PYTHONPATH': str(Path(root).resolve() / 'src'),
+                   env={**environment, 'EXPERIMENT_PYTHON': sys.executable, 'PYTHONPATH': str(Path(root).resolve() / 'src'),
                         gates.EXPECTED_RECORD_ID: record['record_id']}, stdout=log,
                    stderr=subprocess.STDOUT if log is not None else None)
 
@@ -230,6 +231,7 @@ def launch(client, root, config, results, *, settings=None, log=None):
                 try:
                     gates.mark_launched(root, record, cleanup=True)
                 finally:
-                    client.terminate(pod_id)
+                    if not pending_pod_archive(destination):
+                        client.terminate(pod_id)
         return {'id': pod_id, 'driver_completed': True,
                 'kept_for_relaunch': 'KEEP_POD' in record['settings'] and record['settings']['KEEP_POD'] == '1'}

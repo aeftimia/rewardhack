@@ -1,5 +1,6 @@
 """Execute versioned experiment requests on RunPod, with one checkout and receipt per run."""
 import csv
+import json
 import os
 import re
 import subprocess
@@ -16,9 +17,9 @@ from ._hashing import source_sha256
 from .experiment_backups import backup_queue
 from .experiment_results import registered_checkpoint
 from .export_transcripts import atomic_text
-from .experiment_artifacts import collect_outputs, register_config, validate_generation_links
+from .experiment_artifacts import collect_outputs, read_effective, register_config, validate_generation_links
 from .run_registry import CONFIG_FILE, checked_source, new_run, read, result_directory, run_id_directory, training_keys
-from .state_files import atomic_json, file_lock, pod_receipt
+from .state_files import atomic_json, file_lock, pending_pod_archive, pod_receipt
 
 
 def _resolve_parent(root, state, spec):
@@ -130,8 +131,7 @@ def _stage_parent(checkout, config):
     env = {**os.environ, 'PYTHONPATH': str(checkout / 'src')}
     checkpoint = f"{config['checkpoint_arm']}/trainer/checkpoint-{parent['checkpoint_step']}"
     signed = subprocess.run([*program, 'resume', config['parent_archive'], checkpoint], env=env, capture_output=True, check=True)
-    subprocess.run([*program, 'fetch', str(checkout / '.tools/experiment-parent')],
-                   input=signed.stdout, env=env, check=True)
+    atomic_json(checkout / '.tools/parent-download.json', json.loads(signed.stdout))
 
 
 def book_cost(ledger, pod_id, line, run_id, model, gpu_usd, judge_usd):
@@ -155,6 +155,10 @@ def book_cost(ledger, pod_id, line, run_id, model, gpu_usd, judge_usd):
 
 def enqueue_snapshots(destination, directory, submit, scheduled, historical_files=None):
     """Rsync renames individual files atomically. Only enqueue complete immutable saves."""
+    for receipt in (directory / 'snapshots').glob(f'{directory.name}-adapter-step*/archive.json'):
+        if receipt not in scheduled:
+            submit(receipt.parent.name.removeprefix(directory.name + '-'))
+            scheduled.add(receipt)
     for snapshot in destination.glob('train-*/adapter-step*'):
         if snapshot in scheduled:
             continue
@@ -242,13 +246,12 @@ def _execute(root, directory, checkout, submit, client):
             raise ValueError('RunPod driver completed without its pod receipt')
         if (destination / 'EXIT_CODE').read_text().strip() != '0':
             raise RuntimeError(f'{destination}: experiment failed')
-        effective = read(destination / config['output_arm'] / CONFIG_FILE)
-        if dict(effective, settings=config['settings']) != config:
-            raise ValueError('effective config differs from the prepared experiment')
+        # dry-ok: src/rewardhack/experiment_artifacts.py::read_effective | The equality check lives entirely in read_effective. This caller supplies the run's file and persists the returned document. Changing the comparison only requires editing the helper.
+        effective = read_effective(destination / config['output_arm'] / CONFIG_FILE, config)
         atomic_json(directory / 'effective.json', effective)
     finally:
         try:
-            if receipt.is_file():
+            if receipt.is_file() and not pending_pod_archive(destination):
                 client.terminate(read(receipt)['pod_id'])
         finally:
             try:
@@ -266,8 +269,11 @@ def _run(root, directory, client):
     source = checked_source(directory)
     register_config(directory, source)
     checkout = _checkout(root, directory)
-    with backup_queue(directory) as submit:
-        _execute(root, directory, checkout, submit, client)
+    try:
+        with backup_queue(directory) as submit:
+            _execute(root, directory, checkout, submit, client)
+    finally:
+        (checkout / '.tools/parent-download.json').unlink(missing_ok=True)
 
 
 def _run_prepared_batch(root, directories, parallelism):

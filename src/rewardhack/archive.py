@@ -97,7 +97,7 @@ def publish_record(path, remote):
         raise ValueError(f'published record differs from {path}: {remote}')
 
 
-def upload(path, given_commit):
+def upload(path, given_commit, *, direct=None):
     folder = Path(path).resolve(strict=True)
     if not folder.is_dir() or not FOLDER_NAME.fullmatch(folder.name):
         raise SystemExit(f"{path}: a results folder whose name is letters, digits, '.', '_' or '-'")
@@ -113,16 +113,25 @@ def upload(path, given_commit):
     before = sha256_manifest(folder)
     if not before or any(re.search(r'\s', name) for name in before):
         raise SystemExit(f'{folder}: nothing to archive, or file names with whitespace')
-    run_id = f'{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{folder.name}-{secrets.token_hex(4)}'
+    run_id = direct['run_id'] if direct is not None else f'{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{folder.name}-{secrets.token_hex(4)}'
+    filters = EXCLUDES
+    if direct is not None:
+        if not RUN_ID.fullmatch(run_id):
+            raise ValueError('invalid direct upload receipt')
+        remote_files = direct['sha256']
+        shared = before.keys() & remote_files.keys()
+        if any(before[path] != remote_files[path] for path in shared):
+            raise ValueError('local result copy differs from verified pod upload')
+        filters = [*EXCLUDES, *(arg for path in shared for arg in ('--exclude', '/' + path))]
     remote = f's3:{BUCKET}/{run_id}'
     print(f'archiving {len(before)} files as {run_id}')
-    run('rclone', 'copy', str(folder), remote, '--s3-storage-class', STORAGE, '--immutable', *EXCLUDES, timeout=TRANSFER_TIMEOUT)
-    run('rclone', 'check', str(folder), remote, '--one-way', *EXCLUDES, timeout=TRANSFER_TIMEOUT)
+    run('rclone', 'copy', str(folder), remote, '--s3-storage-class', STORAGE, '--immutable', *filters, timeout=TRANSFER_TIMEOUT)
+    run('rclone', 'check', str(folder), remote, '--one-way', *filters, timeout=TRANSFER_TIMEOUT)
     # The hashes recorded are of the files rclone checked: unchanged since the copy began (review rounds 38-43).
     if sha256_manifest(folder) != before:
         raise SystemExit(f'{folder} changed while it was archived; not recorded: run it again')
     entry = {'run_id': run_id, 'uri': f's3://{BUCKET}/{run_id}/', 'storage_class': STORAGE, 'commit': commit,
-             'uploaded_at': datetime.now(timezone.utc).isoformat(), 'sha256': before}
+             'uploaded_at': datetime.now(timezone.utc).isoformat(), 'sha256': before if direct is None else before | direct['sha256']}
     with tempfile.TemporaryDirectory() as scratch:
         (Path(scratch)/RECORD).write_text(json.dumps(entry, indent=1) + '\n')
         publish_record(Path(scratch)/RECORD, f'{remote}/{RECORD}')

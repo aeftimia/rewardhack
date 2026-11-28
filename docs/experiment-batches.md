@@ -23,11 +23,13 @@ Each request has these fields.
 | `driver` | String-valued driver settings for the selected single training arm, including `SMOKE_PART_ONE`, timeout and judge settings. |
 | `gate` | `deadline` in minutes, measured or estimated `basis`, budget `line`, `hourly` price, `other_usd`, and approved `launch_cap`. |
 
-The scheduler admits jobs against the live prepaid balance and the grant ledger, reserves concurrent jobs' worst cases, and keeps one launch record per isolated checkout. Each job verifies its checkpoint download before provisioning. A historical exact resume uses the archived run's original trainer source and compatibility checks. The current trainer permits explicit changes to the completion ceiling, reward arm, penalty, prompt variant, and report format, subject to the runtime's judge requirements. Optimizer and sampler compatibility checks still apply.
+The scheduler admits jobs against the live prepaid balance and the grant ledger, reserves concurrent jobs' worst cases, and keeps one launch record per isolated checkout. For a continuation, the coordinator signs the archived checkpoint objects before provisioning. Once its removal timer is armed, the pod downloads the objects from S3 and verifies every SHA-256 before exposing the checkpoint to the trainer. A historical exact resume uses the archived run's original trainer source and compatibility checks. The current trainer permits explicit changes to the completion ceiling, reward arm, penalty, prompt variant, and report format, subject to the runtime's judge requirements. Optimizer and sampler compatibility checks still apply.
 
 For parallel runs, pass the configurations directly to `run_batch(configs, parallelism=2)`. It returns run IDs in input order. Each continuation has its own run ID.
 
 ## Looking up outputs and checkpoints
+
+The pod uploads snapshots and finished job files to S3 using object-specific signed requests. The coordinator verifies each stored object's checksum and size. It keeps small result files for local queries and publishes its own provenance and registry records. A final upload failure leaves the result unverified and the pod's existing removal timer bounds the recovery window.
 
 The local registry directory and the S3 prefix `experiments/<run_id>/` use the same ID. Before provisioning, `config.json` records the scientific configuration and source commit. After execution, `outputs.json` indexes generated examples, scored answers, and the effective configuration. Local queries work while the index has `backup_status="pending"`. The verified S3 index links to the full archive, with SHA-256 digests and checkpoints by kind and step. Individual `checkpoints/adapter-stepN.json` receipts link to snapshots as each transfer completes.
 

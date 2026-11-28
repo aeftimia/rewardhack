@@ -12,9 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from awscli.botocore import session
-from awscli.botocore.config import Config
-
 from pod_snapshot_upload import s3_checksum, verify_s3_checksum
 
 # The AWS CLI interpreter runs this script directly from the checkout.
@@ -25,6 +22,8 @@ URL_SECONDS = 900
 S3_READ_TIMEOUT_SECONDS = 60
 DESCRIBE_SECONDS = 300  # 1.5x estimated 200 seconds to hash a complete 11 GB run
 REMOTE_HELPER = 'pilot-repo/ops/pod_snapshot_upload.py'
+CLIENT_OPTIONS = dict(signature_version='s3v4', connect_timeout=15, read_timeout=S3_READ_TIMEOUT_SECONDS,
+                      retries={'max_attempts': 2, 'mode': 'standard'})
 
 
 def sign(client, bucket, key, row):
@@ -50,6 +49,8 @@ def verify(client, bucket, key, row):
 
 
 def main():
+    from awscli.botocore import session
+    from awscli.botocore.config import Config
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True)
     parser.add_argument('--port', type=int, required=True)
@@ -90,8 +91,7 @@ def main():
     run_id = f'{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-gpt-{args.run}-{label}-{secrets.token_hex(4)}'
     bucket = SETTINGS['ARCHIVE_BUCKET']
     client = session.get_session().create_client('s3', region_name=SETTINGS['ARCHIVE_REGION'],
-        config=Config(signature_version='s3v4', connect_timeout=15, read_timeout=S3_READ_TIMEOUT_SECONDS,
-                      retries={'max_attempts': 2, 'mode': 'standard'}))
+        config=Config(**CLIENT_OPTIONS))
     for row in rows:
         key = f'{run_id}/{row["path"]}'
         request = sign(client, bucket, key, row)

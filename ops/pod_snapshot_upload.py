@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 ROOT = Path.home() / 'out'
 MAX_BYTES = 5_000_000_000
 UPLOAD_SECONDS = 900
+SOCKET_TIMEOUT = 60
 # Mirrored from the trainer because this helper runs with the pod's stdlib Python;
 # test_resume_requirements_match_trainer guards the copy without importing torch here.
 CHECKPOINT_FILES = ('adapter_model.safetensors', 'adapter_config.json', 'optimizer.pt', 'scheduler.pt', 'rng_state.pth')
@@ -34,10 +35,10 @@ def owned_file(name):
     return path
 
 
-def describe(name):
+def describe(name, *, allow_empty=False):
     path = owned_file(name)
     before = path.stat()
-    if not 0 < before.st_size <= MAX_BYTES:
+    if before.st_size > MAX_BYTES or (not allow_empty and before.st_size == 0):
         raise ValueError('object exceeds single-PUT size bounds')
     if path.suffix == '.safetensors':
         with path.open('rb') as stream:
@@ -90,8 +91,8 @@ def verify_s3_checksum(row, received):
         raise ValueError('S3 checksum differs from the snapshot digest')
 
 
-def upload(request):
-    actual = describe(request['path'])
+def upload(request, *, allow_empty=False):
+    actual = describe(request['path'], allow_empty=allow_empty)
     if actual != {key: request[key] for key in ('path', 'size', 'sha256')}:
         raise ValueError('archive input differs from signed request')
     url = urlsplit(request['url'])
@@ -104,7 +105,7 @@ def upload(request):
         raise ValueError('signed headers do not bind the input')
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(UPLOAD_SECONDS)
-    connection = http.client.HTTPSConnection(url.hostname, timeout=60)
+    connection = http.client.HTTPSConnection(url.hostname, timeout=SOCKET_TIMEOUT)
     try:
         connection.putrequest('PUT', url.path + '?' + url.query)
         for key, value in headers.items():
@@ -122,7 +123,7 @@ def upload(request):
     finally:
         connection.close()
         signal.alarm(0)
-    if describe(actual['path']) != actual:
+    if describe(actual['path'], allow_empty=allow_empty) != actual:
         raise ValueError('archive input changed while uploading')
     return dict(actual, http_status=status)
 

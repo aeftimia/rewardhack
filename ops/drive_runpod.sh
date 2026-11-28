@@ -250,12 +250,16 @@ finish() {
   COPIED=0 CHECKPOINTS=0 SMALL_COPIED=0
   for attempt in 1 2 3; do
     if pull "${SMALL[@]}"; then SMALL_COPIED=1; fi
-    if [[ $SMALL_COPIED == 1 ]] && pull "${ADAPTERS[@]}"; then COPIED=1; break; fi
+    if [[ $SMALL_COPIED == 1 ]]; then
+      if [[ -n ${SMOKE_EXPERIMENT+set} ]]; then
+        if "${ARCHIVER[@]}" final "$RESULTS" "${ARCHIVE_SSH[@]}" && [[ -s $RESULTS.direct.json ]]; then COPIED=1 CHECKPOINTS=1; break; fi
+      elif pull "${ADAPTERS[@]}"; then COPIED=1; break; fi
+    fi
     say "copy attempt $attempt failed"; sleep 10
   done
   if [[ $SMALL_COPIED == 0 ]]; then say 'FINAL COPY FAILED three times: the results are only on the pod, so it is not removed from here'
   elif [[ $COPIED == 0 ]]; then say 'the logs, rows, summaries and evaluations are copied but the saved adapters are not: the pod is not removed from here, so they can still be fetched until its own timer removes it'
-  else
+  elif [[ $CHECKPOINTS == 0 ]]; then
     for attempt in 1 2 3; do
       if pull; then CHECKPOINTS=1; break; fi
       say "checkpoint copy attempt $attempt failed"; sleep 10
@@ -340,8 +344,9 @@ rsync -az --timeout=120 --exclude .git --exclude .tools --exclude .claude --excl
 if [[ -n ${SMOKE_EXPERIMENT+set} ]]; then
   on_pod 'mkdir -p pilot-repo/.tools'
   rsync -az --timeout=120 -e "${SSH[*]}" .tools/experiment.json "root@$HOST:pilot-repo/.tools/"
-  if [[ -d .tools/experiment-parent ]]; then
-    rsync -az --timeout=120 -e "${SSH[*]}" .tools/experiment-parent "root@$HOST:pilot-repo/.tools/"
+  if [[ -f .tools/parent-download.json ]]; then
+    # cap: 1.5x estimated 8 min to restore the parent within the armed startup window
+    timeout 720 "${SSH[@]}" "root@$HOST" 'cd pilot-repo && python3 ops/fetch_checkpoint.py .tools/experiment-parent' < .tools/parent-download.json
   fi
   if [[ -d .tools/experiment-source ]]; then
     rsync -az --timeout=120 -e "${SSH[*]}" .tools/experiment-source "root@$HOST:pilot-repo/.tools/"
@@ -351,6 +356,10 @@ fi
 # file that the remote script reads once and deletes; it never appears in a command line or in the repo.
 LAUNCH_ID="$(date -u +%Y%m%dT%H%M%S)-$$-$RANDOM-$RANDOM"
 OWN_OUTPUT="cd out && [ \"\$(cat LAUNCH_ID)\" = '$LAUNCH_ID' ]"
+if [[ -n ${SMOKE_EXPERIMENT+set} ]]; then
+  ARCHIVER=("${EXPERIMENT_PYTHON:?experiment coordinator interpreter required}" ops/direct_experiment_archive.py)
+  ARCHIVE_SSH=("${SSH[@]}" "root@$HOST" "$OWN_OUTPUT && python3 ~/pilot-repo/ops/pod_experiment_files.py")
+fi
 PULL=(rsync -az --stats --partial-dir=.rsync-partial --timeout=60 -e "${SSH[*]}" --rsync-path="$OWN_OUTPUT && rsync"
       --exclude='adapter-rollout/' --exclude='adapter-sync-check/' --exclude='.rsync-partial/')
 printf '%s\n' "$LAUNCH_ID" > "$RESULTS/launch-id.txt"
@@ -378,6 +387,7 @@ for attempt in 1 2; do
 done
 [[ $LAUNCHED == 1 ]] || { echo "launch receipt unconfirmed; inspect launch.$LAUNCH_ID.log on the pod"; exit 1; }
 say 'launch receipt confirmed: following this job'
+if [[ -n ${SMOKE_EXPERIMENT+set} ]]; then touch "$RESULTS.direct-required"; fi
 date -u +%FT%TZ > "$RESULTS/started-at.txt"
 END=$((SECONDS+DEADLINE*60+90))  # the remote timeout is DEADLINE; the extra time is for it to write EXIT_CODE
 while ((SECONDS < END)); do
@@ -396,7 +406,11 @@ while ((SECONDS < END)); do
   if [[ -z $INTERIM_PID ]] && ((SECONDS % 300 < 60)); then
     # A progressing transfer must not block completion polling. timeout owns its process group,
     # so finish can stop both rsync and SSH before copying final records and checkpoints.
-    timeout --kill-after="$KILL_AFTER_SECONDS" "$((DEADLINE*60))" "${PULL[@]}" "${ADAPTERS[@]}" "root@$HOST:./" "$RESULTS/" >> "$RESULTS/interim-copy.log" 2>&1 &
+    if [[ -n ${SMOKE_EXPERIMENT+set} ]]; then
+      timeout --kill-after="$KILL_AFTER_SECONDS" "$((DEADLINE*60))" "${ARCHIVER[@]}" interim "$RESULTS" "${ARCHIVE_SSH[@]}" >> "$RESULTS/interim-copy.log" 2>&1 &
+    else
+      timeout --kill-after="$KILL_AFTER_SECONDS" "$((DEADLINE*60))" "${PULL[@]}" "${ADAPTERS[@]}" "root@$HOST:./" "$RESULTS/" >> "$RESULTS/interim-copy.log" 2>&1 &
+    fi
     INTERIM_PID=$!
   fi
 done
