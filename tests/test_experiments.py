@@ -303,3 +303,33 @@ def test_batch_skips_unaffordable_head_and_charges_once(tmp_path, monkeypatch, a
     with pytest.raises(ValueError, match='no queued job fits'):
         experiments._run_prepared_batch(ROOT, [a, b], parallelism=2)
     assert ran == [b]
+
+
+def test_capacity_poll_waits_for_exact_offer_then_submits_once(tmp_path, monkeypatch):
+    spec = request()
+    spec['pod'].update(cloud='COMMUNITY', disk=250, gpu={'id':'approved', 'count':2})
+    spec['gate']['hourly'] = 3.415
+    # Secure capacity cannot fill the community request. An expensive offer also waits.
+    offers = iter([('NONE', 1.69), ('HIGH', 2.69), ('LOW', 1.69)])
+    def catalog(path, **params):
+        assert path == 'catalog/gpus'
+        assert params == dict(include='AVAILABILITY', product='POD', count=2, cloud='COMMUNITY')
+        stock, price = next(offers)
+        return {'gpus':[{'id':'approved', 'availability':stock, 'price':{'community':price}}]}
+    monkeypatch.setattr(runpod_ops, 'RunPod', lambda: SimpleNamespace(read=catalog))
+    delays = []
+    monkeypatch.setattr(experiments.time, 'sleep', delays.append)
+    calls = []
+    def batch(configs, **kwargs):
+        calls.append(configs)
+        return ['registered']
+    monkeypatch.setattr(experiments, 'run_batch', batch)
+    assert experiments.experiment(spec, root=tmp_path, capacity_wait_seconds=1200) == 'registered'
+    assert calls == [[spec]] and delays == [300, 300]
+
+
+def test_contended_batch_never_prepares_a_one_time_request(tmp_path, monkeypatch):
+    monkeypatch.setattr(experiments, 'git_common_directory', lambda root:tmp_path)
+    with experiments.file_lock(tmp_path/'experiment-batch.lock'), pytest.raises(experiments.LockBusy):
+        experiments.run_batch([{}], root=tmp_path, parallelism=1)
+    assert not (tmp_path/'experiments').exists()

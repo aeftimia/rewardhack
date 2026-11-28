@@ -38,6 +38,19 @@ def pod_path(pod_id):
     return 'pods/' + quote(pod_id, safe='')
 
 
+def gpu_offer(client, pod):
+    """Read the offer for the requested number of GPUs on the same cloud tier."""
+    if 'dataCenterIds' in pod or 'mounts' in pod:
+        raise ValueError('capacity polling requires an unrestricted location and local disk')
+    gpu = pod['gpu']
+    tier = {'COMMUNITY':'community', 'SECURE':'secure'}[pod['cloud']]
+    catalog = client.read('catalog/gpus', include='AVAILABILITY', product='POD',
+                          count=gpu['count'], cloud=pod['cloud'])
+    row, = (item for item in catalog['gpus'] if item['id'] == gpu['id'])
+    available = {'NONE':False, 'LOW':True, 'MEDIUM':True, 'HIGH':True}[row['availability']]
+    return available, Decimal(str(row['price'][tier])) * gpu['count'] + DISK_GB_HOURLY_USD * pod['disk']
+
+
 class PodStillPresent(RuntimeError):
     """The provider still lists the pod after accepting its removal."""
 

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -19,7 +20,7 @@ from .experiment_results import registered_checkpoint
 from .export_transcripts import atomic_text
 from .experiment_artifacts import collect_outputs, read_effective, register_config, validate_generation_links
 from .run_registry import CONFIG_FILE, checked_source, new_run, read, result_directory, run_id_directory, training_keys
-from .state_files import atomic_json, file_lock, pending_pod_archive, pod_receipt
+from .state_files import LockBusy, atomic_json, file_lock, pending_pod_archive, pod_receipt
 
 
 def git_common_directory(root):
@@ -310,8 +311,7 @@ def _run_prepared_batch(root, directories, parallelism):
         raise ValueError('batch needs distinct prepared runs and positive parallelism')
     client = RunPod()
     charges = {}
-    common = git_common_directory(root)
-    with file_lock(common / 'experiment-batch.lock'), ThreadPoolExecutor(parallelism) as workers:
+    with ThreadPoolExecutor(parallelism) as workers:
         while pending or charges:
             available = Decimal(str(client.read('billing/balance')['balanceAmount'])) if check_prepaid_balance() else None
             for directory in list(pending):
@@ -342,15 +342,40 @@ def _run_prepared_batch(root, directories, parallelism):
                     task.result()
 
 
-def run_batch(configs, *, parallelism, root=None, state=None):
+def run_batch(configs, *, parallelism, root=None, state=None, wait_for_slot=0):
     """Register the configs, execute them, and return run IDs in request order."""
     root = Path.cwd() if root is None else Path(root)
-    directories = [prepare(root, config, state=state) for config in configs]
-    _run_prepared_batch(root, directories, parallelism)
+    # Acquire before allocating run IDs or consuming a committed one-time approval.
+    with file_lock(git_common_directory(root) / 'experiment-batch.lock', wait=wait_for_slot):
+        directories = [prepare(root, config, state=state) for config in configs]
+        _run_prepared_batch(root, directories, parallelism)
     return [directory.name for directory in directories]
 
 
-def experiment(config, *, root=None, state=None):
-    """Register and execute a config. Its run ID identifies inputs, outputs and checkpoints."""
+CAPACITY_POLL_SECONDS = 300
+
+
+def experiment(config, *, root=None, state=None, capacity_wait_seconds=0):
+    """Run one experiment, optionally polling the requested GPU offer before spending."""
+    from .runpod_ops import RunPod, gpu_offer
+    root = Path.cwd() if root is None else Path(root)
+    limit = budget.nonnegative_finite(capacity_wait_seconds, 'capacity wait seconds')
+    if limit:
+        request = read(config) if isinstance(config, (str, Path)) else config
+        client = RunPod()
+        expires = time.monotonic() + limit
+        while time.monotonic() < expires:
+            available, rate = gpu_offer(client, request['pod'])
+            print(f'{datetime.now(timezone.utc).isoformat()} stock={available} hourly_usd={rate}', flush=True)
+            if available and rate <= Decimal(str(request['gate']['hourly'])):
+                try:
+                    run_id, = run_batch([request], parallelism=1, root=root, state=state)
+                    return run_id
+                except LockBusy as busy:
+                    if busy.path != git_common_directory(root) / 'experiment-batch.lock':
+                        raise
+                    print(str(busy), flush=True)
+            time.sleep(min(CAPACITY_POLL_SECONDS, max(0, expires - time.monotonic())))
+        raise TimeoutError('the requested GPU offer did not become available for launch before the wait expired')
     run_id, = run_batch([config], parallelism=1, root=root, state=state)
     return run_id

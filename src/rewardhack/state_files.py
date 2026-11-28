@@ -8,6 +8,12 @@ import tempfile
 import time
 
 
+class LockBusy(ValueError):
+    def __init__(self, path):
+        super().__init__(f'another process holds {path}')
+        self.path = Path(path)
+
+
 def pod_receipt(result):
     return result.with_suffix('.pod.json')
 
@@ -62,7 +68,7 @@ def file_lock(path, wait=0.0):
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    raise ValueError(f'another process holds {path}') from None
+                    raise LockBusy(path) from None
                 time.sleep(.02)
         try:
             yield
